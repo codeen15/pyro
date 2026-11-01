@@ -113,6 +113,15 @@ HDR histograms keyed by metric name and tags (`scenario`, `request`, `group`, `s
 Results: the live dashboard (event WebSocket, one tick per second), saved runs in SQLite
 (summary plus every tick), `pyro load --json` / `--html`.
 
+### Comparing runs
+A load test's **Runs** tab keeps every run. Tick two and press **Compare** to see them side by
+side (the earlier one is the baseline; **Swap** reverses it): a summary of requests per
+second, failure rate and latency percentiles with the change between runs, each threshold's
+verdict in both, the charts overlaid (baseline violet, candidate teal; a table view lists
+the same values per second), and a per-request table with p95 for both runs. Changes under
+2% read as "no change"; for latency and failures lower is better, for requests per second
+higher is better.
+
 ### Live outputs
 `--out` / `-o` (repeatable) streams every tick to other systems, on `pyro load` and on
 `pyro serve` (for every test started from the UI):

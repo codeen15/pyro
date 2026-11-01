@@ -120,6 +120,7 @@ type Test struct {
 	progs    sync.Map // expression -> *vm.Program
 	feeders  map[string]*feeder
 	workers  []*workerState
+	reported chan struct{} // a worker sent a report
 
 	vuSeq     atomic.Int64
 	allocated atomic.Int64 // VUs created
@@ -162,7 +163,7 @@ func Prepare(p *Plan, opts Options) (*Test, error) {
 	}
 	t := &Test{
 		plan: p, opts: opts, agg: metrics.NewAggregator(), targets: map[string]Target{}, scripted: map[string]bool{},
-		ths: compileThresholds(p), errors: newErrorCounter(), done: make(chan struct{}),
+		ths: compileThresholds(p), errors: newErrorCounter(), done: make(chan struct{}), reported: make(chan struct{}, 1),
 	}
 	t.http = httpdriver.New(httpdriver.Options{FileRoot: opts.FileRoot, ReadFile: opts.ReadFile, InsecureTLS: opts.InsecureTLS, MaxIdleConnsPerHost: 10000, MaxBodyBytes: 1 << 20})
 	t.vuSeq.Store(int64(opts.FirstVU))
@@ -298,16 +299,23 @@ func (t *Test) run() {
 		}
 	}()
 
+	onTick := func() {
+		if abort := t.tick(); abort {
+			t.end(StatusAborted, "a threshold with abortOnFail failed")
+			t.softStop()
+			t.hardStop()
+		}
+	}
+	if len(t.workers) > 0 {
+		t.distributedTicks(finished, onTick)
+		return
+	}
 	ticker := time.NewTicker(t.opts.TickInterval)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-ticker.C:
-			if abort := t.tick(); abort {
-				t.end(StatusAborted, "a threshold with abortOnFail failed")
-				t.softStop()
-				t.hardStop()
-			}
+			onTick()
 		case <-finished:
 			t.finish()
 			return
@@ -388,7 +396,11 @@ func (t *Test) end(status, reason string) {
 }
 
 func (t *Test) finish() {
-	t.tick()
+	// A last tick for samples since the previous one; an empty one would
+	// draw a drop to zero at the end of every chart.
+	if t.agg.Pending() || len(t.Ticks()) == 0 {
+		t.tick()
+	}
 	results, _ := t.ths.evaluate(t.agg, time.Since(t.started))
 	// The verdict uses the final values (like k6): a p95 that spiked during
 	// warm-up and recovered passes. Breached stays set for the UI.

@@ -286,6 +286,27 @@ func (a *Aggregator) Flush() Interval {
 	return iv
 }
 
+// Pending reports whether samples were recorded since the last Flush
+// (gauges aside).
+func (a *Aggregator) Pending() bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	for _, b := range a.buffers {
+		b.mu.Lock()
+		n := len(b.samples)
+		b.mu.Unlock()
+		if n > 0 {
+			return true
+		}
+	}
+	for _, s := range a.tick {
+		if s.typ != Gauge && s.count > 0 {
+			return true
+		}
+	}
+	return false
+}
+
 // Interval is what happened between two flushes.
 type Interval struct {
 	Start, End time.Time

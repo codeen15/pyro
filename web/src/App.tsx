@@ -10,6 +10,7 @@ import { SessionConsole } from "./components/SessionConsole";
 import { RunnerView } from "./components/RunnerView";
 import { LoadTestPage, NewLoadTest } from "./components/LoadTest";
 import { LoadRunPage } from "./components/LoadRun";
+import { CompareRunsPage } from "./components/CompareRuns";
 import { InstallPlugin, PluginPage } from "./components/Plugins";
 
 export function App() {
@@ -41,6 +42,8 @@ export function App() {
           <NewLoadTest />
         ) : selected?.startsWith("load:") ? (
           <LoadTestPage key={selected} name={selected.slice(5)} />
+        ) : selected?.startsWith("compare:") ? (
+          <CompareRunsPage key={selected} a={selected.split(":")[1]} b={selected.split(":")[2]} />
         ) : selected?.startsWith("loadrun:") ? (
           <LoadRunPage key={selected} id={selected.slice(8)} />
         ) : selected?.startsWith("run:") ? (

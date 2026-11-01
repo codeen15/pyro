@@ -62,6 +62,9 @@
   --viz-p50: #3e6c9b;
   --viz-p95: #5b9ddf;
   --viz-p99: #98d0ff;
+  /* Run comparison: baseline violet vs candidate teal (--viz-series); passes
+     the palette checks as a pair against --iron-0. */
+  --viz-base: #8f72d6;
 
   --r-sm: 3px;
   --r: 4px;
@@ -2324,4 +2327,89 @@ fieldset legend {
 .agent-state.is-failed {
   color: var(--error);
   white-space: normal;
+}
+
+/* Run comparison */
+.compare-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.pick-col {
+  width: 32px;
+  text-align: center;
+}
+.compare-runs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 16px 0;
+}
+.run-card {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r);
+  background: var(--iron-1);
+  color: var(--text);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+.run-card:hover {
+  border-color: var(--rule-strong);
+}
+.run-card-role {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+}
+.run-card-role i {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+.compare-table td {
+  white-space: nowrap;
+}
+.delta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  color: var(--text-muted);
+}
+.delta.is-better {
+  color: var(--ok);
+}
+.delta.is-worse {
+  color: var(--error);
+}
+.th-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.th-mark.is-pass {
+  color: var(--ok);
+}
+.th-mark.is-fail {
+  color: var(--error);
+}
+@media (max-width: 720px) {
+  .compare-runs {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }

@@ -77,6 +77,7 @@ type workerState struct {
 	segment int
 
 	mu        sync.Mutex
+	reports   int
 	active    int
 	allocated int
 	requests  int64
@@ -95,6 +96,7 @@ func (w *workerState) vus() (int, int) {
 func (w *workerState) apply(r Report) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	w.reports++
 	w.active, w.allocated = r.Active, max(w.allocated, r.Allocated)
 	w.errors = r.Errors
 	for _, d := range r.Deltas {
@@ -178,6 +180,10 @@ func (t *Test) runWorkers() {
 			err := ws.w.Run(t.hard, func(r Report) {
 				t.agg.Merge(r.Deltas)
 				ws.apply(r)
+				select {
+				case t.reported <- struct{}{}:
+				default:
+				}
 			})
 			ws.mu.Lock()
 			ws.active = 0
@@ -195,6 +201,47 @@ func (t *Test) runWorkers() {
 		}()
 	}
 	wg.Wait()
+}
+
+// distributedTicks ticks once every running worker has reported the next
+// interval, so each controller tick holds the same interval from every
+// agent. A worker that is late by half an interval doesn't hold it up.
+func (t *Test) distributedTicks(finished <-chan struct{}, onTick func()) {
+	n := 0
+	wait := t.opts.TickInterval * 3 / 2
+	timer := time.NewTimer(wait)
+	defer timer.Stop()
+	tick := func() {
+		onTick()
+		n++
+		timer.Reset(wait)
+	}
+	for {
+		select {
+		case <-t.reported:
+			if t.allReported(n + 1) {
+				tick()
+			}
+		case <-timer.C:
+			tick()
+		case <-finished:
+			t.finish()
+			return
+		}
+	}
+}
+
+// allReported reports whether every running worker has sent n reports.
+func (t *Test) allReported(n int) bool {
+	for _, ws := range t.workers {
+		ws.mu.Lock()
+		behind := ws.state == "running" && ws.reports < n
+		ws.mu.Unlock()
+		if behind {
+			return false
+		}
+	}
+	return true
 }
 
 // agentStatus summarises the workers; secs > 0 computes per-tick RPS.

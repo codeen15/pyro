@@ -103,9 +103,20 @@ export function LineChart({
 
   const paths = useMemo(
     () =>
-      series.map((s) =>
-        s.values.map((v, i) => `${i ? "L" : "M"}${px(x[i]).toFixed(1)} ${py(Number.isFinite(v) ? v : 0).toFixed(1)}`).join(" "),
-      ),
+      // Non-finite values are gaps (e.g. the shorter of two compared runs).
+      series.map((s) => {
+        let pen = "M";
+        const parts: string[] = [];
+        s.values.forEach((v, i) => {
+          if (!Number.isFinite(v) || i >= x.length) {
+            pen = "M";
+            return;
+          }
+          parts.push(`${pen}${px(x[i]).toFixed(1)} ${py(v).toFixed(1)}`);
+          pen = "L";
+        });
+        return parts.join(" ");
+      }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [series, x, width, maxX, maxY],
   );
@@ -187,9 +198,11 @@ export function LineChart({
           {hi !== null && (
             <>
               <line className="viz-cross" x1={tipLeft} x2={tipLeft} y1={PAD.t} y2={PAD.t + plotH} />
-              {series.map((s) => (
-                <circle key={s.name} cx={tipLeft} cy={py(s.values[hi] ?? 0)} r={4} fill={s.color} stroke="var(--viz-surface)" strokeWidth={2} />
-              ))}
+              {series.map((s) =>
+                Number.isFinite(s.values[hi]) ? (
+                  <circle key={s.name} cx={tipLeft} cy={py(s.values[hi])} r={4} fill={s.color} stroke="var(--viz-surface)" strokeWidth={2} />
+                ) : null,
+              )}
             </>
           )}
         </svg>
