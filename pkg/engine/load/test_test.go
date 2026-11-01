@@ -310,3 +310,22 @@ scenarios:
 		t.Fatalf("hosts = %v", hosts)
 	}
 }
+
+// A threshold that fails early and recovers must not fail the test.
+func TestVerdictUsesFinalValues(t *testing.T) {
+	tg := newTarget(t, 0)
+	res := run(t, tg.URL, `
+scenarios:
+  s:
+    executor: constant-vus
+    vus: 2
+    duration: 500ms
+    flow: [ { request: c/ok }, { think: 20ms } ]
+thresholds:
+  http_reqs: ["count>20"]
+`)
+	th := res.Thresholds[0]
+	if res.Status != StatusPassed || !th.Passed || !th.Breached {
+		t.Fatalf("status=%s threshold=%+v", res.Status, th)
+	}
+}

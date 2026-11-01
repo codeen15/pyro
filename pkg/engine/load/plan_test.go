@@ -116,6 +116,7 @@ func TestThresholds(t *testing.T) {
 		"http_req_duration{scenario:a}": {{Threshold: "p(95)<900"}, {Threshold: "avg<600"}},
 		"http_req_failed":               {{Threshold: "rate<0.005", AbortOnFail: true, DelayAbortEval: Duration(time.Minute)}},
 		"ws_msgs_received":              {{Threshold: "count>0"}},
+		"sio_event_rtt":                 {{Threshold: "p(95)<100"}},
 	}}
 	ts := compileThresholds(p)
 	res, abort := ts.evaluate(agg, 30*time.Second)
@@ -132,8 +133,11 @@ func TestThresholds(t *testing.T) {
 	if r := byCond["rate<0.005"]; r.Passed || !r.Breached {
 		t.Errorf("rate = %+v", r)
 	}
-	if r := byCond["count>0"]; !r.NoData || !r.Passed {
-		t.Errorf("no data = %+v", r)
+	if r := byCond["count>0"]; r.NoData || r.Passed || r.Actual != 0 {
+		t.Errorf("a counter with no samples is zero, so count>0 fails: %+v", r)
+	}
+	if r := byCond["p(95)<100"]; !r.NoData || !r.Passed {
+		t.Errorf("a trend with no samples has no data: %+v", r)
 	}
 	if abort {
 		t.Error("must not abort before delayAbortEval")

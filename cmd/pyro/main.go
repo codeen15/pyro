@@ -49,7 +49,7 @@ func rootCmd() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
-	root.AddCommand(serveCmd(), initCmd(), importCmd(), runCmd(), versionCmd())
+	root.AddCommand(serveCmd(), initCmd(), importCmd(), runCmd(), loadCmd(), versionCmd())
 	return root
 }
 

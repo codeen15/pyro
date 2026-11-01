@@ -103,7 +103,8 @@ type ThresholdResult struct {
 	Passed      bool    `json:"passed"`
 	NoData      bool    `json:"noData,omitempty"`
 	AbortOnFail bool    `json:"abortOnFail,omitempty"`
-	// Breached is set once the condition has failed at any evaluation.
+	// Breached is set once the condition has failed at any evaluation, even
+	// if it passes now. It is informational: the verdict uses Passed.
 	Breached bool `json:"breached,omitempty"`
 }
 
@@ -141,8 +142,9 @@ func (ts thresholds) evaluate(agg *metrics.Aggregator, elapsed time.Duration) (r
 	for _, t := range ts {
 		st := agg.Query(t.metric, t.filter)
 		r := ThresholdResult{Metric: t.key, Condition: t.crit.Threshold, AbortOnFail: t.crit.AbortOnFail}
-		if st.Count == 0 {
+		if st.Count == 0 && metrics.TypeOf(t.metric) != metrics.Counter {
 			// No data yet: neither pass nor fail, and never abort on it.
+			// (A counter with no samples is simply zero, evaluated below.)
 			r.NoData, r.Passed = true, true
 		} else {
 			r.Actual = t.cond.actual(st)

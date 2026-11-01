@@ -17,6 +17,9 @@ const (
 type Workspace struct {
 	Name    string `yaml:"name" json:"name"`
 	Version int    `yaml:"version" json:"version"`
+	// LoadAllowHosts lists hosts load tests may target without confirmation
+	// (loopback is always allowed).
+	LoadAllowHosts []string `yaml:"loadAllowHosts,omitempty" json:"loadAllowHosts,omitempty"`
 }
 
 // Collection is stored as collection.yaml at the root of a collection directory.

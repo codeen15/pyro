@@ -241,3 +241,36 @@ func TestOrderAndRequests(t *testing.T) {
 		t.Fatalf("missing: %v", err)
 	}
 }
+
+func TestLoadTests(t *testing.T) {
+	ws := newWorkspace(t)
+	ws.WriteRequest("payments/list", &model.Request{Kind: model.KindHTTP, Name: "List", URL: "http://127.0.0.1/x"})
+	good := []byte("# smoke test\nscenarios:\n  s: { executor: constant-vus, vus: 1, duration: 1s, flow: [ { request: payments/list } ] }\n")
+	if err := ws.WriteLoadTest("smoke", good); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := ws.ReadLoadTest("smoke")
+	if string(raw) != string(good) {
+		t.Fatal("raw YAML (with comments) must round-trip")
+	}
+	var ve *ValidationError
+	if err := ws.WriteLoadTest("bad", []byte("scenarios:\n  s: { executor: constant-vus, vus: 1, duration: 1s, flow: [ { request: nope/x } ] }\n")); !errors.As(err, &ve) {
+		t.Fatalf("bad plan: %v", err)
+	}
+	if names, _ := ws.ListLoadTests(); !reflect.DeepEqual(names, []string{"smoke"}) {
+		t.Fatalf("names = %v", names)
+	}
+	if _, err := ws.ReadLoadTest("../x"); !errors.Is(err, ErrInvalidPath) {
+		t.Fatalf("traversal: %v", err)
+	}
+	if _, err := ws.LoadData("../../etc/passwd"); err == nil {
+		t.Fatal("data outside the workspace must be refused")
+	}
+	ws.Meta.LoadAllowHosts = []string{"staging.example.com"}
+	if got := ws.UnconfirmedHosts([]string{"127.0.0.1", "localhost", "staging.example.com", "api.example.com", "::1"}); !reflect.DeepEqual(got, []string{"api.example.com"}) {
+		t.Fatalf("unconfirmed = %v", got)
+	}
+	if err := ws.DeleteLoadTest("smoke"); err != nil {
+		t.Fatal(err)
+	}
+}

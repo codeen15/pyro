@@ -296,9 +296,11 @@ func (t *Test) end(status, reason string) {
 func (t *Test) finish() {
 	t.tick()
 	results, _ := t.ths.evaluate(t.agg, time.Since(t.started))
+	// The verdict uses the final values (like k6): a p95 that spiked during
+	// warm-up and recovered passes. Breached stays set for the UI.
 	status := StatusPassed
 	for _, r := range results {
-		if !r.Passed || r.Breached {
+		if !r.Passed {
 			status = StatusFailed
 		}
 	}
