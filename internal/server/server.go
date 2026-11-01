@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -65,22 +66,29 @@ type Server struct {
 	sessions *sessionRegistry
 	runs     *runRegistry
 	loads    *loadRegistry
+
+	cookieMu    sync.Mutex
+	cookieTimer *time.Timer
+	cookieSave  func()
 }
 
 func New(cfg Config) *Server {
 	if cfg.Logger == nil {
 		cfg.Logger = slog.Default()
 	}
-	return &Server{
+	s := &Server{
 		cfg: cfg, ws: cfg.Workspace, log: cfg.Logger, session: newSessionVars(), hub: newHub(),
 		sessions: &sessionRegistry{byID: map[string]*liveSession{}},
 		runs:     &runRegistry{byID: map[string]*liveRun{}},
 		loads:    &loadRegistry{byID: map[string]*liveLoad{}},
 	}
+	s.persistCookies()
+	return s
 }
 
 // Close ends open sessions and cancels running collection runs.
 func (s *Server) Close() {
+	s.flushCookies()
 	s.closeAllSessions()
 	s.runs.mu.Lock()
 	for _, run := range s.runs.byID {

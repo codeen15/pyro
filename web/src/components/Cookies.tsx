@@ -32,7 +32,7 @@ export function CookiesPage() {
       <header className="lt-head">
         <div>
           <h1>Cookies</h1>
-          <p className="muted small">Set by servers while you send requests here, and sent back to them automatically. Kept in memory while Pyro runs; collection runs and load tests use their own.</p>
+          <p className="muted small">Set by servers while you send requests here, and sent back to them automatically. Saved for this workspace on this machine (not in the workspace files); collection runs and load tests start with empty jars.</p>
         </div>
         <div className="lt-actions">
           <button

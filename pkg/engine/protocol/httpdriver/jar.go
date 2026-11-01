@@ -34,6 +34,34 @@ type Jar struct {
 	cookies map[string]*Cookie // by domain\x00path\x00name
 	now     func() time.Time
 	seq     uint64
+	// OnChange, if set, is called (outside the lock) after cookies are
+	// added, changed or removed, e.g. to save them.
+	OnChange func()
+}
+
+func (j *Jar) changed() {
+	if f := j.OnChange; f != nil {
+		f()
+	}
+}
+
+// Load replaces the jar's cookies with saved ones (expired ones skipped),
+// keeping their creation order.
+func (j *Jar) Load(cookies []Cookie) {
+	sort.SliceStable(cookies, func(a, b int) bool { return cookies[a].Created.Before(cookies[b].Created) })
+	now := j.now()
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	j.cookies = map[string]*Cookie{}
+	for _, c := range cookies {
+		if !c.Expires.IsZero() && !c.Expires.After(now) {
+			continue
+		}
+		c := c
+		j.seq++
+		c.seq = j.seq
+		j.cookies[ckey(c.Domain, c.Path, c.Name)] = &c
+	}
 }
 
 func NewJar() *Jar { return &Jar{cookies: map[string]*Cookie{}, now: time.Now} }
@@ -83,9 +111,10 @@ func pathMatch(reqPath, cookiePath string) bool {
 // SetCookies implements http.CookieJar.
 func (j *Jar) SetCookies(u *url.URL, cookies []*http.Cookie) {
 	host := canonicalHost(u)
-	if host == "" {
+	if host == "" || len(cookies) == 0 {
 		return
 	}
+	defer j.changed()
 	now := j.now()
 	j.mu.Lock()
 	defer j.mu.Unlock()
@@ -200,6 +229,7 @@ func (j *Jar) List() []Cookie {
 // Put adds or replaces a cookie (from the UI). Domain and Name are required;
 // Path defaults to "/".
 func (j *Jar) Put(c Cookie) {
+	defer j.changed()
 	c.Domain = strings.ToLower(strings.TrimPrefix(c.Domain, "."))
 	if c.Path == "" {
 		c.Path = "/"
@@ -219,6 +249,7 @@ func (j *Jar) Put(c Cookie) {
 // Delete removes cookies: one (domain, path, name), every cookie of a
 // domain (name and path empty), or all (everything empty).
 func (j *Jar) Delete(domain, path, name string) int {
+	defer j.changed()
 	domain = strings.ToLower(strings.TrimPrefix(domain, "."))
 	j.mu.Lock()
 	defer j.mu.Unlock()

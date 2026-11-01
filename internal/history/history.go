@@ -70,6 +70,10 @@ func Open(file string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("init history db: %w", err)
 	}
+	if err := st.initCookies(); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("init history db: %w", err)
+	}
 	return st, nil
 }
 

@@ -9,6 +9,13 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/codeen15/pyro/internal/history"
+	"github.com/codeen15/pyro/internal/store"
+	"github.com/codeen15/pyro/pkg/engine"
+	"github.com/codeen15/pyro/pkg/engine/protocol/httpdriver"
+	"path/filepath"
+	"time"
 )
 
 func TestSendSavedAndUnsaved(t *testing.T) {
@@ -236,5 +243,37 @@ func TestCookieManager(t *testing.T) {
 	do(t, ts, "DELETE", "/api/v1/cookies", "", true)
 	if _, body = do(t, ts, "GET", "/api/v1/cookies", "", true); strings.TrimSpace(body) != "[]" {
 		t.Fatalf("clear all: %s", body)
+	}
+}
+
+func TestCookiesSurviveRestart(t *testing.T) {
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.SetCookie(w, &http.Cookie{Name: "sid", Value: "abc", Path: "/", MaxAge: 3600})
+	}))
+	defer target.Close()
+	ws, _ := store.Init(t.TempDir(), "test")
+	hist, err := history.Open(filepath.Join(t.TempDir(), "pyro.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer hist.Close()
+	start := func() (*Server, *httptest.Server) {
+		srv := New(Config{Workspace: ws, Engine: engine.New(httpdriver.New(httpdriver.Options{})), History: hist, Token: testToken})
+		return srv, httptest.NewServer(srv.Handler())
+	}
+
+	srv, ts := start()
+	do(t, ts, "POST", "/api/v1/send", `{"request":{"name":"l","url":"`+target.URL+`"}}`, true)
+	time.Sleep(800 * time.Millisecond) // the debounced save
+	do(t, ts, "PUT", "/api/v1/cookies", `{"domain":"api.test","name":"late","value":"1"}`, true)
+	ts.Close()
+	srv.Close() // flushes the pending save
+
+	srv2, ts2 := start()
+	defer srv2.Close()
+	defer ts2.Close()
+	_, body := do(t, ts2, "GET", "/api/v1/cookies", "", true)
+	if !strings.Contains(body, `"name":"sid"`) || !strings.Contains(body, `"name":"late"`) {
+		t.Fatalf("after restart: %s", body)
 	}
 }
