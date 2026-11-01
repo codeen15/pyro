@@ -136,6 +136,7 @@ func serveCmd() *cobra.Command {
 			}
 			api := server.New(server.Config{
 				Workspace: ws, Engine: eng, History: hist, Token: token, UI: web.Dist(),
+				PluginIndex: os.Getenv("PYRO_PLUGIN_INDEX"),
 			})
 			defer api.Close()
 			srv := &http.Server{

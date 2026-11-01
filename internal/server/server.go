@@ -32,6 +32,8 @@ type Config struct {
 	Engine    *engine.Engine
 	// History is optional; when nil, sends aren't recorded.
 	History *history.Store
+	// PluginIndex is the plugin catalogue URL ($PYRO_PLUGIN_INDEX), if any.
+	PluginIndex string
 	// Token, when non-empty, is required on every /api request.
 	Token string
 	// UI is the built single-page app; nil disables UI serving.
@@ -132,6 +134,15 @@ func (s *Server) Handler() http.Handler {
 		r.Get("/loadruns/{id}/report", s.loadRunReport)
 		r.Post("/loadruns/{id}/stop", s.stopLoadRun)
 		r.Delete("/loadruns/{id}", s.deleteLoadRun)
+
+		r.Get("/plugins", s.listPlugins)
+		r.Post("/plugins", s.installPlugin)
+		r.Get("/plugins/index", s.searchPluginIndex)
+		r.Post("/plugins/index/install", s.installFromIndex)
+		r.Post("/plugins/{name}/approve", s.approvePlugin)
+		r.Post("/plugins/{name}/enabled", s.enablePlugin)
+		r.Put("/plugins/{name}/config", s.configurePlugin)
+		r.Delete("/plugins/{name}", s.removePlugin)
 
 		r.Get("/session/variables", s.getSessionVars)
 		r.Delete("/session/variables", s.clearSessionVars)
