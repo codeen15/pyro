@@ -24,6 +24,7 @@ pyro import -w my-api ~/Downloads/my-collection.postman_collection.json
 pyro serve -w my-api
 pyro run my-collection -w my-api -e staging --junit results.xml   # CI
 pyro load checkout-stress -w my-api -e staging --html report.html  # load test
+make plugins && pyro plugin install plugins/dist/tcp-0.1.0.pyro-plugin --yes  # raw TCP requests
 ```
 
 `pyro serve` binds to 127.0.0.1 and prints a one-time link carrying a session
@@ -41,13 +42,14 @@ make test      # go vet + go test + UI typecheck
 
 | Path | What |
 |---|---|
-| `cmd/pyro` | CLI (`serve`, `init`, `import`, `run`, `load`, `version`) |
+| `cmd/pyro` | CLI (`serve`, `init`, `import`, `run`, `load`, `plugin`, `version`) |
 | `pkg/engine/model` | Protocol-agnostic data model shared by all modes |
 | `pkg/engine` | Send pipeline, scripts (pm.*), assertions, runner, load engine, metrics, reports, HTTP/WebSocket/Socket.IO, Postman importer |
 | `internal/store` | Workspace persistence as git-friendly YAML |
 | `internal/history` | Request history (SQLite) |
 | `internal/server` | REST API under `/api/v1`, embedded SPA |
 | `web` | React + TypeScript UI (Vite), embedded via `web/embed.go` |
+| `plugins` | Go plugin SDK and example plugins (raw TCP, HMAC auth) |
 
 ## Workspace format
 

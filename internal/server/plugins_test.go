@@ -5,6 +5,7 @@ import (
 	"bufio"
 	"bytes"
 	b64 "encoding/base64"
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/http/httptest"
@@ -120,5 +121,15 @@ func TestPluginAPI(t *testing.T) {
 	}
 	if res, _ := do(t, ts, "GET", "/api/v1/plugins/index", "", true); res.StatusCode != 404 {
 		t.Fatalf("index without config: %d", res.StatusCode)
+	}
+}
+
+// Regression: the manifest's config field definitions and the saved
+// settings must both survive JSON encoding.
+func TestPluginInfoJSON(t *testing.T) {
+	info := plugin.Info{Manifest: plugin.Manifest{Name: "x", Config: []plugin.Field{{Key: "region"}}}, Config: map[string]string{"region": "eu"}}
+	b, _ := json.Marshal(info)
+	if !strings.Contains(string(b), `"config":[{"key":"region"}]`) || !strings.Contains(string(b), `"settings":{"region":"eu"}`) {
+		t.Fatalf("json = %s", b)
 	}
 }

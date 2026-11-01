@@ -116,7 +116,9 @@ thresholds:
 	}
 	test, err := load.Start(plan, load.Options{
 		Plugins: e.Plugins, TickInterval: 100 * time.Millisecond,
-		Resolve: func(string) (load.Target, error) { return load.Target{Path: "c/greet", Request: req, Chain: chain}, nil },
+		Resolve: func(string) (load.Target, error) {
+			return load.Target{Path: "c/greet", Request: req, Chain: chain}, nil
+		},
 	})
 	if err != nil {
 		t.Fatal(err)

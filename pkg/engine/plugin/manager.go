@@ -46,11 +46,13 @@ type pluginState struct {
 // Info describes an installed plugin.
 type Info struct {
 	Manifest
-	Enabled  bool              `json:"enabled"`
-	Approved bool              `json:"approved"`
-	Config   map[string]string `json:"config,omitempty"`
-	Ready    bool              `json:"ready"`
-	Error    string            `json:"error,omitempty"`
+	Enabled  bool `json:"enabled"`
+	Approved bool `json:"approved"`
+	// Config holds the saved settings. (The manifest's "config" holds the
+	// field definitions, so this is "settings" in JSON.)
+	Config map[string]string `json:"settings,omitempty"`
+	Ready  bool              `json:"ready"`
+	Error  string            `json:"error,omitempty"`
 }
 
 type loaded struct {

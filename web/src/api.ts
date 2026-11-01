@@ -55,6 +55,7 @@ export interface PyroRequest {
   headers?: KeyValue[];
   body?: Body;
   auth?: Auth;
+  options?: Record<string, string>;
   scripts?: { pre?: string; post?: string };
   assertions?: Assertion[];
   extract?: Extractor[];
@@ -351,6 +352,61 @@ export interface LoadRunRow {
   maxVUs: number;
 }
 
+// --- Plugins --------------------------------------------------------------------
+
+export interface PluginField {
+  key: string;
+  label?: string;
+  type?: "string" | "secret" | "number" | "boolean" | "select" | "text";
+  options?: string[];
+  default?: string;
+  help?: string;
+}
+
+export interface PluginProvide {
+  kind: "protocol" | "auth";
+  id: string;
+  title?: string;
+  urlPlaceholder?: string;
+  fields?: PluginField[];
+}
+
+export interface PluginInfo {
+  name: string;
+  version: string;
+  abi: number;
+  title?: string;
+  description?: string;
+  author?: string;
+  license?: string;
+  homepage?: string;
+  module: string;
+  provides: PluginProvide[];
+  capabilities: { network?: string[] };
+  config?: PluginField[] | null;
+  enabled: boolean;
+  approved: boolean;
+  ready: boolean;
+  error?: string;
+  /** Saved values for the manifest's `config` fields. */
+  settings?: Record<string, string>;
+}
+
+export interface PluginList {
+  plugins: PluginInfo[];
+  available: boolean;
+  indexConfigured: boolean;
+  dir?: string;
+}
+
+export interface IndexEntry {
+  name: string;
+  version: string;
+  title?: string;
+  description?: string;
+  kinds?: string[];
+}
+
 const TOKEN_KEY = "pyro.token";
 
 // `pyro serve` prints a URL with ?token=…; keep it for this tab and strip it
@@ -395,11 +451,11 @@ export class ApiError extends Error {
 async function call<T>(method: string, path: string, body?: unknown, raw = false): Promise<T> {
   const headers: Record<string, string> = {};
   if (token) headers["X-Pyro-Token"] = token;
-  if (body !== undefined) headers["Content-Type"] = "application/json";
+  if (body !== undefined) headers["Content-Type"] = body instanceof Blob ? "application/zip" : "application/json";
   const res = await fetch(`/api/v1${path}`, {
     method,
     headers,
-    body: body === undefined ? undefined : raw ? (body as string) : JSON.stringify(body),
+    body: body === undefined ? undefined : raw || body instanceof Blob ? (body as BodyInit) : JSON.stringify(body),
   });
   if (!res.ok) {
     let msg = res.statusText;
@@ -445,6 +501,14 @@ export const api = {
   deleteLoadTest: (name: string) => call<void>("DELETE", `/loadtests/${encodeURIComponent(name)}`),
   startLoadTest: (name: string, body: { environment?: string; confirmHosts?: boolean }) =>
     call<{ id: string; test: string }>("POST", `/loadtests/${encodeURIComponent(name)}/start`, body),
+  plugins: () => call<PluginList>("GET", "/plugins"),
+  installPlugin: (archive: Blob) => call<PluginInfo>("POST", "/plugins", archive),
+  approvePlugin: (name: string) => call<PluginInfo>("POST", `/plugins/${encodeURIComponent(name)}/approve`),
+  enablePlugin: (name: string, enabled: boolean) => call<PluginInfo>("POST", `/plugins/${encodeURIComponent(name)}/enabled`, { enabled }),
+  configurePlugin: (name: string, config: Record<string, string>) => call<PluginInfo>("PUT", `/plugins/${encodeURIComponent(name)}/config`, { config }),
+  removePlugin: (name: string) => call<void>("DELETE", `/plugins/${encodeURIComponent(name)}`),
+  searchPlugins: (q: string) => call<IndexEntry[]>("GET", `/plugins/index?q=${encodeURIComponent(q)}`),
+  installFromIndex: (name: string, version?: string) => call<PluginInfo>("POST", "/plugins/index/install", { name, version }),
   loadRuns: (test?: string) => call<LoadRunRow[]>("GET", `/loadruns${test ? `?test=${encodeURIComponent(test)}` : ""}`),
   loadRun: (id: string) => call<LoadRunView>("GET", `/loadruns/${id}`),
   stopLoadRun: (id: string, abort = false) => call<void>("POST", `/loadruns/${id}/stop${abort ? "?abort=1" : ""}`),

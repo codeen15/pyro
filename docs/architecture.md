@@ -41,7 +41,7 @@
 | API server | `internal/server` | ✅ Phase 2 | REST under `/api/v1` (CRUD, send, history, import, sessions, runs, session variables), event WebSocket, token auth, embedded SPA. |
 | History | `internal/history` | ✅ Phase 1 | Sent requests in SQLite (`~/.pyro/pyro.db`), per workspace. |
 | Send pipeline | `pkg/engine` (`engine.Send`, `engine.Connect`) | ✅ Phase 2 | Pre scripts → resolve → auth → execute → post scripts → assertions → extractors; `Connect` opens sessions with the same resolution and auth. |
-| CLI | `cmd/pyro` | ✅ `serve`, `init`, `import`, `run`, `load`, `version` | `plugin`, `agent` come later. |
+| CLI | `cmd/pyro` | ✅ `serve`, `init`, `import`, `run`, `load`, `plugin`, `version` | `agent` comes in Phase 5. |
 | Web UI | `web/` | ✅ Phase 1 | React SPA embedded with `go:embed`. Visual system in `DESIGN.md`. |
 | Protocol drivers | `pkg/engine/protocol/{httpdriver,wsdriver,sioclient}` | ✅ Phase 1–2 | Execute requests; WebSocket and Socket.IO sessions (`protocol.Session`). |
 | Variables, auth | `pkg/engine/vars`, `pkg/engine/auth` | ✅ Phase 1 | `{{var}}` resolution across scopes; auth inheritance and signing. |
@@ -50,7 +50,7 @@
 | Collection runner | `pkg/engine/runner` | ✅ Phase 2 | Iterations, data files, setNextRequest, bail. |
 | Load engine | `pkg/engine/load` | ✅ Phase 3 | Plans, executors, VUs, flow steps, data feeders, thresholds. See [load-engine.md](load-engine.md). |
 | Metrics | `pkg/engine/metrics` | ✅ Phase 3 | Per-VU buffers → HDR histograms (cumulative per series, per-interval per metric). |
-| Plugin host | `pkg/engine/plugin` | Phase 4 | wazero runtime, ABI v1, registry. See [plugins.md](plugins.md). |
+| Plugin host | `pkg/engine/plugin` | ✅ Phase 4 | wazero runtime, ABI v1 (JSON), capabilities, install/approve, index. See [plugins.md](plugins.md). |
 | Importers | `pkg/engine/importer/postman` | ✅ Phase 1 | See [postman-import.md](postman-import.md). |
 | Reporters | `pkg/engine/report` | ✅ JUnit, JSON (runs); HTML, JSON (load) | Reports for CI; CSV planned. |
 
@@ -90,7 +90,7 @@ type Session interface {
 | **Local server + browser UI** | Works on every OS with no per-OS GUI code. The same binary runs headless on servers and in CI. |
 | **React + Vite + TanStack Query** | Mature ecosystem. Monaco is available for editors, and uPlot handles high-frequency live charts. |
 | **goja** | Pure-Go JS engine. One runtime per VU keeps scripts isolated. |
-| **wazero** | Pure-Go WASM runtime: sandboxed, cross-platform plugins with no CGO. See [ADR 0002](adr/0002-wasm-plugins.md). |
+| **wazero** | Pure-Go WASM runtime: sandboxed, cross-platform plugins with no CGO. See [ADR 0002](adr/0002-wasm-plugins.md) and [ADR 0005](adr/0005-json-abi-and-go-sdk.md). |
 | **In-house Socket.IO client** | Go's third-party clients are weak, and owning the protocol keeps load mode efficient. See [ADR 0003](adr/0003-socketio-in-house.md). |
 | **One YAML file per request** | Small diffs and easy merges, and it works with any editor. See [ADR 0004](adr/0004-yaml-file-per-request.md). |
 | **HDR histograms** | Accurate percentiles that can be merged across VUs and agents. |

@@ -2,21 +2,22 @@
 
 Pyro is an API client (REST, WebSocket, Socket.IO, Postman import) and load-testing
 tool (stress, spike, soak, concurrency) with WASM plugins. A single Go binary runs the
-engine and serves a React web UI on localhost. **Current phase: 3 done → Phase 4 (plugins) next**
+engine and serves a React web UI on localhost. **Current phase: 4 done → Phase 5 (scale & polish) next**
 (see `docs/roadmap.md`). Product context: `PRODUCT.md`; visual system: `DESIGN.md`.
 
 ## Layout
-- `cmd/pyro`: CLI (cobra): `serve`, `init`, `import`, `run`, `load`, `version`
+- `cmd/pyro`: CLI (cobra): `serve`, `init`, `import`, `run`, `load`, `plugin`, `version`
 - `pkg/engine/...`: the engine, a library with no dependency on server/CLI/UI. `model/` is the shared data model;
   `engine.go` is the send pipeline, `session.go` opens WS/SIO sessions; `vars/`, `auth/`, `check/` (assertions,
   extractors), `script/` (goja + pm.* shim, vendored chai), `runner/`, `report/` (JUnit, JSON, load HTML),
-  `load/` (plans, executors, VUs, thresholds), `metrics/` (HDR histograms), `importer/postman/`,
+  `load/` (plans, executors, VUs, thresholds), `metrics/` (HDR histograms), `plugin/` (wazero host), `importer/postman/`,
   `protocol/{httpdriver,wsdriver,sioclient}/`.
 - `internal/store`: workspace persistence (YAML files, path safety, atomic writes, `Import`)
 - `internal/history`: request history and saved load runs in SQLite (`~/.pyro/pyro.db`)
 - `internal/server`: REST API `/api/v1` (chi), token auth, embedded SPA
 - `internal/version`: build metadata (set via ldflags)
 - `web/`: React + TS + Vite UI; `web/embed.go` embeds `web/dist`
+- `plugins/sdk/go`: Go plugin SDK (separate module); `plugins/examples/{tcp,hmac}`: example plugins (separate modules)
 - `docs/`: design docs (index below)
 
 ## Commands
@@ -40,6 +41,8 @@ make dev-ui       # Vite on :5173, proxies /api
 - Server pushes live data over `/api/v1/events` (topics `session:<id>`, `run:<id>`); clients subscribe, then fetch
   state once and merge.
 - No CGO: dependencies must be pure Go. Builds use `CGO_ENABLED=0`.
+- Plugin tests build the example plugins with `GOOS=wasip1` (needs only the Go toolchain); the plugin package under
+  `-race` takes ~100 s because wazero compiles slowly with race instrumentation.
 - UI: follow `DESIGN.md` (Pyrometry: heat colours only on measured data, flame accent for chrome). Tokens live in
   `web/src/styles.css`; heat thresholds in `web/src/heat.ts`. The impeccable design hook checks UI edits.
 - Charts: `web/src/components/LineChart.tsx` (and the Go report) follow the dataviz rules: no dual axes, text never

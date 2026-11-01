@@ -57,7 +57,19 @@ use it). The Postman importer fills it from the source order. Anything not liste
 follows, folders first, sorted by name.
 
 ## `*.req.yaml`
-`kind`: `http` | `websocket` | `socketio` | `plugin:<name>`.
+`kind`: `http` | `websocket` | `socketio` | `plugin:<id>` (a request type from an installed plugin, see [plugins.md](plugins.md)).
+
+### Plugin request types
+```yaml
+kind: plugin:tcp
+name: TCP ping
+url: tcp://{{host}}
+body: { type: text, content: "ping\n" }      # sent as text
+options:                                     # the plugin's declared fields
+  readUntil: delimiter
+  timeoutMs: "2000"
+assertions: [ { type: body, op: matches, value: "^PONG" } ]
+```
 
 ### HTTP
 ```yaml
@@ -149,6 +161,7 @@ and stops that walk. Auth `type`: `none`, `basic`, `bearer`, `apikey`, `oauth2`,
 | apikey | `key`, `value`, `in` (`header`/`query`) |
 | oauth2 | `grantType`, `tokenUrl`, `clientId`, `clientSecret`, `scope`, … |
 | digest | `username`, `password` |
+| plugin:&lt;id&gt; | the plugin's declared fields (e.g. `plugin:hmac`: `secret`, `keyId`, `header`) |
 
 ## `*.load.yaml`
 See [load-engine.md](load-engine.md#plan-format).

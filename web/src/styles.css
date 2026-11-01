@@ -383,7 +383,7 @@ input[type="checkbox"] {
 
 .rail-tabs button {
   height: 30px;
-  padding: 0 10px;
+  padding: 0 8px;
   color: var(--brick-muted);
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
@@ -755,7 +755,7 @@ input[type="checkbox"] {
 }
 .field-label {
   display: block;
-  min-width: 90px;
+  min-width: 120px;
   color: var(--text-muted);
   font-size: 12px;
 }
@@ -1932,6 +1932,165 @@ fieldset legend {
   color: var(--warn);
 }
 
+/* ---------- Plugins ---------- */
+
+.kind-select {
+  height: 30px;
+  min-width: 108px;
+}
+.plugin-tag {
+  width: auto;
+  min-width: 64px;
+  padding: 0 10px;
+  color: var(--stream);
+}
+.fields-form {
+  max-width: 720px;
+}
+.field-row.field-top {
+  align-items: flex-start;
+}
+.field-top > .field-label {
+  padding-top: 5px;
+}
+.fields-form select {
+  max-width: 520px;
+}
+.field-body {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+  min-width: 0;
+}
+.field-help {
+  margin: 0;
+}
+.code-input.small-area {
+  min-height: 72px;
+}
+.tone-ok {
+  color: var(--ok);
+}
+.tone-warn {
+  color: var(--warn);
+}
+.tone-error {
+  color: var(--error);
+}
+.tone-muted {
+  color: var(--text-muted);
+}
+.rail .tone-muted {
+  color: var(--brick-muted);
+}
+
+.plugin-page {
+  height: 100%;
+  overflow: auto;
+  padding: 18px 18px 40px;
+  max-width: 920px;
+}
+.plugin-desc {
+  max-width: 70ch;
+  margin: 12px 0 0;
+}
+.caps {
+  display: flex;
+  gap: 12px;
+  margin-top: 18px;
+  padding: 12px 14px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r);
+}
+.caps > svg {
+  flex: none;
+  margin-top: 2px;
+}
+.caps.is-approved > svg {
+  color: var(--ok);
+}
+.caps.is-pending {
+  border-color: oklch(0.83 0.13 85 / 0.4);
+  background: var(--warn-soft);
+}
+.caps.is-pending > svg {
+  color: var(--warn);
+}
+.caps h2 {
+  margin-bottom: 4px;
+  font-size: 13.5px;
+}
+.caps p {
+  margin: 0 0 6px;
+}
+.caps .btn {
+  margin-top: 4px;
+}
+.cap-list {
+  margin: 0 0 8px;
+  padding-left: 18px;
+}
+.provides {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 6px;
+  padding: 0;
+  list-style: none;
+}
+.provides li {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--rule);
+}
+.provides .badge {
+  min-width: 0;
+  font-size: 10px;
+}
+.danger-zone {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 32px;
+  padding-top: 16px;
+  border-top: 1px solid var(--rule);
+}
+.install-box {
+  display: flex;
+  gap: 12px;
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r);
+  background: var(--iron-1);
+}
+.install-box > svg {
+  flex: none;
+  color: var(--text-muted);
+}
+.install-box p {
+  margin: 0 0 8px;
+}
+.index-list {
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.index-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--rule);
+}
+.index-list p {
+  margin: 2px 0 0;
+}
+
 /* ---------- Pages inside main ---------- */
 
 .welcome,
@@ -2115,6 +2274,13 @@ fieldset legend {
   }
   .lt-head {
     flex-direction: column;
+  }
+  .field-row.field-top {
+    flex-direction: column;
+    gap: 4px;
+  }
+  .req-head {
+    flex-wrap: wrap;
   }
   .welcome,
   .report,

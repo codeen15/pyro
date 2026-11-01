@@ -2,7 +2,7 @@ VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
 LDFLAGS := -s -w -X github.com/pyrohq/pyro/internal/version.Version=$(VERSION) -X github.com/pyrohq/pyro/internal/version.Commit=$(COMMIT)
 
-.PHONY: all build ui ui-deps test vet dev-api dev-ui clean
+.PHONY: all build ui ui-deps test vet dev-api dev-ui plugins clean
 
 all: build
 
@@ -19,6 +19,7 @@ ui-deps:
 
 test: vet
 	go test ./...
+	cd plugins/sdk/go && go test ./...
 	cd web && npm run typecheck
 
 vet:
@@ -30,6 +31,14 @@ dev-api:
 
 dev-ui: ui-deps
 	cd web && npm run dev
+
+# Build and pack the example plugins into plugins/dist.
+plugins: build
+	mkdir -p plugins/dist
+	for p in tcp hmac; do \
+		(cd plugins/examples/$$p && GOOS=wasip1 GOARCH=wasm go build -buildmode=c-shared -ldflags="-s -w" -o $$p.wasm .) && \
+		./bin/pyro plugin pack plugins/examples/$$p -o plugins/dist/$$p-0.1.0.pyro-plugin; \
+	done
 
 clean:
 	rm -rf bin

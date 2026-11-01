@@ -10,6 +10,7 @@ import { SessionConsole } from "./components/SessionConsole";
 import { RunnerView } from "./components/RunnerView";
 import { LoadTestPage, NewLoadTest } from "./components/LoadTest";
 import { LoadRunPage } from "./components/LoadRun";
+import { InstallPlugin, PluginPage } from "./components/Plugins";
 
 export function App() {
   const health = useQuery({ queryKey: ["health"], queryFn: api.health, refetchInterval: 10_000 });
@@ -32,6 +33,10 @@ export function App() {
           <Blocker title="Couldn't load the workspace">{ws.error.message}</Blocker>
         ) : report ? (
           <ImportResult report={report} onClose={() => setReport(null)} />
+        ) : selected === "plugins:install" ? (
+          <InstallPlugin />
+        ) : selected?.startsWith("plugin:") ? (
+          <PluginPage key={selected} name={selected.slice(7)} />
         ) : selected === "load:new" ? (
           <NewLoadTest />
         ) : selected?.startsWith("load:") ? (
@@ -127,6 +132,7 @@ function TopBar({ workspace, onImported }: { workspace?: string; onImported: (r:
 function Workspace({ path }: { path: string }) {
   const q = useQuery({ queryKey: ["request", path], queryFn: () => api.request(path), retry: false });
   const result = useApp((s) => s.results[path]);
+  const draft = useApp((s) => s.drafts[path]);
   const sending = useApp((s) => !!s.sending[path]);
   const select = useApp((s) => s.select);
   const split = useSplit();
@@ -143,7 +149,9 @@ function Workspace({ path }: { path: string }) {
       </Blocker>
     );
   }
-  if (q.data.kind === "websocket" || q.data.kind === "socketio") {
+  // Route by the draft's type so switching type in the editor takes effect.
+  const kind = draft?.kind ?? q.data.kind;
+  if (kind === "websocket" || kind === "socketio") {
     return <SessionConsole key={path} path={path} saved={q.data} />;
   }
   return (

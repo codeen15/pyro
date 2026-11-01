@@ -112,7 +112,8 @@ function StatusLine({
   return (
     <div className="status-line">
       <span className={`status ${cls}`}>
-        {res.status} {res.statusText}
+        {res.status ? `${res.status} ` : ""}
+        {res.statusText}
       </span>
       <button
         className={`heat-chip heat-${heat} ${lit && HOT.includes(heat) ? "is-lit" : ""}`}

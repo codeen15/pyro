@@ -5,13 +5,24 @@ import { api, type Auth, type Body, type KeyValue, type PyroRequest } from "../a
 import { useApp } from "../store";
 import { KVEditor } from "./KVEditor";
 import { ScriptsEditor, TestsEditor } from "./TestsEditor";
+import { FieldsForm, KindSelect, usePluginTypes } from "./Plugins";
 
 const METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];
-type Tab = "params" | "headers" | "body" | "auth" | "scripts" | "tests";
+type Tab = "params" | "headers" | "body" | "options" | "auth" | "scripts" | "tests";
 const TABS: { id: Tab; label: string }[] = [
   { id: "params", label: "Params" },
   { id: "headers", label: "Headers" },
   { id: "body", label: "Body" },
+  { id: "auth", label: "Auth" },
+  { id: "scripts", label: "Scripts" },
+  { id: "tests", label: "Tests" },
+];
+// Plugin request types: the plugin's own fields replace params, and the
+// body is sent as text.
+const PLUGIN_TABS: { id: Tab; label: string }[] = [
+  { id: "body", label: "Body" },
+  { id: "options", label: "Options" },
+  { id: "headers", label: "Headers" },
   { id: "auth", label: "Auth" },
   { id: "scripts", label: "Scripts" },
   { id: "tests", label: "Tests" },
@@ -27,6 +38,7 @@ export function RequestEditor({ path, saved }: { path: string; saved: PyroReques
   const setSending = useApp((s) => s.setSending);
   const setResult = useApp((s) => s.setResult);
   const [tab, setTab] = useState<Tab>("params");
+  const protocols = usePluginTypes("protocol");
 
   const req = draft ?? saved;
   const dirty = draft !== undefined;
@@ -71,23 +83,22 @@ export function RequestEditor({ path, saved }: { path: string; saved: PyroReques
     return () => window.removeEventListener("keydown", onKey);
   });
 
-  if (req.kind !== "http") {
-    return (
-      <section className="editor">
-        <RequestTitle req={req} path={path} dirty={false} onName={() => {}} />
-        <div className="notice">
-          <CircleAlert size={16} />
-          {req.kind} requests need their plugin, which isn't installed. The definition is kept as written.
-        </div>
-      </section>
-    );
-  }
+  const pluginId = req.kind.startsWith("plugin:") ? req.kind.slice(7) : null;
+  const provider = pluginId ? protocols.find((p) => p.id === pluginId) : undefined;
+  const tabs = pluginId ? PLUGIN_TABS : TABS;
+  const activeTab = tabs.some((t) => t.id === tab) ? tab : tabs[0].id;
+  const changeKind = (kind: PyroRequest["kind"]) => {
+    const next: PyroRequest = { ...req, kind };
+    if (kind.startsWith("plugin:") && !next.body) next.body = { type: "text", content: "" };
+    setDraft(path, next);
+  };
 
   const counts: Record<Tab, number> = {
     params: (req.query ?? []).filter((q) => !q.disabled).length,
     headers: (req.headers ?? []).filter((h) => !h.disabled).length,
     body: req.body && req.body.type !== "none" ? 1 : 0,
     auth: req.auth ? 1 : 0,
+    options: Object.keys(req.options ?? {}).length,
     scripts: (req.scripts?.pre?.trim() ? 1 : 0) + (req.scripts?.post?.trim() ? 1 : 0),
     tests: (req.assertions?.length ?? 0) + (req.extract?.length ?? 0),
   };
@@ -95,12 +106,29 @@ export function RequestEditor({ path, saved }: { path: string; saved: PyroReques
   return (
     <section className="editor">
       <RequestTitle req={req} path={path} dirty={dirty} onName={(name) => edit({ name })}>
+        <KindSelect value={req.kind} onChange={changeKind} />
         <button className="btn ghost" onClick={() => save.mutate()} disabled={!dirty || save.isPending} title="Save (Ctrl+S)">
           <Save size={14} />
           {save.isPending ? "Saving…" : dirty ? "Save" : "Saved"}
         </button>
       </RequestTitle>
       {save.error && <p className="inline-error">Couldn't save: {save.error.message}</p>}
+      {pluginId && !provider && (
+        <div className="notice warn">
+          <CircleAlert size={15} />
+          <span>
+            No installed plugin provides <code>{req.kind}</code>. Install it from the Plugins tab; the request is kept as written.
+          </span>
+        </div>
+      )}
+      {provider && !provider.plugin.ready && (
+        <div className="notice warn">
+          <CircleAlert size={15} />
+          <span>
+            The {provider.plugin.title || provider.plugin.name} plugin is {provider.plugin.approved ? "disabled" : "waiting for approval"}. Open it in the Plugins tab.
+          </span>
+        </div>
+      )}
 
       <form
         className="urlbar"
@@ -109,21 +137,27 @@ export function RequestEditor({ path, saved }: { path: string; saved: PyroReques
           send();
         }}
       >
-        <select
-          className={`method m-${(req.method ?? "GET").toLowerCase()}`}
-          value={req.method ?? "GET"}
-          onChange={(e) => edit({ method: e.target.value })}
-          aria-label="Method"
-        >
-          {METHODS.map((m) => (
-            <option key={m}>{m}</option>
-          ))}
-        </select>
+        {pluginId ? (
+          <span className="kind-tag plugin-tag" title={provider?.plugin.title}>
+            {(provider?.title || pluginId).toUpperCase().slice(0, 8)}
+          </span>
+        ) : (
+          <select
+            className={`method m-${(req.method ?? "GET").toLowerCase()}`}
+            value={req.method ?? "GET"}
+            onChange={(e) => edit({ method: e.target.value })}
+            aria-label="Method"
+          >
+            {METHODS.map((m) => (
+              <option key={m}>{m}</option>
+            ))}
+          </select>
+        )}
         <input
           className="url-input mono"
           value={req.url}
           onChange={(e) => edit({ url: e.target.value })}
-          placeholder="https://api.example.com/resource or {{baseUrl}}/path"
+          placeholder={provider?.urlPlaceholder ?? (pluginId ? `${pluginId}://host:port` : "https://api.example.com/resource or {{baseUrl}}/path")}
           aria-label="URL"
           spellCheck={false}
           autoComplete="off"
@@ -135,21 +169,36 @@ export function RequestEditor({ path, saved }: { path: string; saved: PyroReques
       </form>
 
       <div className="tabs" role="tablist" aria-label="Request parts">
-        {TABS.map(({ id: t, label }) => (
-          <button key={t} role="tab" aria-selected={tab === t} className="tab" onClick={() => setTab(t)}>
+        {tabs.map(({ id: t, label }) => (
+          <button key={t} role="tab" aria-selected={activeTab === t} className="tab" onClick={() => setTab(t)}>
             {label}
-            {counts[t] > 0 && <span className="count">{t === "body" ? req.body!.type : t === "auth" ? req.auth!.type : counts[t]}</span>}
+            {counts[t] > 0 && !(pluginId && t === "body") && <span className="count">{t === "body" ? req.body!.type : t === "auth" ? req.auth!.type : counts[t]}</span>}
           </button>
         ))}
       </div>
 
       <div className="tab-panel" role="tabpanel">
-        {tab === "params" && <KVEditor label="Query parameters" rows={req.query ?? []} onChange={(query) => edit({ query })} />}
-        {tab === "headers" && <KVEditor label="Headers" rows={req.headers ?? []} onChange={(headers) => edit({ headers })} keyPlaceholder="Header" />}
-        {tab === "body" && <BodyEditor body={req.body} onChange={(body) => edit({ body })} />}
-        {tab === "auth" && <AuthEditor auth={req.auth} onChange={(auth) => edit({ auth })} />}
-        {tab === "scripts" && <ScriptsEditor scripts={req.scripts} onChange={(scripts) => edit({ scripts })} />}
-        {tab === "tests" && (
+        {activeTab === "params" && <KVEditor label="Query parameters" rows={req.query ?? []} onChange={(query) => edit({ query })} />}
+        {activeTab === "headers" && <KVEditor label="Headers" rows={req.headers ?? []} onChange={(headers) => edit({ headers })} keyPlaceholder="Header" />}
+        {activeTab === "body" &&
+          (pluginId ? (
+            <textarea
+              className="code-input mono"
+              value={req.body?.content ?? ""}
+              onChange={(e) => edit({ body: { type: "text", content: e.target.value } })}
+              spellCheck={false}
+              aria-label="Payload"
+              placeholder="Payload sent by the plugin. Variables like {{name}} are filled in."
+            />
+          ) : (
+            <BodyEditor body={req.body} onChange={(body) => edit({ body })} />
+          ))}
+        {activeTab === "options" && (
+          <FieldsForm fields={provider?.fields ?? []} values={req.options} onChange={(options) => edit({ options: Object.keys(options).length ? options : undefined })} label="request type" />
+        )}
+        {activeTab === "auth" && <AuthEditor auth={req.auth} onChange={(auth) => edit({ auth })} />}
+        {activeTab === "scripts" && <ScriptsEditor scripts={req.scripts} onChange={(scripts) => edit({ scripts })} />}
+        {activeTab === "tests" && (
           <TestsEditor
             assertions={req.assertions ?? []}
             extract={req.extract ?? []}
@@ -295,6 +344,8 @@ export function AuthEditor({ auth, onChange }: { auth?: Auth; onChange: (a: Auth
   const type = auth?.type ?? "inherit";
   const params = auth?.params ?? {};
   const fields = AUTH_FIELDS[type];
+  const pluginAuths = usePluginTypes("auth");
+  const pluginAuth = type.startsWith("plugin:") ? pluginAuths.find((a) => `plugin:${a.id}` === type) : undefined;
 
   return (
     <div className="auth-editor">
@@ -309,9 +360,24 @@ export function AuthEditor({ auth, onChange }: { auth?: Auth; onChange: (a: Auth
           <option value="bearer">Bearer token</option>
           <option value="apikey">API key</option>
           <option value="oauth2">OAuth 2.0 (access token)</option>
-          {!AUTH_FIELDS[type] && !["inherit", "none"].includes(type) && <option value={type}>{type} (not supported yet)</option>}
+          {pluginAuths.length > 0 && (
+            <optgroup label="Plugins">
+              {pluginAuths.map((a) => (
+                <option key={a.id} value={`plugin:${a.id}`}>
+                  {a.title || a.id}
+                </option>
+              ))}
+            </optgroup>
+          )}
+          {!AUTH_FIELDS[type] && !["inherit", "none"].includes(type) && !pluginAuth && <option value={type}>{type} (not available)</option>}
         </select>
       </div>
+      {pluginAuth && (
+        <>
+          {!pluginAuth.plugin.ready && <p className="inline-warn">The {pluginAuth.plugin.title || pluginAuth.plugin.name} plugin isn't ready (see the Plugins tab).</p>}
+          <FieldsForm fields={pluginAuth.fields ?? []} values={params} onChange={(p) => onChange({ type, params: p })} label="auth type" />
+        </>
+      )}
       {type === "inherit" && <p className="muted">Uses the nearest auth set on a parent folder or the collection.</p>}
       {fields?.map((f) => (
         <label key={f.key} className="field-row">

@@ -1,6 +1,6 @@
 # 0002 — Plugins as WASM modules via wazero
 
-**Status:** Accepted (2026-11-01)
+**Status:** Accepted (2026-11-01); the encoding and SDK choices are refined by [0005](0005-json-abi-and-go-sdk.md).
 
 ## Context
 Pyro needs JMeter-style installable plugins that can add protocols, auth, assertions,

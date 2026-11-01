@@ -18,7 +18,7 @@ TypeScript client in `web/src/api.ts`.
 
 ## Endpoints
 
-### Implemented (Phases 0–3)
+### Implemented (Phases 0–4)
 | Method | Path | Description |
 |---|---|---|
 | GET | `/api/v1/health` | `{status, version}` |
@@ -53,12 +53,19 @@ TypeScript client in `web/src/api.ts`.
 | GET | `/api/v1/loadruns/{id}/report` | Self-contained HTML report (`?download=1` sets Content-Disposition) |
 | POST | `/api/v1/loadruns/{id}/stop` | Graceful stop; `?abort=1` cancels in-flight requests |
 | DELETE | `/api/v1/loadruns/{id}` | Delete a saved run |
+| GET | `/api/v1/plugins` | `{plugins: [Info], available, indexConfigured, dir}`; Info = manifest + `{enabled, approved, ready, settings?, error?}` |
+| POST | `/api/v1/plugins` | Body: a plugin archive (zip). Installs it unapproved (`201` Info; `422` if invalid) |
+| POST | `/api/v1/plugins/{name}/approve` | Approve the current capabilities |
+| POST | `/api/v1/plugins/{name}/enabled` | Body `{enabled}` |
+| PUT | `/api/v1/plugins/{name}/config` | Body `{config: {key: value}}` (saved as `settings`) |
+| DELETE | `/api/v1/plugins/{name}` | Uninstall |
+| GET | `/api/v1/plugins/index?q=` | Search the configured index (`404` when none) |
+| POST | `/api/v1/plugins/index/install` | Body `{name, version?}`: download (sha256-verified) and install |
 | GET / DELETE | `/api/v1/session/variables` | Values set by scripts and extractors during this `pyro serve` (runtime, globals, per environment, per collection). Never written to files. DELETE resets them. |
 
 ### Planned
 | Method | Path | Phase | Description |
 |---|---|---|---|
-| GET/POST/DELETE | `/api/v1/plugins…` | 4 | List, install, configure, remove. |
 
 ## Event WebSocket (implemented)
 `GET /api/v1/events?token=<token>` (browsers can't set headers on WebSocket, so the token

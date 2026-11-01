@@ -9,3 +9,4 @@ rather than editing an accepted one; mark superseded records as such.
 | [0002](0002-wasm-plugins.md) | Plugins as WASM modules via wazero | Accepted |
 | [0003](0003-socketio-in-house.md) | In-house Socket.IO client | Accepted |
 | [0004](0004-yaml-file-per-request.md) | One YAML file per request, single `.req.yaml` extension | Accepted |
+| [0005](0005-json-abi-and-go-sdk.md) | JSON plugin ABI and a standard-Go SDK (refines 0002) | Accepted |

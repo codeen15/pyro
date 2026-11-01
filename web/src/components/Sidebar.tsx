@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Activity, ChevronRight, Folder, FolderOpen, Gauge, Layers, Play, Plug, Plus, Radio, RefreshCw, Trash2, TriangleAlert } from "lucide-react";
+import { Activity, ChevronRight, Folder, FolderOpen, Gauge, Layers, Play, Plug, Plus, Puzzle, Radio, RefreshCw, Trash2, TriangleAlert } from "lucide-react";
+import { PluginsRail } from "./Plugins";
 import { api, type TreeNode, type WorkspaceInfo } from "../api";
 import { formatMs, heatOf } from "../heat";
 import { useApp } from "../store";
@@ -20,8 +21,11 @@ export function Sidebar({ ws }: { ws: WorkspaceInfo | undefined }) {
         <button role="tab" aria-selected={tab === "load"} onClick={() => setTab("load")}>
           Load
         </button>
+        <button role="tab" aria-selected={tab === "plugins"} onClick={() => setTab("plugins")}>
+          Plugins
+        </button>
       </div>
-      {tab === "collections" ? <Collections ws={ws} /> : tab === "history" ? <History /> : <LoadTests />}
+      {tab === "collections" ? <Collections ws={ws} /> : tab === "history" ? <History /> : tab === "load" ? <LoadTests /> : <PluginsRail />}
     </nav>
   );
 }
@@ -140,6 +144,12 @@ export function KindBadge({ kind, method }: { kind?: string; method?: string }) 
     return (
       <span className="badge stream" title="Socket.IO">
         <Radio size={11} /> SIO
+      </span>
+    );
+  if (kind?.startsWith("plugin:"))
+    return (
+      <span className="badge stream" title={`Plugin request type ${kind}`}>
+        <Puzzle size={11} /> {kind.slice(7, 11).toUpperCase()}
       </span>
     );
   const m = (method ?? "GET").toUpperCase();

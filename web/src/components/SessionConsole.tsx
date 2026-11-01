@@ -7,6 +7,7 @@ import { formatMs, heatOf } from "../heat";
 import { useApp } from "../store";
 import { KVEditor } from "./KVEditor";
 import { AuthEditor, RequestTitle } from "./RequestEditor";
+import { KindSelect } from "./Plugins";
 
 type Tab = "message" | "saved" | "headers" | "auth" | "settings";
 
@@ -155,6 +156,7 @@ export function SessionConsole({ path, saved }: { path: string; saved: PyroReque
     <div className="work session">
       <section className="editor">
         <RequestTitle req={req} path={path} dirty={dirty} onName={(name) => edit({ name })}>
+          <KindSelect value={req.kind} onChange={(kind) => edit({ kind })} />
           <button className="btn ghost" onClick={() => save.mutate()} disabled={!dirty || save.isPending} title="Save (Ctrl+S)">
             <Save size={14} />
             {save.isPending ? "Saving…" : dirty ? "Save" : "Saved"}
