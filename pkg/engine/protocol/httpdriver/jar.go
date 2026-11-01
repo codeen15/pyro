@@ -22,6 +22,7 @@ type Cookie struct {
 	SameSite string    `json:"sameSite,omitempty"`
 	Expires  time.Time `json:"expires,omitzero"` // zero: a session cookie
 	Created  time.Time `json:"created"`
+	seq      uint64    // insertion order, to break ties in Created
 }
 
 // Jar is an RFC 6265 cookie jar that can also list and edit its cookies
@@ -32,6 +33,7 @@ type Jar struct {
 	mu      sync.Mutex
 	cookies map[string]*Cookie // by domain\x00path\x00name
 	now     func() time.Time
+	seq     uint64
 }
 
 func NewJar() *Jar { return &Jar{cookies: map[string]*Cookie{}, now: time.Now} }
@@ -124,8 +126,10 @@ func (j *Jar) SetCookies(u *url.URL, cookies []*http.Cookie) {
 			delete(j.cookies, k)
 			continue
 		}
+		j.seq++
+		c.seq = j.seq
 		if old := j.cookies[k]; old != nil {
-			c.Created = old.Created
+			c.Created, c.seq = old.Created, old.seq
 		}
 		j.cookies[k] = c
 	}
@@ -156,7 +160,10 @@ func (j *Jar) Cookies(u *url.URL) []*http.Cookie {
 		if len(match[a].Path) != len(match[b].Path) {
 			return len(match[a].Path) > len(match[b].Path)
 		}
-		return match[a].Created.Before(match[b].Created)
+		if !match[a].Created.Equal(match[b].Created) {
+			return match[a].Created.Before(match[b].Created)
+		}
+		return match[a].seq < match[b].seq
 	})
 	out := make([]*http.Cookie, len(match))
 	for i, c := range match {
@@ -201,8 +208,10 @@ func (j *Jar) Put(c Cookie) {
 	defer j.mu.Unlock()
 	k := ckey(c.Domain, c.Path, c.Name)
 	c.Created = j.now()
+	j.seq++
+	c.seq = j.seq
 	if old := j.cookies[k]; old != nil {
-		c.Created = old.Created
+		c.Created, c.seq = old.Created, old.seq
 	}
 	j.cookies[k] = &c
 }
