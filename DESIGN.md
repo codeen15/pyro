@@ -144,6 +144,18 @@ A cool, near-neutral iron field and a warm brick frame, with heat reserved for n
 - **OK / Warn / Error** (`ok`, `warn`, `error`): 2xx/3xx/4xx/5xx status text, notices, history results. Errors always pair crimson with an icon or the word "failed".
 - **Method colours** (`method-*`) and **Stream** (`stream`): the HTTP method and WS/SIO badges.
 
+### Light theme
+Dark is the default and the reference. A light theme ("daylight in the foundry") keeps every
+role: pale cool steel for content (`iron-*` near white), pale warm brick for the shell, dark
+text, a deeper flame accent with light ink, and darker state and method colours so they hold
+contrast on white. Heat keeps its order (hotter still reads hotter); cold steel deepens so
+white chip text stays legible, and white heat gets a thin warm outline so it shows on a pale
+ground. Chart colours are re-validated with the dataviz palette script against `#fafafb`
+(series `#008f86`, baseline `#7a58c9`, percentiles `#8db6e3` → `#4a86cc` → `#1f5592`, which
+darken toward p99 because darker is more salient on white). The status bar's theme menu
+offers System (follows the OS, the default), Dark and Light; the choice is per browser. The
+HTML load report stays dark.
+
 ### Named Rules
 **The Quarantine Rule.** Heat colours appear only on measured data: the heat chip, the heated bar, legend swatches, timing values. Never on buttons, menus, borders or decoration.
 

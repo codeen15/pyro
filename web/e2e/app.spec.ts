@@ -156,3 +156,13 @@ test("save a response as an example", async ({ page }) => {
   await page.getByRole("tab", { name: /Examples/ }).click();
   await expect(page.getByLabel("Example name")).toHaveValue("201 Created");
 });
+
+test("theme choice applies and persists", async ({ page }) => {
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark"); // the test browser prefers dark
+  await page.selectOption('select[aria-label="Theme"]', "light");
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  await page.reload();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  await page.selectOption('select[aria-label="Theme"]', "system");
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+});

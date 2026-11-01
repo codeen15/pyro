@@ -1,8 +1,8 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { CircleCheck, Cookie, FileInput, SlidersHorizontal, TriangleAlert, X } from "lucide-react";
 import { api, ApiError, decodeBody, type ImportReport, type PyroResponse } from "./api";
-import { useApp } from "./store";
+import { applyTheme, useApp, type Theme } from "./store";
 import { Sidebar, KindBadge } from "./components/Sidebar";
 import { RequestEditor } from "./components/RequestEditor";
 import { ResponseView, HeatLegend } from "./components/ResponseView";
@@ -70,6 +70,7 @@ export function App() {
         <span className={`dot ${health.isSuccess ? "ok" : health.isError ? "bad" : ""}`} aria-hidden />
         {health.isSuccess ? `Engine ${health.data.version}` : health.isError ? "Engine unreachable. Is pyro serve still running?" : "Connecting…"}
         {ws.data && <span className="path-hint mono">{ws.data.root}</span>}
+        <ThemeSelect />
       </footer>
     </div>
   );
@@ -383,4 +384,27 @@ function Blocker({ title, children }: { title: string; children: React.ReactNode
 
 function plural(n: number, word: string) {
   return `${n} ${word}${n === 1 ? "" : "s"}`;
+}
+
+function ThemeSelect() {
+  const theme = useApp((s) => s.theme);
+  const setTheme = useApp((s) => s.setTheme);
+  // Follow the system setting live when the preference is "system".
+  useEffect(() => {
+    if (theme !== "system") return;
+    const mq = window.matchMedia("(prefers-color-scheme: light)");
+    const on = () => applyTheme("system");
+    mq.addEventListener("change", on);
+    return () => mq.removeEventListener("change", on);
+  }, [theme]);
+  return (
+    <label className="theme-select">
+      <span className="sr-only">Theme</span>
+      <select value={theme} onChange={(e) => setTheme(e.target.value as Theme)} aria-label="Theme">
+        <option value="system">System theme</option>
+        <option value="dark">Dark</option>
+        <option value="light">Light</option>
+      </select>
+    </label>
+  );
 }

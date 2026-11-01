@@ -53,7 +53,8 @@ cd web && npm run e2e   # browser tests (needs bin/pyro and npx playwright insta
 - Plugin tests build the example plugins with `GOOS=wasip1` (needs only the Go toolchain); the plugin package under
   `-race` takes ~100 s because wazero compiles slowly with race instrumentation.
 - UI: follow `DESIGN.md` (Pyrometry: heat colours only on measured data, flame accent for chrome). Tokens live in
-  `web/src/styles.css`; heat thresholds in `web/src/heat.ts`. The impeccable design hook checks UI edits.
+  `web/src/styles.css` (dark in `:root`, light under `:root[data-theme="light"]`; every new colour needs both);
+  heat thresholds in `web/src/heat.ts`. The impeccable design hook checks UI edits.
 - Charts: `web/src/components/LineChart.tsx` (and the Go report) follow the dataviz rules: no dual axes, text never
   in data colours (heat shows as a swatch beside neutral text), hover readout + table view, colours `--viz-*`
   validated with the dataviz palette script against `--iron-0`.

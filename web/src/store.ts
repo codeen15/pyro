@@ -27,6 +27,7 @@ interface AppState {
   results: Record<string, SendResult>;
   sending: Record<string, boolean>;
   sidebarTab: "collections" | "history" | "load" | "plugins";
+  theme: Theme;
   /** The last import or export report, shown until closed. */
   report: { mode: "import" | "export"; data: ImportReport } | null;
 
@@ -38,6 +39,15 @@ interface AppState {
   setSending: (path: string, v: boolean) => void;
   setSidebarTab: (t: AppState["sidebarTab"]) => void;
   setReport: (r: AppState["report"]) => void;
+  setTheme: (t: Theme) => void;
+}
+
+export type Theme = "system" | "dark" | "light";
+
+/** Resolves the theme preference and applies it to <html data-theme>. */
+export function applyTheme(t: Theme) {
+  const light = t === "light" || (t === "system" && window.matchMedia("(prefers-color-scheme: light)").matches);
+  document.documentElement.dataset.theme = light ? "light" : "dark";
 }
 
 export const useApp = create<AppState>((set) => ({
@@ -49,6 +59,12 @@ export const useApp = create<AppState>((set) => ({
   sidebarTab: "collections",
   report: null,
   setReport: (report) => set({ report }),
+  theme: (load("pyro.theme") as Theme | null) ?? "system",
+  setTheme: (theme) => {
+    save("pyro.theme", theme === "system" ? null : theme);
+    applyTheme(theme);
+    set({ theme });
+  },
 
   select: (path) => {
     save("pyro.selected", path);
