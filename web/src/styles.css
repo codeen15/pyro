@@ -2611,3 +2611,37 @@ fieldset legend {
     display: none;
   }
 }
+
+/* OAuth 2.0 */
+.oauth-advanced {
+  margin: 4px 0 10px;
+}
+.oauth-advanced summary {
+  cursor: pointer;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+.token-panel {
+  display: grid;
+  gap: 8px;
+  max-width: 720px;
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r);
+  background: var(--iron-1);
+}
+.token-head,
+.token-value,
+.token-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.token-value code {
+  overflow-wrap: anywhere;
+}
+.token-panel p {
+  margin: 0;
+}

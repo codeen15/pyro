@@ -261,7 +261,7 @@ export function SessionConsole({ path, saved }: { path: string; saved: PyroReque
             />
           )}
           {tab === "headers" && <KVEditor label="Handshake headers" rows={req.headers ?? []} onChange={(headers) => edit({ headers })} keyPlaceholder="Header" />}
-          {tab === "auth" && <AuthEditor auth={req.auth} onChange={(auth) => edit({ auth })} />}
+          {tab === "auth" && <AuthEditor auth={req.auth} onChange={(auth) => edit({ auth })} context={{ path, request: req }} />}
           {tab === "settings" && sio && <SocketIOSettings cfg={req.socketio ?? {}} onChange={(socketio) => edit({ socketio })} />}
         </div>
       </section>

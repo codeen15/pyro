@@ -238,6 +238,27 @@ export interface ImportReport {
   warnings: { path?: string; code: string; detail: string }[];
 }
 
+export interface OAuthToken {
+  accessToken: string;
+  tokenType?: string;
+  refreshToken?: string;
+  scope?: string;
+  expiresAt?: string;
+  obtainedAt: string;
+}
+
+export interface OAuthStatus {
+  /** False when the request's auth (own or inherited) isn't OAuth 2.0. */
+  oauth: boolean;
+  grant: string;
+  token?: OAuthToken;
+  expired?: boolean;
+  unresolved?: string[];
+  interactive?: boolean;
+  inherited?: boolean;
+  redirectUri: string;
+}
+
 /** Session ("current") values layered over the files; null means unset this session. */
 export interface SessionVariables {
   runtime: Record<string, string | null>;
@@ -550,6 +571,10 @@ export const api = {
   saveEnvironment: (name: string, env: Environment) => call<Environment>("PUT", `/environments/${encodeURIComponent(name)}`, env),
   deleteEnvironment: (name: string) => call<void>("DELETE", `/environments/${encodeURIComponent(name)}`),
   exportEnvironment: (name: string) => call<ExportView>("GET", `/environments/${encodeURIComponent(name)}/export`),
+  oauthToken: (body: { path?: string; request?: PyroRequest; environment?: string; fetch?: boolean; clear?: boolean }) =>
+    call<OAuthStatus>("POST", "/oauth2/token", body),
+  oauthAuthorize: (body: { path?: string; request?: PyroRequest; environment?: string }) =>
+    call<{ url: string; redirectUri: string }>("POST", "/oauth2/authorize", body),
   globals: () => call<Environment>("GET", "/globals"),
   saveGlobals: (env: Environment) => call<Environment>("PUT", "/globals", env),
   sessionVariables: () => call<SessionVariables>("GET", "/session/variables"),

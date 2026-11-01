@@ -173,9 +173,22 @@ and stops that walk. Auth `type`: `none`, `basic`, `bearer`, `apikey`, `oauth2`,
 | basic | `username`, `password` |
 | bearer | `token` |
 | apikey | `key`, `value`, `in` (`header`/`query`) |
-| oauth2 | `grantType`, `tokenUrl`, `clientId`, `clientSecret`, `scope`, … |
+| oauth2 | Postman's names: `grant_type` (`authorization_code_with_pkce`, `authorization_code`, `client_credentials`, `password_credentials`; none = use `accessToken` as is), `accessToken`, `authUrl`, `accessTokenUrl`, `refreshTokenUrl`, `clientId`, `clientSecret`, `client_authentication` (`header` default, `body`), `scope`, `audience`, `username`/`password` (password grant), `redirect_uri` (default `http://<pyro>/oauth2/callback`), `challengeAlgorithm` (`S256` default, `plain`), `addTokenTo` (`header` default, `queryParams`), `headerPrefix` (default `Bearer`) |
 | digest | `username`, `password` |
 | plugin:&lt;id&gt; | the plugin's declared fields (e.g. `plugin:hmac`: `secret`, `keyId`, `header`) |
+
+### OAuth 2.0 tokens
+With a grant configured (and no `accessToken`), Pyro gets tokens itself and caches them
+in memory per configuration:
+- **Client credentials** and **password** grants fetch a token on the first send (also in
+  `pyro run`, load tests, where all VUs share one token, and on agents) and reuse it until
+  30 s before it expires; a refresh token is used when the provider gave one.
+- **Authorization code** (with or without PKCE) needs a browser sign-in: **Get new access
+  token** in the Auth tab opens the provider's page; it redirects to Pyro's
+  `/oauth2/callback` (register that URL with the provider), and the token is cached for
+  later sends. CLI runs can't sign in; use a pasted token or another grant there.
+- The implicit grant isn't supported (deprecated by OAuth 2.1).
+Tokens are never written to the workspace.
 
 ## `*.load.yaml`
 See [load-engine.md](load-engine.md#plan-format).

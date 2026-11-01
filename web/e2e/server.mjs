@@ -22,6 +22,32 @@ createServer((req, res) => {
       res.end(JSON.stringify({ id: "ord_1", received: body ? JSON.parse(body) : null }));
       return;
     }
+    // A tiny OAuth 2.0 provider: /authorize approves at once and redirects
+    // back with a code; /token issues tokens for any client.
+    if (url.pathname === "/authorize") {
+      const back = new URL(url.searchParams.get("redirect_uri"));
+      back.searchParams.set("code", "c0de");
+      back.searchParams.set("state", url.searchParams.get("state"));
+      res.statusCode = 302;
+      res.setHeader("Location", back.toString());
+      res.end();
+      return;
+    }
+    if (url.pathname === "/token") {
+      const form = new URLSearchParams(body);
+      const grant = form.get("grant_type");
+      if (grant === "authorization_code" && !form.get("code_verifier")) {
+        res.statusCode = 400;
+        res.end(JSON.stringify({ error: "invalid_request", error_description: "PKCE verifier missing" }));
+        return;
+      }
+      res.end(JSON.stringify({ access_token: `${grant}-token`, token_type: "Bearer", expires_in: 3600, scope: form.get("scope") ?? "" }));
+      return;
+    }
+    if (url.pathname === "/whoami") {
+      res.end(JSON.stringify({ authorization: req.headers.authorization ?? null }));
+      return;
+    }
     if (url.pathname === "/fail") {
       res.statusCode = 503;
       res.end(JSON.stringify({ error: "down" }));
@@ -47,6 +73,7 @@ write(
   "collections/shop/create-order.req.yaml",
   `kind: http\nname: Create order\nmethod: POST\nurl: "{{base}}/orders"\nbody: { type: json, content: '{"sku":"A-1"}' }\nassertions:\n  - { type: status, value: "201" }\nextract:\n  - { var: orderId, from: jsonpath, path: "$.id" }\n`,
 );
+write("collections/shop/whoami.req.yaml", `kind: http\nname: Who am I\nmethod: GET\nurl: "{{base}}/whoami"\n`);
 write(
   "loadtests/smoke.load.yaml",
   "name: Smoke\nscenarios:\n  s:\n    executor: constant-vus\n    vus: 3\n    duration: 3s\n    flow: [ { request: shop/list-items }, { think: 50ms } ]\nthresholds:\n  http_req_failed: [\"rate<0.01\"]\n",

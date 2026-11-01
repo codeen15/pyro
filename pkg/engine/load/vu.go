@@ -54,7 +54,7 @@ func (t *Test) newVU(scenario string, sc *Scenario, feed *feeder) *vu {
 	id := int(t.vuSeq.Add(1))
 	v := &vu{
 		id: id, scenario: scenario, sc: sc, t: t,
-		eng:      &engine.Engine{HTTP: t.http.ForVU(), Scripts: &script.Pool{}, Plugins: t.opts.Plugins},
+		eng:      &engine.Engine{HTTP: t.http.ForVU(), Scripts: &script.Pool{}, Plugins: t.opts.Plugins, OAuth: t.oauth},
 		vars:     newVUVars(t.opts.Environment, t.opts.Globals),
 		collVars: map[string]map[string]string{},
 		buf:      t.agg.NewBuffer(),

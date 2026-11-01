@@ -52,16 +52,12 @@ func Apply(req *model.Request, a *model.Auth) error {
 			setHeader(req, p["key"], p["value"])
 		}
 	case "oauth2":
-		// Token acquisition flows come later; for now use a token the user
-		// pasted or that was imported from Postman.
+		// Token fetching happens in the engine (it needs the network); here
+		// only a token that was pasted, imported or already fetched is used.
 		if p["accessToken"] == "" {
-			return fmt.Errorf("OAuth 2.0: no access token set (token fetching is not supported yet)")
+			return fmt.Errorf("OAuth 2.0: no access token (set one, or configure a grant to fetch it)")
 		}
-		prefix := p["headerPrefix"]
-		if prefix == "" {
-			prefix = "Bearer"
-		}
-		setHeader(req, "Authorization", prefix+" "+p["accessToken"])
+		ApplyOAuth2Token(req, p, p["accessToken"])
 	default:
 		return fmt.Errorf("auth type %q is not supported yet", a.Type)
 	}

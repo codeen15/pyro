@@ -13,6 +13,7 @@ import (
 	"github.com/expr-lang/expr/vm"
 
 	"github.com/codeen15/pyro/pkg/engine"
+	"github.com/codeen15/pyro/pkg/engine/auth"
 	"github.com/codeen15/pyro/pkg/engine/metrics"
 	"github.com/codeen15/pyro/pkg/engine/model"
 	"github.com/codeen15/pyro/pkg/engine/plugin"
@@ -132,6 +133,7 @@ type Test struct {
 	workers  []*workerState
 	reported chan struct{} // a worker sent a report
 	cpu      *cpuSampler
+	oauth    *auth.OAuth2 // shared by every VU, so a token is fetched once
 	sat      saturation
 
 	vuSeq     atomic.Int64
@@ -177,6 +179,7 @@ func Prepare(p *Plan, opts Options) (*Test, error) {
 		plan: p, opts: opts, agg: metrics.NewAggregator(), targets: map[string]Target{}, scripted: map[string]bool{},
 		ths: compileThresholds(p), errors: newErrorCounter(), done: make(chan struct{}), reported: make(chan struct{}, 1),
 	}
+	t.oauth = auth.NewOAuth2()
 	t.http = httpdriver.New(httpdriver.Options{FileRoot: opts.FileRoot, AllowOutsideRoot: opts.AllowFilesOutsideRoot, ReadFile: opts.ReadFile, InsecureTLS: opts.InsecureTLS, MaxIdleConnsPerHost: 10000, MaxBodyBytes: 1 << 20})
 	t.vuSeq.Store(int64(opts.FirstVU))
 

@@ -26,6 +26,8 @@ type Engine struct {
 	Scripts *script.Pool
 	// Plugins provides plugin request and auth types; nil disables them.
 	Plugins *plugin.Manager
+	// OAuth fetches and caches OAuth 2.0 tokens; nil allows only pasted tokens.
+	OAuth *auth.OAuth2
 }
 
 // PluginID returns the id of a plugin kind ("plugin:tcp" → "tcp").
@@ -34,7 +36,7 @@ func PluginID(k model.Kind) (string, bool) {
 }
 
 func New(http *httpdriver.Driver) *Engine {
-	return &Engine{HTTP: http, Scripts: &script.Pool{}}
+	return &Engine{HTTP: http, Scripts: &script.Pool{}, OAuth: auth.NewOAuth2()}
 }
 
 // SendInput is everything needed to send one request.
@@ -211,6 +213,17 @@ func (e *Engine) applyAuth(ctx context.Context, sent *model.Request, a *model.Au
 	if a == nil {
 		return nil
 	}
+	if a.Type == "oauth2" && auth.UsesTokenFetching(a.Params) {
+		if e.OAuth == nil {
+			return fmt.Errorf("OAuth 2.0 token fetching isn't available here; set an access token")
+		}
+		tok, err := e.OAuth.Token(ctx, a.Params)
+		if err != nil {
+			return err
+		}
+		auth.ApplyOAuth2Token(sent, a.Params, tok.AccessToken)
+		return nil
+	}
 	id, ok := strings.CutPrefix(a.Type, "plugin:")
 	if !ok {
 		return auth.Apply(sent, a)
@@ -365,4 +378,14 @@ func contains(list []string, s string) bool {
 		}
 	}
 	return false
+}
+
+// EffectiveAuth returns the auth a send would use (own or inherited) with
+// variables resolved, and the names it couldn't resolve.
+func EffectiveAuth(in SendInput) (*model.Auth, []string) {
+	if in.Vars == nil {
+		in.Vars = NewVars(nil, in.Chain)
+	}
+	var missing []string
+	return resolveAuth(auth.Effective(in.Request.Auth, in.Chain), in.Vars.Resolver(), &missing), missing
 }

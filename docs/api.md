@@ -40,6 +40,9 @@ TypeScript client in `web/src/api.ts`.
 | POST | `/api/v1/import?filename=&into=` | The file as the body (≤ 50 MB): Postman collection or environment, OpenAPI/Swagger, HAR or cURL text; the format is detected. `filename` names cURL/HAR collections; `into` adds the requests to an existing collection or folder. `201` with the import report (`into: true` when added); `422` if the format isn't recognised. |
 | GET | `/api/v1/collections/{slug}/export` | `{filename, content, report}`: the collection as Postman v2.1 JSON (`content`) and what didn't convert |
 | GET | `/api/v1/environments/{name}/export` | `{filename, content}`: the environment as Postman environment JSON |
+| POST | `/api/v1/oauth2/token` | Body `{path?, request?, environment?, fetch?, clear?}`: the OAuth 2.0 token for the request's effective auth: `{oauth, grant, token?, expired?, interactive, inherited, redirectUri, unresolved?}` (`oauth: false` when its auth isn't OAuth 2.0). `fetch` gets a new one (non-interactive grants), `clear` forgets it |
+| POST | `/api/v1/oauth2/authorize` | Same body; starts an authorization-code sign-in and returns `{url, redirectUri}` to open in a browser |
+| GET | `/oauth2/callback` | The provider's redirect target (no session token; the random `state` ties it to a sign-in Pyro started) |
 | GET, PUT | `/api/v1/globals` | `globals.yaml` as an environment `{name: "globals", variables}` |
 | POST | `/api/v1/sessions` | Body `{path?, request?, environment?}`. Opens a WebSocket or Socket.IO session. Returns `{sent, unresolved?, error?, session?}`; on failure `error` is set and there is no `session`. |
 | GET | `/api/v1/sessions/{id}` | `{id, kind, info, openedAt, closed, error?, messages[]}` (last 2000 messages) |

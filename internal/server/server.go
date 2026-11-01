@@ -100,6 +100,7 @@ func (s *Server) Handler() http.Handler {
 	// The event stream checks its token itself (browsers can't send headers
 	// on WebSocket upgrades) and must not sit behind the request timeout.
 	r.Get("/api/v1/events", s.events)
+	r.Get("/oauth2/callback", s.oauthCallback)
 
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Use(middleware.Timeout(60 * time.Second))
@@ -159,6 +160,8 @@ func (s *Server) Handler() http.Handler {
 		r.Put("/plugins/{name}/config", s.configurePlugin)
 		r.Delete("/plugins/{name}", s.removePlugin)
 
+		r.Post("/oauth2/token", s.oauthToken)
+		r.Post("/oauth2/authorize", s.oauthAuthorize)
 		r.Get("/globals", s.getGlobals)
 		r.Put("/globals", s.putGlobals)
 		r.Get("/session/variables", s.getSessionVars)

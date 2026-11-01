@@ -20,7 +20,7 @@ test("run a collection", async ({ page }) => {
   await row.getByRole("button", { name: "Run Shop" }).click();
   await page.getByRole("button", { name: /^Run/ }).last().click();
   await expect(page.locator(".tests-pass", { hasText: "Passed" })).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByText("2 requests · 0 failed")).toBeVisible();
+  await expect(page.getByText("3 requests · 0 failed")).toBeVisible();
   await expect(page.getByText("3 tests · 0 failed")).toBeVisible();
 });
 
@@ -97,4 +97,28 @@ test("edit globals and environments with current values", async ({ page }) => {
   await expect(page.getByLabel("Environment name", { exact: true })).toHaveValue("staging");
   await page.getByRole("button", { name: "Use this environment" }).click();
   await expect(page.locator(".env-select select")).toHaveValue("staging");
+});
+
+test("OAuth 2.0: client credentials and authorization code with PKCE", async ({ page }) => {
+  await page.getByRole("button", { name: "Who am I" }).click();
+  await page.getByRole("tab", { name: "Auth" }).click();
+  await page.selectOption("#auth-type", "oauth2");
+  await page.getByLabel("Grant type").selectOption("client_credentials");
+  await page.getByLabel("Access token URL").fill("{{base}}/token");
+  await page.getByLabel("Client ID").fill("app");
+  await page.getByLabel("Client secret").fill("s3cret");
+  await page.getByRole("button", { name: "Get new access token" }).click();
+  await expect(page.locator(".token-panel")).toContainText("expires in");
+  await page.getByRole("button", { name: "Send" }).click();
+  await expect(page.locator(".response")).toContainText("Bearer client_credentials-token");
+
+  // Browser sign-in: the provider's window redirects back to Pyro's callback.
+  await page.getByLabel("Grant type").selectOption("authorization_code_with_pkce");
+  await page.getByLabel("Auth URL").fill("{{base}}/authorize");
+  const [popup] = await Promise.all([page.waitForEvent("popup"), page.getByRole("button", { name: "Get new access token" }).click()]);
+  await expect(popup.getByRole("heading", { name: "Signed in" })).toBeVisible();
+  await popup.close();
+  await expect(page.locator(".token-panel")).toContainText("expires in");
+  await page.getByRole("button", { name: "Send" }).click();
+  await expect(page.locator(".response")).toContainText("Bearer authorization_code-token");
 });

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { CircleAlert, Save, SendHorizontal } from "lucide-react";
+import { OAuth2Form, TokenPanel, type TokenContext } from "./OAuth2";
 import { api, type Auth, type Body, type KeyValue, type PyroRequest } from "../api";
 import { useApp } from "../store";
 import { KVEditor } from "./KVEditor";
@@ -196,7 +197,7 @@ export function RequestEditor({ path, saved }: { path: string; saved: PyroReques
         {activeTab === "options" && (
           <FieldsForm fields={provider?.fields ?? []} values={req.options} onChange={(options) => edit({ options: Object.keys(options).length ? options : undefined })} label="request type" />
         )}
-        {activeTab === "auth" && <AuthEditor auth={req.auth} onChange={(auth) => edit({ auth })} />}
+        {activeTab === "auth" && <AuthEditor auth={req.auth} onChange={(auth) => edit({ auth })} context={{ path, request: req }} />}
         {activeTab === "scripts" && <ScriptsEditor scripts={req.scripts} onChange={(scripts) => edit({ scripts })} />}
         {activeTab === "tests" && (
           <TestsEditor
@@ -334,13 +335,10 @@ const AUTH_FIELDS: Record<string, { key: string; label: string; secret?: boolean
     { key: "key", label: "Key name" },
     { key: "value", label: "Value", secret: true },
   ],
-  oauth2: [
-    { key: "accessToken", label: "Access token", secret: true },
-    { key: "headerPrefix", label: "Header prefix" },
-  ],
+  oauth2: [], // OAuth2Form
 };
 
-export function AuthEditor({ auth, onChange }: { auth?: Auth; onChange: (a: Auth | undefined) => void }) {
+export function AuthEditor({ auth, onChange, context }: { auth?: Auth; onChange: (a: Auth | undefined) => void; context?: TokenContext }) {
   const type = auth?.type ?? "inherit";
   const params = auth?.params ?? {};
   const fields = AUTH_FIELDS[type];
@@ -359,7 +357,7 @@ export function AuthEditor({ auth, onChange }: { auth?: Auth; onChange: (a: Auth
           <option value="basic">Basic</option>
           <option value="bearer">Bearer token</option>
           <option value="apikey">API key</option>
-          <option value="oauth2">OAuth 2.0 (access token)</option>
+          <option value="oauth2">OAuth 2.0</option>
           {pluginAuths.length > 0 && (
             <optgroup label="Plugins">
               {pluginAuths.map((a) => (
@@ -379,6 +377,8 @@ export function AuthEditor({ auth, onChange }: { auth?: Auth; onChange: (a: Auth
         </>
       )}
       {type === "inherit" && <p className="muted">Uses the nearest auth set on a parent folder or the collection.</p>}
+      {type === "inherit" && context?.path && <TokenPanel context={context} inheritedOnly />}
+      {type === "oauth2" && <OAuth2Form params={params} onChange={(p) => onChange({ type, params: p })} context={context} />}
       {fields?.map((f) => (
         <label key={f.key} className="field-row">
           <span className="field-label">{f.label}</span>
@@ -402,7 +402,6 @@ export function AuthEditor({ auth, onChange }: { auth?: Auth; onChange: (a: Auth
           </select>
         </label>
       )}
-      {type === "oauth2" && <p className="muted">Fetching tokens (client credentials, auth code) arrives later. Paste a token for now.</p>}
     </div>
   );
 }
