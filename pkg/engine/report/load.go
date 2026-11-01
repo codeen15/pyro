@@ -314,6 +314,7 @@ const loadHTML = `<!doctype html>
 main{max-width:1100px;margin:0 auto;padding:32px 20px 56px}
 h1{margin:0;font-size:22px}h2{font-size:14px;margin:36px 0 10px;color:var(--muted)}
 .sub{color:var(--muted);margin:4px 0 0}
+.warn{margin:10px 0 0;padding:8px 12px;border:1px solid var(--rule);border-radius:4px;color:var(--text)}
 .status{display:inline-flex;gap:6px;align-items:center;font-weight:600;margin-left:10px;font-size:14px}
 .status.passed{color:var(--ok)}.status.failed,.status.aborted{color:var(--error)}.status.stopped{color:var(--warn)}
 .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1px;background:var(--rule);border:1px solid var(--rule);border-radius:4px;overflow:hidden;margin-top:24px}
@@ -342,6 +343,7 @@ footer{margin-top:48px;color:var(--faint);font-size:12px}
 </style></head><body><main>
 <h1>{{.R.Name}}<span class="status {{.R.Status}}">{{if eq .R.Status "passed"}}✓ Passed{{else if eq .R.Status "failed"}}✗ Failed{{else if eq .R.Status "aborted"}}✗ Aborted{{else}}■ Stopped{{end}}</span></h1>
 <p class="sub">Started {{.Started}} · ran {{.Duration}} · up to {{.R.MaxVUs}} virtual users{{if .R.Reason}} · {{.R.Reason}}{{end}}</p>
+{{range .R.Warnings}}<p class="warn">⚠ {{.}}</p>{{end}}
 
 <div class="kpis">
 <div class="kpi"><span>Requests</span><b>{{.Requests}}</b></div>
@@ -370,8 +372,8 @@ footer{margin-top:48px;color:var(--faint);font-size:12px}
 <p class="muted" style="font-size:12px">Swatches show the heat scale: cold steel &lt; 100 ms · ember 100–300 · cherry 300–600 · orange 600 ms–1 s · yellow 1–2 s · white &gt; 2 s.</p>
 
 {{if .R.Agents}}<h2>Agents</h2>
-<div class="scroll"><table><thead><tr><th>Agent</th><th class="n">Segment</th><th class="n">Max VUs</th><th class="n">Requests</th><th>State</th></tr></thead><tbody>
-{{$n := len .R.Agents}}{{range .R.Agents}}<tr><td class="mono">{{.Name}}</td><td class="n">{{inc .Segment}} of {{$n}}</td><td class="n">{{.VUs}}</td><td class="n">{{.Requests}}</td><td class="{{if eq .State "failed"}}fail{{end}}">{{if eq .State "failed"}}✗ failed{{if .Error}}: {{.Error}}{{end}}{{else}}✓ {{.State}}{{end}}</td></tr>{{end}}
+<div class="scroll"><table><thead><tr><th>Agent</th><th class="n">Segment</th><th class="n">Max VUs</th><th class="n">Requests</th><th class="n">Peak CPU</th><th>State</th></tr></thead><tbody>
+{{$n := len .R.Agents}}{{range .R.Agents}}<tr><td class="mono">{{.Name}}</td><td class="n">{{inc .Segment}} of {{$n}}</td><td class="n">{{.VUs}}</td><td class="n">{{.Requests}}</td><td class="n">{{pct .PeakCPU}}</td><td class="{{if eq .State "failed"}}fail{{end}}">{{if eq .State "failed"}}✗ failed{{if .Error}}: {{.Error}}{{end}}{{else}}✓ {{.State}}{{end}}</td></tr>{{end}}
 </tbody></table></div>
 <p class="muted" style="font-size:12px">Distributed test: each agent ran its segment of the plan; percentiles and thresholds above are computed from all agents' samples merged.</p>{{end}}
 

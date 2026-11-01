@@ -107,8 +107,16 @@ HDR histograms keyed by metric name and tags (`scenario`, `request`, `group`, `s
 | `group_duration` | trend | Per `group`. |
 | `vus` / `vus_max` | gauge | |
 | `data_sent` / `data_received` | counter | Bytes. |
-| `pyro_cpu` / `pyro_mem` (planned) | gauge | The load generator's own health. |
 | custom (planned) | any | `pyro.metrics.*` from scripts or plugins. |
+
+### Load generator health
+Every tick also records the load generator's own CPU use (process CPU time over the time
+GOMAXPROCS cores had available, so 100% means every usable core was busy) and memory; for
+distributed tests each agent reports its own. When a generator stays at 90% CPU or more for
+3 ticks, the result carries a warning (dashboard, CLI summary, HTML report): latencies then
+include time Pyro spent waiting for CPU, so use fewer VUs per machine, lighter scripts or
+more agents. The dashboard shows a CPU tile while a local test runs and a CPU column in the
+Agents table. CPU isn't measured on platforms other than Unix-likes and Windows.
 
 Results: the live dashboard (event WebSocket, one tick per second), saved runs in SQLite
 (summary plus every tick), `pyro load --json` / `--html`.
@@ -143,7 +151,8 @@ Series (every one labelled `test` and `run`; durations in seconds):
 `pyro_request_reqs_total`, `pyro_request_failed_total` and
 `pyro_request_duration_seconds{quantile="0.95|0.99"}` (labels `request`, `scenario`,
 `method`), and for distributed tests `pyro_agent_vus` and `pyro_agent_reqs_per_second`
-(label `agent`). Percentiles are per tick; the per-request ones are cumulative.
+(label `agent`), `pyro_generator_cpu_ratio`, `pyro_generator_memory_bytes` and
+`pyro_agent_cpu_ratio`. Percentiles are per tick; the per-request ones are cumulative.
 
 Writes happen off the test's own goroutines: a slow or unreachable backend never slows the
 test. Failed writes and dropped ticks are reported when the test ends. With `pyro serve`,

@@ -198,9 +198,16 @@ func (o *Output) points(b Batch) []Point {
 		add("pyro_request_duration_seconds", r.Duration.P95/1000, l("quantile", "0.95"))
 		add("pyro_request_duration_seconds", r.Duration.P99/1000, l("quantile", "0.99"))
 	}
+	if t.CPU >= 0 {
+		add("pyro_generator_cpu_ratio", t.CPU, base)
+	}
+	add("pyro_generator_memory_bytes", t.MemMB*(1<<20), base)
 	for _, a := range t.Agents {
 		add("pyro_agent_vus", float64(a.VUs), with("agent", a.Name))
 		add("pyro_agent_reqs_per_second", a.RPS, with("agent", a.Name))
+		if a.CPU >= 0 {
+			add("pyro_agent_cpu_ratio", a.CPU, with("agent", a.Name))
+		}
 	}
 	return out
 }

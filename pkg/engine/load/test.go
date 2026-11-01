@@ -80,6 +80,10 @@ type Tick struct {
 	WSMessagesPS float64           `json:"wsMessagesPerSecond,omitempty"`
 	Latency      Latency           `json:"latency"`
 	Thresholds   []ThresholdResult `json:"thresholds,omitempty"`
+	// CPU is this load generator's CPU use (0..1 of its usable cores) and
+	// MemMB its memory; for distributed tests, see each agent's instead.
+	CPU   float64 `json:"cpu"`
+	MemMB float64 `json:"memMB"`
 	// Agents is set for distributed tests.
 	Agents []AgentStatus `json:"agents,omitempty"`
 }
@@ -105,6 +109,8 @@ type Result struct {
 	Errors     []ErrorCount            `json:"errors"`
 	MaxVUs     int                     `json:"maxVUs"`
 	Agents     []AgentStatus           `json:"agents,omitempty"`
+	// Warnings are about the run itself (e.g. a CPU-bound load generator).
+	Warnings []string `json:"warnings,omitempty"`
 }
 
 // Test is a running load test.
@@ -121,6 +127,8 @@ type Test struct {
 	feeders  map[string]*feeder
 	workers  []*workerState
 	reported chan struct{} // a worker sent a report
+	cpu      *cpuSampler
+	sat      saturation
 
 	vuSeq     atomic.Int64
 	allocated atomic.Int64 // VUs created
@@ -214,9 +222,11 @@ func Prepare(p *Plan, opts Options) (*Test, error) {
 // Begin starts a prepared test in the background.
 func (t *Test) Begin() {
 	t.agg = metrics.NewAggregator()
-	if len(t.workers) > 0 {
-		t.agg.MinWindow = t.opts.TickInterval
-	}
+	t.cpu = newCPUSampler()
+	// The last tick covers a partial interval (in-flight requests finishing
+	// at stop, or agents' final reports); rating it over a full tick keeps
+	// it from drawing a spike.
+	t.agg.MinWindow = t.opts.TickInterval
 	if t.opts.OnReport != nil {
 		t.agg.TrackDeltas()
 	}
@@ -358,8 +368,12 @@ func (t *Test) tick() (abort bool) {
 	t.agg.Record(metrics.Sample{Metric: "vus", Value: float64(active)})
 	t.agg.Record(metrics.Sample{Metric: "vus_max", Value: float64(allocated)})
 	iv := t.agg.Flush()
+	cpu, mem := t.cpu.sample()
+	if len(t.workers) == 0 {
+		t.sat.observe(cpu)
+	}
 	if t.opts.OnReport != nil {
-		t.opts.OnReport(Report{Active: active, Allocated: allocated, Deltas: t.agg.TakeDelta(), Errors: t.errors.top(maxDistinct)})
+		t.opts.OnReport(Report{Active: active, Allocated: allocated, Deltas: t.agg.TakeDelta(), Errors: t.errors.top(maxDistinct), CPU: cpu, MemMB: mem})
 	}
 	results, abort := t.ths.evaluate(t.agg, time.Since(t.started))
 	reqs := iv.Metric("http_reqs")
@@ -376,6 +390,8 @@ func (t *Test) tick() (abort bool) {
 		WSMessagesPS: iv.Metric("ws_msgs_received").PerSecond,
 		Latency:      latencyOf(iv.Metric("http_req_duration")),
 		Thresholds:   results,
+		CPU:          cpu,
+		MemMB:        mem,
 		Agents:       t.agentStatus(max(iv.End.Sub(iv.Start), t.opts.TickInterval).Seconds()),
 	}
 	t.mu.Lock()
@@ -423,7 +439,7 @@ func (t *Test) finish() {
 		Name: t.plan.Name, Status: t.status, Reason: t.reason, StartedAt: t.started,
 		Duration: time.Since(t.started).Seconds(), Ticks: append([]Tick(nil), t.ticks...),
 		Metrics: t.agg.Totals(), Requests: t.agg.Requests(), Thresholds: results,
-		Errors: t.errorsTop(20), MaxVUs: t.maxVUs(), Agents: t.agentStatus(0),
+		Errors: t.errorsTop(20), MaxVUs: t.maxVUs(), Agents: t.agentStatus(0), Warnings: t.warnings(),
 	}
 	t.result = res
 	t.mu.Unlock()
@@ -582,6 +598,22 @@ func (e *errorCounter) top(n int) []ErrorCount {
 	}
 	if e.other > 0 {
 		out = append(out, ErrorCount{"(other distinct errors)", e.other})
+	}
+	return out
+}
+
+// warnings collects problems with the run itself.
+func (t *Test) warnings() []string {
+	var out []string
+	if w := t.sat.warning("This machine", t.opts.TickInterval); w != "" && t.opts.OnReport == nil {
+		out = append(out, w)
+	}
+	for _, ws := range t.workers {
+		ws.mu.Lock()
+		if w := ws.sat.warning("Agent "+ws.w.Name(), t.opts.TickInterval); w != "" {
+			out = append(out, w)
+		}
+		ws.mu.Unlock()
 	}
 	return out
 }

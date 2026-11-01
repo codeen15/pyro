@@ -2448,3 +2448,19 @@ fieldset legend {
   min-height: 140px;
   resize: vertical;
 }
+
+.run-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 12px 0 0;
+  padding: 8px 12px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r);
+  background: var(--warn-soft);
+}
+.run-warning svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--warn);
+}

@@ -312,14 +312,17 @@ func printLoadSummary(r *load.Result) {
 		}
 	}
 	if len(r.Agents) > 0 {
-		fmt.Println("\n  Agent                                     segment requests  VUs  state")
+		fmt.Println("\n  Agent                                     segment requests  VUs  peak CPU  state")
 		for _, a := range r.Agents {
 			state := a.State
 			if a.Error != "" {
 				state += ": " + a.Error
 			}
-			fmt.Printf("  %-40s %8d %8d %4d  %s\n", a.Name, a.Segment+1, a.Requests, a.VUs, state)
+			fmt.Printf("  %-40s %8d %8d %4d  %7.0f%%  %s\n", a.Name, a.Segment+1, a.Requests, a.VUs, a.PeakCPU*100, state)
 		}
+	}
+	for _, w := range r.Warnings {
+		fmt.Printf("\n  Warning: %s\n", w)
 	}
 	if len(r.Thresholds) > 0 {
 		fmt.Println("\n  Thresholds")

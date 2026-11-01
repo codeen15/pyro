@@ -26,6 +26,7 @@ interface State {
   totals?: Record<string, { value: number; perSecond?: number; p95?: number }>;
   maxVUs?: number;
   agents?: AgentStatus[];
+  warnings?: string[];
 }
 
 export function LoadRunPage({ id }: { id: string }) {
@@ -54,6 +55,7 @@ export function LoadRunPage({ id }: { id: string }) {
           totals: r.metrics,
           maxVUs: r.maxVUs,
           agents: r.agents,
+          warnings: r.warnings,
         };
       }
       return {
@@ -213,7 +215,19 @@ export function LoadRunPage({ id }: { id: string }) {
         {hasHTTP && <Kpi label="Requests" value={totalReqs.toLocaleString()} sub={`${totalFailed.toLocaleString()} failed (${totalReqs ? ((totalFailed / totalReqs) * 100).toFixed(2) : "0.00"}%)`} />}
         {charts.ws && <Kpi label="Stream messages per second" value={fmtValue(last?.wsMessagesPerSecond ?? 0, "")} />}
         {(last?.dropped ?? 0) > 0 && <Kpi label="Dropped iterations (last second)" value={String(last?.dropped)} sub="Not enough VUs for the arrival rate" />}
+        {running && !agents?.length && (last?.cpu ?? -1) >= 0 && (
+          <Kpi
+            label="Load generator CPU"
+            value={`${Math.round((last?.cpu ?? 0) * 100)}%`}
+            sub={(last?.cpu ?? 0) >= 0.9 ? "Saturated: latencies may include Pyro's own waiting" : `${Math.round(last?.memMB ?? 0)} MB memory`}
+          />
+        )}
       </div>
+      {st.warnings?.map((w) => (
+        <p key={w} className="run-warning" role="note">
+          <TriangleAlert size={14} aria-hidden /> {w}
+        </p>
+      ))}
 
       {st.thresholds.length > 0 && (
         <ul className="th-list" aria-label="Thresholds">
@@ -345,6 +359,7 @@ function AgentTable({ agents, running }: { agents: AgentStatus[]; running: boole
               <th className="num">{running ? "VUs" : "Max VUs"}</th>
               <th className="num">Requests</th>
               {running && <th className="num">req/s</th>}
+              <th className="num">{running ? "CPU" : "Peak CPU"}</th>
               <th>State</th>
             </tr>
           </thead>
@@ -360,6 +375,7 @@ function AgentTable({ agents, running }: { agents: AgentStatus[]; running: boole
                   <td className="num">{a.vus.toLocaleString()}</td>
                   <td className="num">{a.requests.toLocaleString()}</td>
                   {running && <td className="num">{(a.rps ?? 0).toFixed(1)}</td>}
+                  <td className="num">{(running ? a.cpu : a.peakCPU) >= 0 ? `${Math.round((running ? a.cpu : a.peakCPU) * 100)}%` : "–"}</td>
                   <td className={`agent-state is-${a.state}`}>
                     <s.icon size={13} aria-hidden /> {s.label}
                     {a.error && <span className="muted small"> · {a.error}</span>}

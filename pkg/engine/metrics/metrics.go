@@ -197,9 +197,8 @@ type Aggregator struct {
 	// TrackDeltas is on (agents ship it to a controller).
 	delta map[key]*series
 	// MinWindow is the shortest time an interval's per-second rates are
-	// computed over. Controllers set it to the tick interval: samples merged
-	// from agents arrive up to a tick late, so a short final interval would
-	// otherwise show a spike.
+	// computed over. Load tests set it to the tick interval, so a short final
+	// interval (or agents' late final reports) doesn't show a spike.
 	MinWindow time.Duration
 	start     time.Time
 	last      time.Time

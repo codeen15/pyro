@@ -56,6 +56,9 @@ type Report struct {
 	Deltas    []metrics.SeriesDelta `json:"deltas,omitempty"`
 	// Errors are cumulative counts.
 	Errors []ErrorCount `json:"errors,omitempty"`
+	// CPU (0..1) and MemMB are the worker's own load-generator health.
+	CPU   float64 `json:"cpu"`
+	MemMB float64 `json:"memMB"`
 }
 
 // AgentStatus is one worker's part of a distributed test.
@@ -67,6 +70,10 @@ type AgentStatus struct {
 	RPS      float64 `json:"rps,omitempty"` // in the last tick
 	State    string  `json:"state"`         // running | done | failed
 	Error    string  `json:"error,omitempty"`
+	// CPU (0..1) and MemMB are the latest reported; PeakCPU the highest.
+	CPU     float64 `json:"cpu"`
+	PeakCPU float64 `json:"peakCPU"`
+	MemMB   float64 `json:"memMB"`
 }
 
 // maxJobFiles caps the body files sent to each worker.
@@ -85,6 +92,9 @@ type workerState struct {
 	errors    []ErrorCount
 	state     string
 	err       string
+	cpu, mem  float64
+	peakCPU   float64
+	sat       saturation
 }
 
 func (w *workerState) vus() (int, int) {
@@ -99,6 +109,9 @@ func (w *workerState) apply(r Report) {
 	w.reports++
 	w.active, w.allocated = r.Active, max(w.allocated, r.Allocated)
 	w.errors = r.Errors
+	w.cpu, w.mem = r.CPU, r.MemMB
+	w.peakCPU = max(w.peakCPU, r.CPU)
+	w.sat.observe(r.CPU)
 	for _, d := range r.Deltas {
 		if d.Metric == "http_reqs" {
 			w.requests += int64(d.Sum)
@@ -252,7 +265,8 @@ func (t *Test) agentStatus(secs float64) []AgentStatus {
 	out := make([]AgentStatus, len(t.workers))
 	for i, ws := range t.workers {
 		ws.mu.Lock()
-		out[i] = AgentStatus{Name: ws.w.Name(), Segment: ws.segment, VUs: ws.active, Requests: ws.requests, State: ws.state, Error: ws.err}
+		out[i] = AgentStatus{Name: ws.w.Name(), Segment: ws.segment, VUs: ws.active, Requests: ws.requests, State: ws.state, Error: ws.err,
+			CPU: ws.cpu, PeakCPU: ws.peakCPU, MemMB: ws.mem}
 		if secs > 0 {
 			out[i].RPS = float64(ws.requests-ws.lastReqs) / secs
 			ws.lastReqs = ws.requests

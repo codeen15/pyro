@@ -298,6 +298,9 @@ export interface LoadTick {
   wsMessagesPerSecond?: number;
   latency: Latency;
   thresholds?: ThresholdResult[];
+  /** This load generator's CPU use (0..1 of its cores; -1 if unknown) and memory. */
+  cpu: number;
+  memMB: number;
   agents?: AgentStatus[];
 }
 
@@ -310,6 +313,9 @@ export interface AgentStatus {
   rps?: number;
   state: "running" | "done" | "failed";
   error?: string;
+  cpu: number;
+  peakCPU: number;
+  memMB: number;
 }
 
 export interface AgentInfo {
@@ -372,6 +378,7 @@ export interface LoadResult {
   errors: ErrorCount[] | null;
   maxVUs: number;
   agents?: AgentStatus[];
+  warnings?: string[];
 }
 
 export interface LiveSnapshot {
