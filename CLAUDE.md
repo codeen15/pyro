@@ -11,7 +11,7 @@ engine and serves a React web UI on localhost. **Current phase: 4 done → Phase
   `engine.go` is the send pipeline, `session.go` opens WS/SIO sessions; `vars/`, `auth/`, `check/` (assertions,
   extractors), `script/` (goja + pm.* shim, vendored chai), `runner/`, `report/` (JUnit, JSON, load HTML),
   `load/` (plans, executors, VUs, thresholds, segments and workers for distributed runs), `metrics/` (HDR histograms,
-  deltas), `agent/` (distributed load agents), `plugin/` (wazero host), `importer/postman/`,
+  deltas), `agent/` (distributed load agents), `output/` (InfluxDB, Prometheus, NDJSON/CSV live outputs), `plugin/` (wazero host), `importer/postman/`,
   `protocol/{httpdriver,wsdriver,sioclient}/`.
 - `internal/store`: workspace persistence (YAML files, path safety, atomic writes, `Import`)
 - `internal/history`: request history and saved load runs in SQLite (`~/.pyro/pyro.db`)

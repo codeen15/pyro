@@ -39,6 +39,8 @@ type Config struct {
 	Agents        []string
 	AgentToken    string
 	AgentInsecure bool
+	// Outputs stream every load test's live metrics (output.Open specs).
+	Outputs []string
 	// Token, when non-empty, is required on every /api request.
 	Token string
 	// UI is the built single-page app; nil disables UI serving.

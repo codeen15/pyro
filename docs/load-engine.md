@@ -110,9 +110,35 @@ HDR histograms keyed by metric name and tags (`scenario`, `request`, `group`, `s
 | `pyro_cpu` / `pyro_mem` (planned) | gauge | The load generator's own health. |
 | custom (planned) | any | `pyro.metrics.*` from scripts or plugins. |
 
-Outputs: the live dashboard (event WebSocket, one tick per second), saved runs in SQLite
-(summary plus every tick), `pyro load --json` / `--html`. Planned: an NDJSON raw-sample
-file and plugin sinks (Prometheus remote-write, InfluxDB).
+Results: the live dashboard (event WebSocket, one tick per second), saved runs in SQLite
+(summary plus every tick), `pyro load --json` / `--html`.
+
+### Live outputs
+`--out` / `-o` (repeatable) streams every tick to other systems, on `pyro load` and on
+`pyro serve` (for every test started from the UI):
+
+| Output | Example | Notes |
+|---|---|---|
+| InfluxDB 1.x | `-o influxdb=http://localhost:8086/write?db=pyro` | A bare `http://host:8086` means `/write?db=pyro`. |
+| InfluxDB 2.x | `-o influxdb=http://localhost:8086/api/v2/write?org=acme&bucket=load` | Token from `$PYRO_INFLUXDB_TOKEN`. |
+| Prometheus | `-o prometheus=http://localhost:9090/api/v1/write` | Remote write 1.0. Start Prometheus with `--web.enable-remote-write-receiver` (or use Mimir, Thanos, VictoriaMetrics…). |
+| JSON | `-o json=ticks.ndjson` | One object per tick: the tick plus the per-request table so far. |
+| CSV | `-o csv=ticks.csv` | One row per tick: VUs, requests, rates, latency percentiles, failing thresholds. |
+
+Series (every one labelled `test` and `run`; durations in seconds):
+`pyro_vus`, `pyro_vus_max`, `pyro_http_reqs_total`, `pyro_http_reqs_per_second`,
+`pyro_http_req_failed_ratio`, `pyro_http_req_duration_seconds{quantile="0.5|0.9|0.95|0.99|1"}`
+(1 is the max), `pyro_http_req_duration_seconds_avg`, `pyro_iterations_per_second`,
+`pyro_dropped_iterations`, `pyro_data_received_bytes_per_second`,
+`pyro_ws_msgs_received_per_second`, `pyro_threshold_passing{threshold}` (1/0), per request
+`pyro_request_reqs_total`, `pyro_request_failed_total` and
+`pyro_request_duration_seconds{quantile="0.95|0.99"}` (labels `request`, `scenario`,
+`method`), and for distributed tests `pyro_agent_vus` and `pyro_agent_reqs_per_second`
+(label `agent`). Percentiles are per tick; the per-request ones are cumulative.
+
+Writes happen off the test's own goroutines: a slow or unreachable backend never slows the
+test. Failed writes and dropped ticks are reported when the test ends. With `pyro serve`,
+file outputs are rewritten by each test.
 
 Accuracy: against a target that sleeps exactly 50 ms, 5000 VUs measured p95 52 ms and p99
 53 ms (the extra is the target's own timer and scheduling).

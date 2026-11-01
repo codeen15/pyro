@@ -103,7 +103,7 @@ func serveCmd() *cobra.Command {
 		host, wsDir   string
 		port          int
 		open, noTok   bool
-		agents        []string
+		agents, outs  []string
 		agentToken    string
 		agentInsecure bool
 	)
@@ -146,7 +146,7 @@ func serveCmd() *cobra.Command {
 			api := server.New(server.Config{
 				Workspace: ws, Engine: eng, History: hist, Token: token, UI: web.Dist(),
 				PluginIndex: os.Getenv("PYRO_PLUGIN_INDEX"),
-				Agents:      agents, AgentToken: agentToken, AgentInsecure: agentInsecure,
+				Agents:      agents, AgentToken: agentToken, AgentInsecure: agentInsecure, Outputs: outs,
 			})
 			defer api.Close()
 			srv := &http.Server{
@@ -188,6 +188,7 @@ func serveCmd() *cobra.Command {
 	cmd.Flags().StringVarP(&wsDir, "workspace", "w", "", "workspace directory (default: ./ if it has pyro.yaml, else ~/.pyro/workspace)")
 	cmd.Flags().BoolVar(&open, "open", false, "open the UI in a browser")
 	cmd.Flags().BoolVar(&noTok, "no-token", false, "disable the session token (loopback only; for development)")
+	cmd.Flags().StringArrayVarP(&outs, "out", "o", nil, "stream every load test's live metrics: influxdb=URL, prometheus=URL, json=FILE, csv=FILE")
 	cmd.Flags().StringSliceVar(&agents, "agent", nil, "load agents for distributed tests (host:port; repeat or comma-separate)")
 	cmd.Flags().StringVar(&agentToken, "agent-token", "", "token for the agents (default: $PYRO_AGENT_TOKEN)")
 	cmd.Flags().BoolVar(&agentInsecure, "agent-insecure", false, "skip TLS certificate verification for https agents")

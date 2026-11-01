@@ -7,12 +7,15 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/pyrohq/pyro/internal/store"
 	"github.com/pyrohq/pyro/pkg/engine/load"
+	"github.com/pyrohq/pyro/pkg/engine/metrics"
+	"github.com/pyrohq/pyro/pkg/engine/output"
 	"github.com/pyrohq/pyro/pkg/engine/report"
 )
 
@@ -20,7 +23,7 @@ func loadCmd() *cobra.Command {
 	var (
 		wsDir, envName, jsonOut, htmlOut string
 		agentToken                       string
-		agents                           []string
+		agents, outs                     []string
 		maxVUs                           int
 		yes, insecure, quiet             bool
 		agentInsecure                    bool
@@ -33,6 +36,7 @@ func loadCmd() *cobra.Command {
 			"Before sending traffic to hosts that are not loopback or listed under\n" +
 			"loadAllowHosts in pyro.yaml, Pyro asks for confirmation (--yes skips it).",
 		Example: "  pyro load checkout-stress -e staging --html report.html\n  pyro load ./plans/smoke.load.yaml --yes\n" +
+			"  pyro load checkout-stress -o influxdb=http://localhost:8086/write?db=pyro -o csv=ticks.csv\n" +
 			"  pyro load checkout-stress --agent 10.0.0.5:7979 --agent 10.0.0.6:7979 --agent-token s3cret",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -76,8 +80,22 @@ func loadCmd() *cobra.Command {
 				}
 			}
 
+			sinks, err := output.OpenAll(outs, plan.Name, time.Now().Format("20060102-150405"))
+			if err != nil {
+				return err
+			}
 			live := newLiveLine(quiet)
-			opts.OnTick = live.tick
+			var started atomic.Pointer[load.Test]
+			opts.OnTick = func(t load.Tick) {
+				live.tick(t)
+				if len(sinks) > 0 {
+					var reqs []metrics.RequestStat
+					if lt := started.Load(); lt != nil {
+						reqs, _ = lt.Snapshot()
+					}
+					sinks.Tick(t, reqs)
+				}
+			}
 			where := ""
 			if len(agents) > 0 {
 				where = fmt.Sprintf(" on %d agents", len(agents))
@@ -85,8 +103,10 @@ func loadCmd() *cobra.Command {
 			fmt.Printf("Load test %q: %d scenario(s), up to %d VUs%s\n", plan.Name, len(plan.Scenarios), load.PeakVUs(plan), where)
 			test, err := load.Start(plan, opts)
 			if err != nil {
+				sinks.Close()
 				return err
 			}
+			started.Store(test)
 			sigs := make(chan os.Signal, 2)
 			signal.Notify(sigs, os.Interrupt)
 			defer signal.Stop(sigs)
@@ -100,6 +120,9 @@ func loadCmd() *cobra.Command {
 			}()
 			res := test.Wait()
 			live.done()
+			if err := sinks.Close(); err != nil {
+				fmt.Fprintln(os.Stderr, "Warning:", err)
+			}
 			printLoadSummary(res)
 
 			if jsonOut != "" {
@@ -136,6 +159,7 @@ func loadCmd() *cobra.Command {
 	f.BoolVarP(&quiet, "quiet", "q", false, "no live progress line")
 	f.StringVar(&jsonOut, "json", "", "write the full result as JSON")
 	f.StringVar(&htmlOut, "html", "", "write a self-contained HTML report")
+	f.StringArrayVarP(&outs, "out", "o", nil, "stream live metrics: influxdb=URL, prometheus=URL, json=FILE or csv=FILE (repeatable)")
 	f.StringSliceVar(&agents, "agent", nil, "run distributed on these agents (host:port; repeat or comma-separate)")
 	f.StringVar(&agentToken, "agent-token", "", "token for the agents (default: $PYRO_AGENT_TOKEN)")
 	f.BoolVar(&agentInsecure, "agent-insecure", false, "skip TLS certificate verification for https agents")

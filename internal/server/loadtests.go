@@ -16,6 +16,7 @@ import (
 	"github.com/pyrohq/pyro/pkg/engine/agent"
 	"github.com/pyrohq/pyro/pkg/engine/load"
 	"github.com/pyrohq/pyro/pkg/engine/metrics"
+	"github.com/pyrohq/pyro/pkg/engine/output"
 	"github.com/pyrohq/pyro/pkg/engine/report"
 )
 
@@ -178,6 +179,12 @@ func (s *Server) startLoadTest(w http.ResponseWriter, r *http.Request) {
 	}
 	id := newID()
 	topic := "load:" + id
+	sinks, err := output.OpenAll(s.cfg.Outputs, plan.Name, id)
+	if err != nil {
+		s.loads.mu.Unlock()
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 	// The first tick can fire before Start returns, so publish through an
 	// atomic pointer rather than the variable being assigned.
 	var started atomic.Pointer[load.Test]
@@ -185,10 +192,12 @@ func (s *Server) startLoadTest(w http.ResponseWriter, r *http.Request) {
 		if lt := started.Load(); lt != nil {
 			reqs, errs := lt.Snapshot()
 			s.hub.publish(topic, "tick", liveSnapshot{t, reqs, errs})
+			sinks.Tick(t, reqs)
 		}
 	}
 	test, err := load.Start(plan, opts)
 	if err != nil {
+		sinks.Close()
 		s.loads.mu.Unlock()
 		writeError(w, http.StatusUnprocessableEntity, err.Error())
 		return
@@ -201,6 +210,9 @@ func (s *Server) startLoadTest(w http.ResponseWriter, r *http.Request) {
 
 	go func() {
 		res := test.Wait()
+		if err := sinks.Close(); err != nil {
+			s.log.Warn("load test outputs", "err", err)
+		}
 		if s.cfg.History != nil {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			if err := s.cfg.History.AddLoadRun(ctx, s.ws.Root, id, name, res); err != nil {
