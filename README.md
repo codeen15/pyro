@@ -1,8 +1,8 @@
 # Pyro
 
-An API client (REST, WebSocket, Socket.IO, Postman import) and load-testing
-tool (stress, spike, soak, concurrency) with WASM plugins, in a single binary
-that serves a web UI.
+An API client (REST, WebSocket, Socket.IO; import from Postman, OpenAPI, HAR and
+cURL, export to Postman) and load-testing tool (stress, spike, soak, concurrency;
+distributed across agents) with WASM plugins, in a single binary that serves a web UI.
 
 Design docs: [`docs/`](docs/) (start with [architecture](docs/architecture.md) and [roadmap](docs/roadmap.md)).
 
@@ -20,10 +20,13 @@ example collection. To use a workspace in a project directory:
 
 ```sh
 pyro init my-api --sample
-pyro import -w my-api ~/Downloads/my-collection.postman_collection.json
+pyro import -w my-api ~/Downloads/my-collection.postman_collection.json   # or openapi.yaml, a .har, cURL
 pyro serve -w my-api
 pyro run my-collection -w my-api -e staging --junit results.xml   # CI
 pyro load checkout-stress -w my-api -e staging --html report.html  # load test
+pyro load checkout-stress -w my-api --agent 10.0.0.5:7979 --agent 10.0.0.6:7979 --agent-token s3cret  # distributed (pyro agent on each)
+pyro load checkout-stress -w my-api -o prometheus=http://localhost:9090/api/v1/write  # stream metrics
+pyro export my-collection -w my-api -o my-collection.postman_collection.json
 make plugins && pyro plugin install plugins/dist/tcp-0.1.0.pyro-plugin --yes  # raw TCP requests
 ```
 
@@ -42,9 +45,9 @@ make test      # go vet + go test + UI typecheck
 
 | Path | What |
 |---|---|
-| `cmd/pyro` | CLI (`serve`, `init`, `import`, `run`, `load`, `plugin`, `version`) |
+| `cmd/pyro` | CLI (`serve`, `init`, `import`, `export`, `run`, `load`, `agent`, `plugin`, `version`) |
 | `pkg/engine/model` | Protocol-agnostic data model shared by all modes |
-| `pkg/engine` | Send pipeline, scripts (pm.*), assertions, runner, load engine, metrics, reports, HTTP/WebSocket/Socket.IO, Postman importer |
+| `pkg/engine` | Send pipeline, scripts (pm.*), assertions, runner, load engine, distributed agents, metrics and live outputs, reports, HTTP/WebSocket/Socket.IO, importers (Postman, OpenAPI, HAR, cURL), Postman exporter |
 | `internal/store` | Workspace persistence as git-friendly YAML |
 | `internal/history` | Request history (SQLite) |
 | `internal/server` | REST API under `/api/v1`, embedded SPA |

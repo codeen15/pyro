@@ -2,7 +2,7 @@
 
 Pyro is an API client (REST, WebSocket, Socket.IO, Postman import) and load-testing
 tool (stress, spike, soak, concurrency) with WASM plugins. A single Go binary runs the
-engine and serves a React web UI on localhost. **Current phase: 4 done → Phase 5 (scale & polish) next**
+engine and serves a React web UI on localhost. **Current phase: 5 (scale & polish) done; all planned phases complete**
 (see `docs/roadmap.md`). Product context: `PRODUCT.md`; visual system: `DESIGN.md`.
 
 ## Layout
@@ -39,8 +39,10 @@ make dev-ui       # Vite on :5173, proxies /api
 - Store errors are `store.ErrNotFound`, `ErrInvalidPath` and `ErrExists`; the server maps them to 404/400/409.
 - Tests use in-process servers (`httptest`, `t.TempDir()` workspaces); no network. Socket.IO conformance against the
   real Node server: `pkg/engine/protocol/sioclient/testdata/server.js` + `PYRO_SIO_URL`.
-- Server pushes live data over `/api/v1/events` (topics `session:<id>`, `run:<id>`); clients subscribe, then fetch
-  state once and merge.
+- Server pushes live data over `/api/v1/events` (topics `session:<id>`, `run:<id>`, `load:<id>`); clients subscribe,
+  then fetch state once and merge.
+- Distributed load tests: agents send metric deltas (`metrics.SeriesDelta`), never summaries, so the controller's
+  percentiles stay exact. Agent tests run in-process (`httptest` agents); `pkg/engine/load` tests use an in-memory worker.
 - No CGO: dependencies must be pure Go. Builds use `CGO_ENABLED=0`.
 - Plugin tests build the example plugins with `GOOS=wasip1` (needs only the Go toolchain); the plugin package under
   `-race` takes ~100 s because wazero compiles slowly with race instrumentation.
