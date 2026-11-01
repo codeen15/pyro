@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -28,8 +29,9 @@ import (
 	"github.com/pyrohq/pyro/internal/store"
 	"github.com/pyrohq/pyro/internal/version"
 	"github.com/pyrohq/pyro/pkg/engine"
+	exportpm "github.com/pyrohq/pyro/pkg/engine/exporter/postman"
 	"github.com/pyrohq/pyro/pkg/engine/importer"
-	"github.com/pyrohq/pyro/pkg/engine/importer/postman"
+	"github.com/pyrohq/pyro/pkg/engine/importer/auto"
 	"github.com/pyrohq/pyro/pkg/engine/protocol/httpdriver"
 	"github.com/pyrohq/pyro/web"
 )
@@ -50,7 +52,7 @@ func rootCmd() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
-	root.AddCommand(serveCmd(), initCmd(), importCmd(), runCmd(), loadCmd(), agentCmd(), pluginCmd(), versionCmd())
+	root.AddCommand(serveCmd(), initCmd(), importCmd(), exportCmd(), runCmd(), loadCmd(), agentCmd(), pluginCmd(), versionCmd())
 	return root
 }
 
@@ -235,11 +237,17 @@ func openHistory() (*history.Store, error) {
 }
 
 func importCmd() *cobra.Command {
-	var wsDir, reportFile string
+	var wsDir, reportFile, into string
 	cmd := &cobra.Command{
-		Use:   "import <file.json>...",
-		Short: "Import Postman collections or environments into a workspace",
-		Args:  cobra.MinimumNArgs(1),
+		Use:   "import <file>...",
+		Short: "Import Postman, OpenAPI/Swagger, HAR or cURL into a workspace",
+		Long: "Imports Postman collections and environments (v2.0/v2.1), OpenAPI 3.x and Swagger 2.0\n" +
+			"definitions (JSON or YAML), HAR recordings and cURL commands. The format is detected.\n" +
+			"Each file becomes a new collection unless --into names an existing collection or folder.\n" +
+			"Use - to read from standard input (handy for a copied cURL command).",
+		Example: "  pyro import shop.postman_collection.json staging.postman_environment.json\n" +
+			"  pyro import openapi.yaml\n  pbpaste | pyro import - --into shop",
+		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ws, err := openWorkspace(wsDir)
 			if err != nil {
@@ -247,15 +255,29 @@ func importCmd() *cobra.Command {
 			}
 			var reports []*importer.Report
 			for _, file := range args {
-				data, err := os.ReadFile(file)
+				var data []byte
+				if file == "-" {
+					data, err = io.ReadAll(os.Stdin)
+				} else {
+					data, err = os.ReadFile(file)
+				}
 				if err != nil {
 					return err
 				}
-				bundle, err := postman.Parse(data)
+				name := file
+				if file == "-" {
+					name = ""
+				}
+				bundle, err := auto.Parse(name, data)
 				if err != nil {
 					return fmt.Errorf("%s: %w", file, err)
 				}
-				rep, err := ws.Import(bundle)
+				var rep *importer.Report
+				if into != "" {
+					rep, err = ws.ImportInto(into, bundle)
+				} else {
+					rep, err = ws.Import(bundle)
+				}
 				if err != nil {
 					return fmt.Errorf("%s: %w", file, err)
 				}
@@ -271,12 +293,77 @@ func importCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVarP(&wsDir, "workspace", "w", "", "workspace directory (same default as serve)")
 	cmd.Flags().StringVar(&reportFile, "report", "", "write the import report(s) as JSON to this file")
+	cmd.Flags().StringVar(&into, "into", "", "add the requests to this existing collection or folder")
+	return cmd
+}
+
+func exportCmd() *cobra.Command {
+	var wsDir, out, envName string
+	cmd := &cobra.Command{
+		Use:   "export [collection]",
+		Short: "Export a collection or environment as Postman v2.1 JSON",
+		Long: "Writes a collection as a Postman Collection v2.1 file (assertions and extractors become\n" +
+			"test scripts; WebSocket, Socket.IO and plugin requests are left out and reported),\n" +
+			"or an environment with --environment.",
+		Example: "  pyro export shop -o shop.postman_collection.json\n  pyro export -e staging -o staging.postman_environment.json",
+		Args:    cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ws, err := openWorkspace(wsDir)
+			if err != nil {
+				return err
+			}
+			var data []byte
+			switch {
+			case envName != "" && len(args) == 0:
+				env, err := ws.ReadEnvironment(envName)
+				if err != nil {
+					return fmt.Errorf("environment %q: %w", envName, err)
+				}
+				if env.Name == "" {
+					env.Name = envName
+				}
+				if data, err = exportpm.ExportEnvironment(env); err != nil {
+					return err
+				}
+			case len(args) == 1 && envName == "":
+				b, err := ws.Snapshot(args[0])
+				if err != nil {
+					return err
+				}
+				var rep *importer.Report
+				if data, rep, err = exportpm.Export(b); err != nil {
+					return err
+				}
+				fmt.Fprintf(os.Stderr, "%s: %d requests, %d folders\n", args[0], rep.Requests, rep.Folders)
+				for _, w := range rep.Warnings {
+					where := w.Path
+					if where == "" {
+						where = "(collection)"
+					}
+					fmt.Fprintf(os.Stderr, "  %-28s %s: %s\n", where, w.Code, w.Detail)
+				}
+			default:
+				return errors.New("give a collection, or --environment, not both")
+			}
+			if out == "" || out == "-" {
+				_, err = os.Stdout.Write(data)
+				return err
+			}
+			return os.WriteFile(out, data, 0o644)
+		},
+	}
+	cmd.Flags().StringVarP(&wsDir, "workspace", "w", "", "workspace directory (same default as serve)")
+	cmd.Flags().StringVarP(&out, "output", "o", "", "file to write (default: standard output)")
+	cmd.Flags().StringVarP(&envName, "environment", "e", "", "export this environment instead of a collection")
 	return cmd
 }
 
 func printReport(file string, r *importer.Report) {
 	fmt.Printf("%s (%s)\n", file, r.Format)
-	if r.Slug != "" {
+	switch {
+	case r.Into:
+		fmt.Printf("  added        %d requests, %d folders -> collections/%s\n", r.Requests, r.Folders, r.Slug)
+	case r.Slug != "":
 		fmt.Printf("  collection   %q -> collections/%s (%d requests, %d folders)\n", r.Collection, r.Slug, r.Requests, r.Folders)
 	}
 	for _, e := range r.Environments {

@@ -1,0 +1,95 @@
+openapi: 3.0.3
+info:
+  title: Shop API
+  description: Orders and products.
+  version: "1.2"
+servers:
+  - url: https://{region}.shop.test/v1
+    variables:
+      region: { default: eu }
+  - url: https://staging.shop.test/v1
+tags:
+  - name: products
+    description: Catalogue
+  - name: orders
+security:
+  - bearerAuth: []
+paths:
+  /orders/{orderId}:
+    parameters:
+      - name: orderId
+        in: path
+        required: true
+        schema: { type: string, example: ord_42 }
+    get:
+      tags: [orders]
+      operationId: getOrder
+      summary: Get an order
+      parameters:
+        - { name: expand, in: query, schema: { type: string, enum: [items, customer] } }
+        - { name: X-Request-Id, in: header, required: true, schema: { type: string, format: uuid } }
+        - { name: Accept, in: header, schema: { type: string } }
+    delete:
+      tags: [orders]
+      operationId: deleteOrder
+      security: []
+  /orders:
+    post:
+      tags: [orders]
+      operationId: createOrder
+      summary: Create an order
+      requestBody:
+        $ref: '#/components/requestBodies/NewOrder'
+  /products:
+    get:
+      tags: [products]
+      summary: List products
+      security:
+        - apiKey: []
+      parameters:
+        - { name: limit, in: query, required: true, schema: { type: integer, default: 20 } }
+        - { name: session, in: cookie, schema: { type: string } }
+  /products/{id}/image:
+    put:
+      tags: [products]
+      operationId: uploadImage
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+                caption: { type: string, example: Front }
+  /health:
+    get:
+      summary: Health
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer }
+    apiKey: { type: apiKey, in: header, name: X-API-Key }
+  requestBodies:
+    NewOrder:
+      content:
+        application/xml:
+          schema: { type: object }
+        application/json:
+          schema: { $ref: '#/components/schemas/Order' }
+  schemas:
+    Order:
+      allOf:
+        - $ref: '#/components/schemas/Base'
+        - type: object
+          properties:
+            sku: { type: string, example: A-1 }
+            qty: { type: integer, minimum: 1 }
+            placedAt: { type: string, format: date-time }
+            lines:
+              type: array
+              items: { $ref: '#/components/schemas/Order' }
+    Base:
+      type: object
+      properties:
+        id: { type: string, readOnly: true }
+        note: { type: string }

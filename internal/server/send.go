@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -9,7 +10,9 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/pyrohq/pyro/pkg/engine"
-	"github.com/pyrohq/pyro/pkg/engine/importer/postman"
+	exportpm "github.com/pyrohq/pyro/pkg/engine/exporter/postman"
+	"github.com/pyrohq/pyro/pkg/engine/importer"
+	"github.com/pyrohq/pyro/pkg/engine/importer/auto"
 	"github.com/pyrohq/pyro/pkg/engine/model"
 )
 
@@ -129,15 +132,61 @@ func (s *Server) importFile(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	bundle, err := postman.Parse(data)
+	bundle, err := auto.Parse(r.URL.Query().Get("filename"), data)
 	if err != nil {
 		writeError(w, http.StatusUnprocessableEntity, err.Error())
 		return
 	}
-	rep, err := s.ws.Import(bundle)
+	var rep *importer.Report
+	if into := r.URL.Query().Get("into"); into != "" {
+		rep, err = s.ws.ImportInto(into, bundle)
+	} else {
+		rep, err = s.ws.Import(bundle)
+	}
 	if err != nil {
 		s.fail(w, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, rep)
+}
+
+type exportView struct {
+	Filename string           `json:"filename"`
+	Content  json.RawMessage  `json:"content"`
+	Report   *importer.Report `json:"report,omitempty"`
+}
+
+// exportCollection returns a collection as Postman v2.1 JSON.
+func (s *Server) exportCollection(w http.ResponseWriter, r *http.Request) {
+	slug := chi.URLParam(r, "slug")
+	b, err := s.ws.Snapshot(slug)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	out, rep, err := exportpm.Export(b)
+	if err != nil {
+		writeError(w, http.StatusUnprocessableEntity, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, exportView{Filename: slug + ".postman_collection.json", Content: out, Report: rep})
+}
+
+// exportEnvironment returns an environment as Postman environment JSON.
+func (s *Server) exportEnvironment(w http.ResponseWriter, r *http.Request) {
+	name := chi.URLParam(r, "name")
+	env, err := s.ws.ReadEnvironment(name)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	if env.Name == "" {
+		env.Name = name
+	}
+	out, err := exportpm.ExportEnvironment(env)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, exportView{Filename: name + ".postman_environment.json", Content: out})
 }

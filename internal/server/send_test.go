@@ -96,6 +96,35 @@ func TestImport(t *testing.T) {
 	if res, _ := do(t, ts, "POST", "/api/v1/import", `{"foo":1}`, true); res.StatusCode != http.StatusUnprocessableEntity {
 		t.Fatalf("bad import: %d", res.StatusCode)
 	}
+
+	// cURL into an existing collection.
+	res, body = do(t, ts, "POST", "/api/v1/import?into=shop-api&filename=x.sh", `curl -X POST https://shop.test/carts -d '{"a":1}'`, true)
+	if res.StatusCode != http.StatusCreated || !strings.Contains(body, `"format":"curl"`) || !strings.Contains(body, `"slug":"shop-api"`) {
+		t.Fatalf("curl into: %d %s", res.StatusCode, body)
+	}
+	if res, body := do(t, ts, "GET", "/api/v1/requests/shop-api/post-shop-test-carts", "", true); res.StatusCode != 200 || !strings.Contains(body, `"method":"POST"`) {
+		t.Fatalf("curl request: %d %s", res.StatusCode, body)
+	}
+
+	// Export back to Postman.
+	res, body = do(t, ts, "GET", "/api/v1/collections/shop-api/export", "", true)
+	var ex struct {
+		Filename string
+		Content  struct {
+			Info struct{ Schema string }
+			Item []json.RawMessage
+		}
+		Report struct{ Requests int }
+	}
+	if err := json.Unmarshal([]byte(body), &ex); err != nil || res.StatusCode != 200 {
+		t.Fatalf("export: %d %v %s", res.StatusCode, err, body)
+	}
+	if ex.Filename != "shop-api.postman_collection.json" || !strings.Contains(ex.Content.Info.Schema, "v2.1.0") || ex.Report.Requests != 7 {
+		t.Fatalf("export: %+v", ex)
+	}
+	if res, _ := do(t, ts, "GET", "/api/v1/collections/nope/export", "", true); res.StatusCode != 404 {
+		t.Fatalf("export missing: %d", res.StatusCode)
+	}
 }
 
 func TestSessionVariablesCarryAcrossSends(t *testing.T) {

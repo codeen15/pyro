@@ -274,3 +274,51 @@ func TestLoadTests(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestImportInto(t *testing.T) {
+	ws := newWorkspace(t)
+	ws.WriteRequest("payments/list", &model.Request{Kind: model.KindHTTP, Name: "List"})
+	c, _ := ws.ReadCollection("payments")
+	c.Variables = []model.Variable{{Key: "baseUrl", Value: "https://keep.test"}}
+	c.Order = []string{"list"}
+	ws.WriteCollection("payments", c)
+
+	bearer := &model.Auth{Type: "bearer", Params: map[string]string{"token": "{{t}}"}}
+	b := &importer.Bundle{
+		Collection: &model.Collection{Name: "API", Auth: bearer, Variables: []model.Variable{{Key: "baseUrl", Value: "https://new.test"}, {Key: "t"}}},
+		Folders:    map[string]*model.Collection{"admin": {Name: "Admin", Auth: &model.Auth{Type: "none"}}},
+		Requests: []importer.Request{
+			{Path: "list", Request: &model.Request{Kind: model.KindHTTP, Name: "List again"}},
+			{Path: "admin/purge", Request: &model.Request{Kind: model.KindHTTP, Name: "Purge"}},
+		},
+		Report: importer.Report{Format: "openapi-3.0.0"},
+	}
+	rep, err := ws.ImportInto("payments", b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.Slug != "payments" {
+		t.Errorf("slug %q", rep.Slug)
+	}
+	moved, err := ws.ReadRequest("payments/list-2")
+	if err != nil || moved.Auth == nil || moved.Auth.Type != "bearer" {
+		t.Fatalf("list-2: %+v %v (should carry the bundle's collection auth)", moved, err)
+	}
+	purge, err := ws.ReadRequest("payments/admin/purge")
+	if err != nil || purge.Auth != nil {
+		t.Fatalf("purge inherits its folder's auth: %+v %v", purge, err)
+	}
+	c, _ = ws.ReadCollection("payments")
+	if len(c.Variables) != 2 || c.Variables[0].Value != "https://keep.test" || c.Variables[1].Key != "t" {
+		t.Errorf("variables %+v", c.Variables)
+	}
+	if !reflect.DeepEqual(c.Order, []string{"list", "list-2", "admin"}) {
+		t.Errorf("order %v", c.Order)
+	}
+	if _, err := ws.ImportInto("nope", b); !errors.Is(err, ErrNotFound) {
+		t.Errorf("missing target: %v", err)
+	}
+	if _, err := ws.ImportInto("payments", &importer.Bundle{Environments: []*model.Environment{{Name: "x"}}}); err == nil {
+		t.Error("environment-only bundle accepted")
+	}
+}

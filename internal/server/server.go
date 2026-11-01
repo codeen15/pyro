@@ -105,6 +105,7 @@ func (s *Server) Handler() http.Handler {
 		r.Post("/collections", s.createCollection)
 		r.Get("/collections/{slug}", s.getCollection)
 		r.Put("/collections/{slug}", s.putCollection)
+		r.Get("/collections/{slug}/export", s.exportCollection)
 
 		r.Get("/requests/*", s.getRequest)
 		r.Put("/requests/*", s.putRequest)
@@ -114,6 +115,7 @@ func (s *Server) Handler() http.Handler {
 		r.Get("/environments/{name}", s.getEnvironment)
 		r.Put("/environments/{name}", s.putEnvironment)
 		r.Delete("/environments/{name}", s.deleteEnvironment)
+		r.Get("/environments/{name}/export", s.exportEnvironment)
 
 		r.Post("/send", s.send)
 		r.Get("/history", s.listHistory)

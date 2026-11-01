@@ -52,7 +52,8 @@
 | Metrics | `pkg/engine/metrics` | ✅ Phase 3 | Per-VU buffers → HDR histograms (cumulative per series, per-interval per metric); deltas for merging across agents. |
 | Distributed agents | `pkg/engine/agent` | ✅ Phase 5 | `pyro agent` server and the controller's client (`load.Worker`); see [load-engine.md](load-engine.md#distributed-tests) and [ADR 0006](adr/0006-agents-over-websocket.md). |
 | Plugin host | `pkg/engine/plugin` | ✅ Phase 4 | wazero runtime, ABI v1 (JSON), capabilities, install/approve, index. See [plugins.md](plugins.md). |
-| Importers | `pkg/engine/importer/postman` | ✅ Phase 1 | See [postman-import.md](postman-import.md). |
+| Importers | `pkg/engine/importer/{postman,openapi,har,curl,auto}` | ✅ Phase 1, 5 | Postman (Phase 1); OpenAPI/Swagger, HAR, cURL and format detection (Phase 5). See [postman-import.md](postman-import.md), [import-export.md](import-export.md). |
+| Exporters | `pkg/engine/exporter/postman` | ✅ Phase 5 | Postman v2.1 collections and environments. See [import-export.md](import-export.md). |
 | Live outputs | `pkg/engine/output` | ✅ Phase 5 | InfluxDB line protocol, Prometheus remote write, per-tick NDJSON/CSV (`--out`). |
 | Reporters | `pkg/engine/report` | ✅ JUnit, JSON (runs); HTML, JSON (load) | Reports for CI; CSV planned. |
 

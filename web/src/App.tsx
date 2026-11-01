@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { CircleCheck, FileInput, TriangleAlert, X } from "lucide-react";
 import { api, ApiError, type ImportReport } from "./api";
 import { useApp } from "./store";
@@ -12,18 +12,20 @@ import { LoadTestPage, NewLoadTest } from "./components/LoadTest";
 import { LoadRunPage } from "./components/LoadRun";
 import { CompareRunsPage } from "./components/CompareRuns";
 import { InstallPlugin, PluginPage } from "./components/Plugins";
+import { ImportPage } from "./components/ImportPage";
 
 export function App() {
   const health = useQuery({ queryKey: ["health"], queryFn: api.health, refetchInterval: 10_000 });
   const ws = useQuery({ queryKey: ["workspace"], queryFn: api.workspace });
   const selected = useApp((s) => s.selected);
-  const [report, setReport] = useState<ImportReport | null>(null);
+  const report = useApp((s) => s.report);
+  const setReport = useApp((s) => s.setReport);
 
   const unauthorized = ws.error instanceof ApiError && ws.error.status === 401;
 
   return (
     <div className="shell">
-      <TopBar workspace={ws.data?.name} onImported={setReport} />
+      <TopBar workspace={ws.data?.name} />
       <Sidebar ws={ws.data} />
       <main className="main">
         {unauthorized ? (
@@ -33,7 +35,9 @@ export function App() {
         ) : ws.error ? (
           <Blocker title="Couldn't load the workspace">{ws.error.message}</Blocker>
         ) : report ? (
-          <ImportResult report={report} onClose={() => setReport(null)} />
+          <ImportResult report={report.data} mode={report.mode} onClose={() => setReport(null)} />
+        ) : selected === "import" ? (
+          <ImportPage />
         ) : selected === "plugins:install" ? (
           <InstallPlugin />
         ) : selected?.startsWith("plugin:") ? (
@@ -65,46 +69,21 @@ export function App() {
   );
 }
 
-function TopBar({ workspace, onImported }: { workspace?: string; onImported: (r: ImportReport) => void }) {
-  const qc = useQueryClient();
+function TopBar({ workspace }: { workspace?: string }) {
   const envs = useQuery({ queryKey: ["environments"], queryFn: api.environments });
   const environment = useApp((s) => s.environment);
   const setEnvironment = useApp((s) => s.setEnvironment);
-  const fileRef = useRef<HTMLInputElement>(null);
-  const [importing, setImporting] = useState(false);
-  const [importError, setImportError] = useState<string | null>(null);
+  const select = useApp((s) => s.select);
+  const setReport = useApp((s) => s.setReport);
 
   // A remembered environment may have been deleted on disk since.
   const envValue = environment && envs.data?.includes(environment) ? environment : "";
-
-  const onFile = async (file: File) => {
-    setImporting(true);
-    setImportError(null);
-    try {
-      const report = await api.importFile(await file.text());
-      await Promise.all([qc.invalidateQueries({ queryKey: ["workspace"] }), qc.invalidateQueries({ queryKey: ["environments"] })]);
-      onImported(report);
-    } catch (e) {
-      setImportError(`${file.name}: ${(e as Error).message}`);
-    } finally {
-      setImporting(false);
-      if (fileRef.current) fileRef.current.value = "";
-    }
-  };
 
   return (
     <header className="topbar">
       <span className="brand">Pyro</span>
       {workspace && <span className="ws-name">{workspace}</span>}
       <div className="topbar-right">
-        {importError && (
-          <span className="topbar-error" role="alert">
-            <TriangleAlert size={14} /> {importError}
-            <button className="icon-btn" onClick={() => setImportError(null)} aria-label="Dismiss">
-              <X size={13} />
-            </button>
-          </span>
-        )}
         <label className="env-select">
           <span>Environment</span>
           <select value={envValue} onChange={(e) => setEnvironment(e.target.value || null)}>
@@ -116,17 +95,16 @@ function TopBar({ workspace, onImported }: { workspace?: string; onImported: (r:
             ))}
           </select>
         </label>
-        <button className="btn shell-btn" onClick={() => fileRef.current?.click()} disabled={importing}>
+        <button
+          className="btn shell-btn"
+          onClick={() => {
+            setReport(null);
+            select("import");
+          }}
+        >
           <FileInput size={14} />
-          {importing ? "Importing…" : "Import"}
+          Import
         </button>
-        <input
-          ref={fileRef}
-          type="file"
-          accept=".json,application/json"
-          hidden
-          onChange={(e) => e.target.files?.[0] && onFile(e.target.files[0])}
-        />
       </div>
     </header>
   );
@@ -234,7 +212,7 @@ function HistoryReplay({ id }: { id: string }) {
   );
 }
 
-function ImportResult({ report, onClose }: { report: ImportReport; onClose: () => void }) {
+function ImportResult({ report, mode, onClose }: { report: ImportReport; mode: "import" | "export"; onClose: () => void }) {
   const select = useApp((s) => s.select);
   const setTab = useApp((s) => s.setSidebarTab);
   return (
@@ -242,12 +220,23 @@ function ImportResult({ report, onClose }: { report: ImportReport; onClose: () =
       <header className="report-head">
         <CircleCheck size={20} className="ok-icon" />
         <div>
-          <h1>Imported {report.collection ? `“${report.collection}”` : "environment"}</h1>
+          <h1>
+            {mode === "export"
+              ? `Exported “${report.collection}” to Postman`
+              : report.into
+                ? `Added ${report.requests} request${report.requests === 1 ? "" : "s"} to ${report.slug}`
+                : `Imported ${report.collection ? `“${report.collection}”` : "environment"}`}
+          </h1>
           <p className="muted">
             {report.format}
-            {report.slug && (
+            {report.slug && mode === "export" && (
               <>
-                {" "}· {report.requests} requests in {report.folders} folders, saved to <code>collections/{report.slug}</code>
+                {" "}· {plural(report.requests, "request")} in {plural(report.folders, "folder")}, downloaded as <code>{report.slug}.postman_collection.json</code>
+              </>
+            )}
+            {report.slug && mode === "import" && (
+              <>
+                {" "}· {report.into ? "" : `${plural(report.requests, "request")} in ${plural(report.folders, "folder")}, `}saved to <code>collections/{report.slug}</code>
               </>
             )}
             {report.environments?.map((e) => (
@@ -263,7 +252,7 @@ function ImportResult({ report, onClose }: { report: ImportReport; onClose: () =
       </header>
 
       {report.warnings.length === 0 ? (
-        <p>Everything converted. Nothing needs your attention.</p>
+        <p>{mode === "export" ? "Everything converted." : "Everything converted. Nothing needs your attention."}</p>
       ) : (
         <>
           <h2>
@@ -337,4 +326,8 @@ function Blocker({ title, children }: { title: string; children: React.ReactNode
       <p>{children}</p>
     </section>
   );
+}
+
+function plural(n: number, word: string) {
+  return `${n} ${word}${n === 1 ? "" : "s"}`;
 }

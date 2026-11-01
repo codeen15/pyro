@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { PyroRequest, SendResult } from "./api";
+import type { ImportReport, PyroRequest, SendResult } from "./api";
 
 // Per-viewer conveniences only; the workspace files are the source of truth.
 function load(key: string): string | null {
@@ -27,6 +27,8 @@ interface AppState {
   results: Record<string, SendResult>;
   sending: Record<string, boolean>;
   sidebarTab: "collections" | "history" | "load" | "plugins";
+  /** The last import or export report, shown until closed. */
+  report: { mode: "import" | "export"; data: ImportReport } | null;
 
   select: (path: string | null) => void;
   setEnvironment: (name: string | null) => void;
@@ -35,6 +37,7 @@ interface AppState {
   setResult: (path: string, r: SendResult) => void;
   setSending: (path: string, v: boolean) => void;
   setSidebarTab: (t: AppState["sidebarTab"]) => void;
+  setReport: (r: AppState["report"]) => void;
 }
 
 export const useApp = create<AppState>((set) => ({
@@ -44,6 +47,8 @@ export const useApp = create<AppState>((set) => ({
   results: {},
   sending: {},
   sidebarTab: "collections",
+  report: null,
+  setReport: (report) => set({ report }),
 
   select: (path) => {
     save("pyro.selected", path);

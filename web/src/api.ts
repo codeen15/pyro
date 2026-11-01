@@ -230,10 +230,30 @@ export interface ImportReport {
   format: string;
   collection?: string;
   slug?: string;
+  /** Requests were added to an existing collection or folder (slug). */
+  into?: boolean;
   requests: number;
   folders: number;
   environments?: string[];
   warnings: { path?: string; code: string; detail: string }[];
+}
+
+export interface ExportView {
+  filename: string;
+  content: unknown;
+  report?: ImportReport;
+}
+
+/** Offers text as a file download. */
+export function saveFile(filename: string, text: string, type = "application/json") {
+  const url = URL.createObjectURL(new Blob([text], { type }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 // --- Load tests ---------------------------------------------------------------
@@ -516,7 +536,13 @@ export const api = {
   history: (limit = 100) => call<HistoryEntry[]>("GET", `/history?limit=${limit}`),
   historyEntry: (id: number) => call<SendResult>("GET", `/history/${id}`),
   clearHistory: () => call<void>("DELETE", "/history"),
-  importFile: (json: string) => call<ImportReport>("POST", "/import", json, true),
+  importFile: (text: string, opts: { filename?: string; into?: string } = {}) => {
+    const q = new URLSearchParams();
+    if (opts.filename) q.set("filename", opts.filename);
+    if (opts.into) q.set("into", opts.into);
+    return call<ImportReport>("POST", `/import${q.size ? `?${q}` : ""}`, text, true);
+  },
+  exportCollection: (slug: string) => call<ExportView>("GET", `/collections/${encodeURIComponent(slug)}/export`),
   openSession: (body: { path?: string; request?: PyroRequest; environment?: string }) => call<OpenResult>("POST", "/sessions", body),
   sessionState: (id: string) => call<SessionState>("GET", `/sessions/${id}`),
   sessionSend: (id: string, m: { data: string; binary?: boolean; event?: string; ack?: boolean }) =>

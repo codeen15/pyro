@@ -31,9 +31,12 @@ type Request struct {
 }
 
 type Report struct {
-	Format       string    `json:"format"`
-	Collection   string    `json:"collection,omitempty"`
-	Slug         string    `json:"slug,omitempty"`
+	Format     string `json:"format"`
+	Collection string `json:"collection,omitempty"`
+	Slug       string `json:"slug,omitempty"`
+	// Into is set when the requests were added to an existing collection or
+	// folder (Slug is then its path).
+	Into         bool      `json:"into,omitempty"`
 	Requests     int       `json:"requests"`
 	Folders      int       `json:"folders"`
 	Environments []string  `json:"environments,omitempty"`

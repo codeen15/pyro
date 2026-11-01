@@ -6,12 +6,12 @@ engine and serves a React web UI on localhost. **Current phase: 4 done → Phase
 (see `docs/roadmap.md`). Product context: `PRODUCT.md`; visual system: `DESIGN.md`.
 
 ## Layout
-- `cmd/pyro`: CLI (cobra): `serve`, `init`, `import`, `run`, `load`, `agent`, `plugin`, `version`
+- `cmd/pyro`: CLI (cobra): `serve`, `init`, `import`, `export`, `run`, `load`, `agent`, `plugin`, `version`
 - `pkg/engine/...`: the engine, a library with no dependency on server/CLI/UI. `model/` is the shared data model;
   `engine.go` is the send pipeline, `session.go` opens WS/SIO sessions; `vars/`, `auth/`, `check/` (assertions,
   extractors), `script/` (goja + pm.* shim, vendored chai), `runner/`, `report/` (JUnit, JSON, load HTML),
   `load/` (plans, executors, VUs, thresholds, segments and workers for distributed runs), `metrics/` (HDR histograms,
-  deltas), `agent/` (distributed load agents), `output/` (InfluxDB, Prometheus, NDJSON/CSV live outputs), `plugin/` (wazero host), `importer/postman/`,
+  deltas), `agent/` (distributed load agents), `output/` (InfluxDB, Prometheus, NDJSON/CSV live outputs), `plugin/` (wazero host), `importer/{postman,openapi,har,curl,auto}/`, `exporter/postman/`,
   `protocol/{httpdriver,wsdriver,sioclient}/`.
 - `internal/store`: workspace persistence (YAML files, path safety, atomic writes, `Import`)
 - `internal/history`: request history and saved load runs in SQLite (`~/.pyro/pyro.db`)
@@ -58,5 +58,6 @@ make dev-ui       # Vite on :5173, proxies /api
 - `docs/load-engine.md`: executors, flow DSL, metrics, thresholds
 - `docs/plugins.md`: plugin kinds, ABI v1, manifest, security
 - `docs/postman-import.md`: Postman mapping, `pm.*` support, import report
+- `docs/import-export.md`: OpenAPI/Swagger, HAR and cURL import; import into a collection; Postman export
 - `docs/roadmap.md`: phases, exit criteria, risks
 - `docs/adr/`: architecture decision records

@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Activity, ChevronRight, Folder, FolderOpen, Gauge, Layers, Play, Plug, Plus, Puzzle, Radio, RefreshCw, Trash2, TriangleAlert } from "lucide-react";
+import { Activity, ChevronRight, Download, Folder, FolderOpen, Gauge, Layers, Play, Plug, Plus, Puzzle, Radio, RefreshCw, Trash2, TriangleAlert } from "lucide-react";
 import { PluginsRail } from "./Plugins";
-import { api, type TreeNode, type WorkspaceInfo } from "../api";
+import { api, saveFile, type TreeNode, type WorkspaceInfo } from "../api";
 import { formatMs, heatOf } from "../heat";
 import { useApp } from "../store";
 
@@ -120,6 +120,7 @@ function TreeItem({
           <button className="icon-btn" onClick={() => onCreate(node)} aria-label={`New request in ${node.name}`} title="New request">
             <Plus size={14} />
           </button>
+          {node.type === "collection" && <ExportButton slug={node.path} name={node.name} />}
         </span>
       </div>
       {open && node.children && node.children.length > 0 && (
@@ -286,5 +287,33 @@ function TreeSkeleton() {
         <span key={i} className="skeleton line" style={{ width: `${w}%` }} />
       ))}
     </div>
+  );
+}
+
+/** Downloads a collection as Postman v2.1 JSON; shows the report if anything didn't convert. */
+function ExportButton({ slug, name }: { slug: string; name: string }) {
+  const setReport = useApp((s) => s.setReport);
+  const [busy, setBusy] = useState(false);
+  return (
+    <button
+      className="icon-btn"
+      disabled={busy}
+      aria-label={`Export ${name} to Postman`}
+      title="Export to Postman"
+      onClick={async () => {
+        setBusy(true);
+        try {
+          const ex = await api.exportCollection(slug);
+          saveFile(ex.filename, JSON.stringify(ex.content, null, "\t"));
+          if (ex.report && ex.report.warnings.length > 0) setReport({ mode: "export", data: ex.report });
+        } catch (e) {
+          alert((e as Error).message);
+        } finally {
+          setBusy(false);
+        }
+      }}
+    >
+      <Download size={13} />
+    </button>
   );
 }
