@@ -40,16 +40,17 @@ type Config struct {
 }
 
 type Server struct {
-	cfg Config
-	ws  *store.Workspace
-	log *slog.Logger
+	cfg     Config
+	ws      *store.Workspace
+	log     *slog.Logger
+	session *sessionVars
 }
 
 func New(cfg Config) *Server {
 	if cfg.Logger == nil {
 		cfg.Logger = slog.Default()
 	}
-	return &Server{cfg: cfg, ws: cfg.Workspace, log: cfg.Logger}
+	return &Server{cfg: cfg, ws: cfg.Workspace, log: cfg.Logger, session: newSessionVars()}
 }
 
 func (s *Server) Handler() http.Handler {
@@ -80,6 +81,9 @@ func (s *Server) Handler() http.Handler {
 		r.Delete("/history", s.clearHistory)
 
 		r.Post("/import", s.importFile)
+
+		r.Get("/session/variables", s.getSessionVars)
+		r.Delete("/session/variables", s.clearSessionVars)
 	})
 
 	if s.cfg.UI != nil {

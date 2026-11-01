@@ -154,3 +154,60 @@ func uuid4() string {
 	h := hex.EncodeToString(b)
 	return h[0:8] + "-" + h[8:12] + "-" + h[12:16] + "-" + h[16:20] + "-" + h[20:]
 }
+
+// Set holds the mutable variable scopes for one send, run iteration or VU.
+// Scripts and extractors write into it; Resolver reads it in order:
+// runtime, data, environment, folders (innermost first), collection, globals.
+type Set struct {
+	Runtime     map[string]string
+	Data        map[string]string
+	Environment map[string]string
+	// Folders are read-only, innermost first.
+	Folders    []map[string]string
+	Collection map[string]string
+	Globals    map[string]string
+	EnvName    string
+}
+
+// NewSet returns a Set with every writable scope initialised.
+func NewSet() *Set {
+	return &Set{
+		Runtime: map[string]string{}, Data: map[string]string{}, Environment: map[string]string{},
+		Collection: map[string]string{}, Globals: map[string]string{},
+	}
+}
+
+// Scope returns the writable map for a pm.* scope name, or nil.
+func (s *Set) Scope(name string) map[string]string {
+	switch name {
+	case "runtime", "variables":
+		return s.Runtime
+	case "data":
+		return s.Data
+	case "environment":
+		return s.Environment
+	case "collection":
+		return s.Collection
+	case "globals":
+		return s.Globals
+	}
+	return nil
+}
+
+// Resolver builds a resolver over the current contents of the set.
+func (s *Set) Resolver() *Resolver {
+	scopes := []Scope{{"runtime", s.Runtime}, {"data", s.Data}, {"environment", s.Environment}}
+	for _, f := range s.Folders {
+		scopes = append(scopes, Scope{"folder", f})
+	}
+	scopes = append(scopes, Scope{"collection", s.Collection}, Scope{"globals", s.Globals})
+	return New(scopes...)
+}
+
+// Map converts enabled variables into a plain map.
+func Map(vs []model.Variable) map[string]string {
+	return FromVariables("", vs).Vars
+}
+
+// UUID returns a random version-4 UUID.
+func UUID() string { return uuid4() }

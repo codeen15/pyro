@@ -1,6 +1,8 @@
 // Package engine runs requests through Pyro's shared pipeline:
-// resolve variables → apply auth → execute via the protocol driver.
-// Scripts, assertions and extractors join the pipeline in Phase 2.
+//
+//	pre-request scripts (collection → folders → request) → resolve variables
+//	→ apply auth → execute → post-response scripts (same order)
+//	→ assertions → extractors
 package engine
 
 import (
@@ -9,28 +11,35 @@ import (
 	"time"
 
 	"github.com/pyrohq/pyro/pkg/engine/auth"
+	"github.com/pyrohq/pyro/pkg/engine/check"
 	"github.com/pyrohq/pyro/pkg/engine/model"
 	"github.com/pyrohq/pyro/pkg/engine/protocol"
 	"github.com/pyrohq/pyro/pkg/engine/protocol/httpdriver"
+	"github.com/pyrohq/pyro/pkg/engine/script"
 	"github.com/pyrohq/pyro/pkg/engine/vars"
 )
 
 type Engine struct {
-	HTTP *httpdriver.Driver
+	HTTP    *httpdriver.Driver
+	Scripts *script.Pool
 }
 
 func New(http *httpdriver.Driver) *Engine {
-	return &Engine{HTTP: http}
+	return &Engine{HTTP: http, Scripts: &script.Pool{}}
 }
 
 // SendInput is everything needed to send one request.
 type SendInput struct {
 	Request *model.Request
+	// Path is the request's workspace path (pm.info.requestId), if saved.
+	Path string
 	// Chain holds collection then folder settings, outermost first.
-	Chain       []*model.Collection
-	Environment *model.Environment
-	// Runtime variables take precedence over every other scope.
-	Runtime map[string]string
+	Chain []*model.Collection
+	// Vars is mutated by scripts and extractors. Nil means NewVars(nil, Chain).
+	Vars      *vars.Set
+	Iteration int
+	// Script, when set, is used instead of a pooled runtime (one per VU).
+	Script *script.Runtime
 }
 
 // Result describes one send. Error is set when no response was received;
@@ -41,6 +50,49 @@ type Result struct {
 	Unresolved []string           `json:"unresolved,omitempty"`
 	Error      string             `json:"error,omitempty"`
 	StartedAt  time.Time          `json:"startedAt"`
+
+	Tests        []check.Result    `json:"tests,omitempty"`
+	Logs         []script.Log      `json:"logs,omitempty"`
+	ScriptErrors []string          `json:"scriptErrors,omitempty"`
+	Extracted    map[string]string `json:"extracted,omitempty"`
+	// Problems lists extractors that matched nothing.
+	Problems []string `json:"problems,omitempty"`
+	Skipped  bool     `json:"skipped,omitempty"`
+
+	// NextSet/Next carry setNextRequest for the collection runner.
+	NextSet bool    `json:"-"`
+	Next    *string `json:"-"`
+}
+
+// Passed reports whether the send got a response and every test passed.
+func (r *Result) Passed() bool {
+	if r.Error != "" || len(r.ScriptErrors) > 0 {
+		return false
+	}
+	for _, t := range r.Tests {
+		if !t.Passed {
+			return false
+		}
+	}
+	return true
+}
+
+// NewVars builds a variable set from an environment and a request's chain.
+func NewVars(env *model.Environment, chain []*model.Collection) *vars.Set {
+	v := vars.NewSet()
+	if env != nil {
+		v.Environment = vars.Map(env.Variables)
+		v.EnvName = env.Name
+	}
+	if len(chain) > 0 && chain[0] != nil {
+		v.Collection = vars.Map(chain[0].Variables)
+	}
+	for i := len(chain) - 1; i >= 1; i-- {
+		if chain[i] != nil && len(chain[i].Variables) > 0 {
+			v.Folders = append(v.Folders, vars.Map(chain[i].Variables))
+		}
+	}
+	return v
 }
 
 // Send runs the pipeline. It never mutates in.Request.
@@ -54,43 +106,132 @@ func (e *Engine) Send(ctx context.Context, in SendInput) *Result {
 		res.Error = fmt.Sprintf("%s requests are opened as sessions, not sent", k)
 		return res
 	}
+	if in.Vars == nil {
+		in.Vars = NewVars(nil, in.Chain)
+	}
 
-	r := NewResolver(in)
-	sent, unresolved := ResolveRequest(in.Request, r)
-	if err := auth.Apply(sent, resolveAuth(auth.Effective(in.Request.Auth, in.Chain), r, &unresolved)); err != nil {
+	rt := in.Script
+	if rt == nil && hasScripts(in) {
+		pooled, err := e.Scripts.Get()
+		if err != nil {
+			res.Error = err.Error()
+			return res
+		}
+		defer e.Scripts.Put(pooled)
+		rt = pooled
+	}
+
+	req := in.Request
+	info := script.Info{RequestName: req.Name, RequestID: in.Path, Iteration: in.Iteration}
+
+	// Pre-request scripts may rewrite the request before it is resolved.
+	for _, s := range scriptsFor(in, true) {
+		out := rt.Run(ctx, script.Input{
+			Phase: script.PreRequest, Name: s.name, Code: s.code, Request: req,
+			Vars: in.Vars, Info: info, Send: e.sendRaw,
+		})
+		res.absorb(out)
+		if out.Request != nil {
+			req = out.Request
+		}
+		if out.Error != "" {
+			// Like Postman, a failing pre-request script stops the request.
+			res.Sent = req
+			res.Error = "not sent: pre-request script failed"
+			return res
+		}
+		if out.Skip {
+			res.Sent, res.Skipped = req, true
+			return res
+		}
+	}
+
+	r := in.Vars.Resolver()
+	sent, unresolved := ResolveRequest(req, r)
+	if err := auth.Apply(sent, resolveAuth(auth.Effective(req.Auth, in.Chain), r, &unresolved)); err != nil {
 		res.Sent, res.Unresolved, res.Error = sent, unresolved, err.Error()
 		return res
 	}
 	sent.Auth = nil // applied as headers/query; keep the record unambiguous
+	sent.Scripts = nil
 	res.Sent, res.Unresolved = sent, unresolved
 
 	resp, err := e.HTTP.Execute(ctx, sent)
 	if err != nil {
 		res.Error = err.Error()
+		res.Tests = append(res.Tests, check.Assert(req.Assertions, nil)...)
 		return res
 	}
 	res.Response = resp
+	wrapped := check.Wrap(resp)
+
+	for _, s := range scriptsFor(in, false) {
+		res.absorb(rt.Run(ctx, script.Input{
+			Phase: script.PostResponse, Name: s.name, Code: s.code, Request: sent, Response: wrapped,
+			Vars: in.Vars, Info: info, Send: e.sendRaw,
+		}))
+	}
+
+	res.Tests = append(res.Tests, check.Assert(req.Assertions, wrapped)...)
+	if len(req.Extract) > 0 {
+		vals, problems := check.Extract(req.Extract, wrapped)
+		for k, v := range vals {
+			in.Vars.Runtime[k] = v
+		}
+		res.Extracted, res.Problems = vals, problems
+	}
 	return res
 }
 
-// NewResolver layers scopes narrowest first: runtime, environment, folders
-// (innermost first), collection.
-func NewResolver(in SendInput) *vars.Resolver {
-	scopes := []vars.Scope{{Name: "runtime", Vars: in.Runtime}}
-	if in.Environment != nil {
-		scopes = append(scopes, vars.FromVariables("environment", in.Environment.Variables))
+func (res *Result) absorb(out script.Output) {
+	res.Tests = append(res.Tests, out.Tests...)
+	res.Logs = append(res.Logs, out.Logs...)
+	if out.Error != "" {
+		res.ScriptErrors = append(res.ScriptErrors, out.Error)
 	}
-	for i := len(in.Chain) - 1; i >= 0; i-- {
-		if in.Chain[i] == nil {
+	if out.NextSet {
+		res.NextSet, res.Next = true, out.Next
+	}
+}
+
+// sendRaw executes pm.sendRequest calls: no scripts, no inheritance.
+func (e *Engine) sendRaw(ctx context.Context, r *model.Request) (*protocol.Response, error) {
+	return e.HTTP.Execute(ctx, r)
+}
+
+type namedScript struct{ name, code string }
+
+func scriptsFor(in SendInput, pre bool) []namedScript {
+	var out []namedScript
+	pick := func(s *model.Scripts) string {
+		if s == nil {
+			return ""
+		}
+		if pre {
+			return s.Pre
+		}
+		return s.Post
+	}
+	for i, c := range in.Chain {
+		if c == nil {
 			continue
 		}
-		name := "folder"
-		if i == 0 {
-			name = "collection"
+		if code := pick(c.Scripts); code != "" {
+			name := "folder"
+			if i == 0 {
+				name = "collection"
+			}
+			out = append(out, namedScript{name, code})
 		}
-		scopes = append(scopes, vars.FromVariables(name, in.Chain[i].Variables))
 	}
-	return vars.New(scopes...)
+	if code := pick(in.Request.Scripts); code != "" {
+		out = append(out, namedScript{"request", code})
+	}
+	return out
+}
+
+func hasScripts(in SendInput) bool {
+	return len(scriptsFor(in, true)) > 0 || len(scriptsFor(in, false)) > 0
 }
 
 // ResolveRequest returns a deep copy of req with every placeholder resolved.

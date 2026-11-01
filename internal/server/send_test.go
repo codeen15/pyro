@@ -1,6 +1,7 @@
 package server
 
 import (
+	b64 "encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -62,8 +63,8 @@ func TestSendSavedAndUnsaved(t *testing.T) {
 func TestSendErrors(t *testing.T) {
 	ts := newTestServer(t)
 	cases := map[string]int{
-		`{}`:                                        http.StatusBadRequest,
-		`{"path":"demo/missing"}`:                   http.StatusNotFound,
+		`{}`:                      http.StatusBadRequest,
+		`{"path":"demo/missing"}`: http.StatusNotFound,
 		`{"path":"nope/x","request":{"url":"x"}}`:   http.StatusNotFound,
 		`{"request":{"url":"x"},"environment":"z"}`: http.StatusNotFound,
 	}
@@ -96,3 +97,45 @@ func TestImport(t *testing.T) {
 		t.Fatalf("bad import: %d", res.StatusCode)
 	}
 }
+
+func TestSessionVariablesCarryAcrossSends(t *testing.T) {
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/login" {
+			w.Write([]byte(`{"token":"from-login"}`))
+			return
+		}
+		fmt.Fprint(w, r.Header.Get("Authorization"))
+	}))
+	defer target.Close()
+	ts := newTestServer(t)
+	do(t, ts, "PUT", "/api/v1/environments/dev", `{"variables":[{"key":"base","value":"`+target.URL+`"},{"key":"token","value":"file-token"}]}`, true)
+	do(t, ts, "PUT", "/api/v1/requests/demo/login", `{"name":"Login","url":"{{base}}/login",
+		"scripts":{"post":"pm.environment.set('token', pm.response.json().token)"}}`, true)
+	do(t, ts, "PUT", "/api/v1/requests/demo/me", `{"name":"Me","url":"{{base}}/me","headers":[{"key":"Authorization","value":"Bearer {{token}}"}]}`, true)
+
+	_, body := do(t, ts, "POST", "/api/v1/send", `{"path":"demo/me","environment":"dev"}`, true)
+	if !strings.Contains(body, base64("Bearer file-token")) {
+		t.Fatalf("before login: %s", body)
+	}
+	do(t, ts, "POST", "/api/v1/send", `{"path":"demo/login","environment":"dev"}`, true)
+	_, body = do(t, ts, "POST", "/api/v1/send", `{"path":"demo/me","environment":"dev"}`, true)
+	if !strings.Contains(body, base64("Bearer from-login")) {
+		t.Fatalf("after login: %s", body)
+	}
+	// The file is untouched; only the session changed.
+	_, envBody := do(t, ts, "GET", "/api/v1/environments/dev", "", true)
+	if !strings.Contains(envBody, "file-token") {
+		t.Fatalf("environment file changed: %s", envBody)
+	}
+	_, sess := do(t, ts, "GET", "/api/v1/session/variables", "", true)
+	if !strings.Contains(sess, `"token":"from-login"`) {
+		t.Fatalf("session view: %s", sess)
+	}
+	do(t, ts, "DELETE", "/api/v1/session/variables", "", true)
+	_, body = do(t, ts, "POST", "/api/v1/send", `{"path":"demo/me","environment":"dev"}`, true)
+	if !strings.Contains(body, base64("Bearer file-token")) {
+		t.Fatalf("after reset: %s", body)
+	}
+}
+
+func base64(s string) string { return b64.StdEncoding.EncodeToString([]byte(s)) }

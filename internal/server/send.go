@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
@@ -59,7 +60,7 @@ func (s *Server) send(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "path or request is required")
 		return
 	}
-	in := engine.SendInput{Request: body.Request, Runtime: body.Runtime}
+	in := engine.SendInput{Request: body.Request, Path: body.Path}
 	if body.Path != "" {
 		chain, err := s.ws.Chain(body.Path)
 		if err != nil {
@@ -74,16 +75,24 @@ func (s *Server) send(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	var env *model.Environment
 	if body.Environment != "" {
-		env, err := s.ws.ReadEnvironment(body.Environment)
-		if err != nil {
+		var err error
+		if env, err = s.ws.ReadEnvironment(body.Environment); err != nil {
 			s.fail(w, err)
 			return
 		}
-		in.Environment = env
+		env.Name = body.Environment
+	}
+	in.Vars = engine.NewVars(env, in.Chain)
+	slug := strings.SplitN(body.Path, "/", 2)[0]
+	bases := s.session.apply(in.Vars, slug)
+	for k, v := range body.Runtime {
+		in.Vars.Runtime[k] = v
 	}
 
 	res := s.cfg.Engine.Send(r.Context(), in)
+	s.session.record(in.Vars, slug, bases)
 	out := sendResponse{Result: res}
 	if s.cfg.History != nil && res.Sent != nil {
 		id, err := s.cfg.History.Add(r.Context(), s.ws.Root, body.Path, in.Request.Name, res)
