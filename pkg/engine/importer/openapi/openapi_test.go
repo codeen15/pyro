@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/pyrohq/pyro/pkg/engine/importer"
-	"github.com/pyrohq/pyro/pkg/engine/model"
+	"github.com/codeen15/pyro/pkg/engine/importer"
+	"github.com/codeen15/pyro/pkg/engine/model"
 )
 
 func load(t *testing.T, file string) *importer.Bundle {

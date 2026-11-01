@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/pyrohq/pyro/pkg/engine/model"
+	"github.com/codeen15/pyro/pkg/engine/model"
 )
 
 // Effective returns the auth that applies to a request: its own, otherwise

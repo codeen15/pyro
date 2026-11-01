@@ -6,7 +6,7 @@ import (
 	"encoding/xml"
 	"fmt"
 
-	"github.com/pyrohq/pyro/pkg/engine/runner"
+	"github.com/codeen15/pyro/pkg/engine/runner"
 )
 
 type junitSuites struct {

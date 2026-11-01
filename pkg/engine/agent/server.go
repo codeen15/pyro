@@ -15,8 +15,8 @@ import (
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
 
-	"github.com/pyrohq/pyro/pkg/engine/load"
-	"github.com/pyrohq/pyro/pkg/engine/plugin"
+	"github.com/codeen15/pyro/pkg/engine/load"
+	"github.com/codeen15/pyro/pkg/engine/plugin"
 )
 
 // Server is the agent side. It runs one job at a time.

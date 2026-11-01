@@ -1,3 +1,3 @@
-module github.com/pyrohq/pyro/plugins/sdk/go
+module github.com/codeen15/pyro/plugins/sdk/go
 
 go 1.24

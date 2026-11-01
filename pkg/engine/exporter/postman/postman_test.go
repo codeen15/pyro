@@ -8,11 +8,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/pyrohq/pyro/pkg/engine"
-	"github.com/pyrohq/pyro/pkg/engine/importer"
-	importpm "github.com/pyrohq/pyro/pkg/engine/importer/postman"
-	"github.com/pyrohq/pyro/pkg/engine/model"
-	"github.com/pyrohq/pyro/pkg/engine/protocol/httpdriver"
+	"github.com/codeen15/pyro/pkg/engine"
+	"github.com/codeen15/pyro/pkg/engine/importer"
+	importpm "github.com/codeen15/pyro/pkg/engine/importer/postman"
+	"github.com/codeen15/pyro/pkg/engine/model"
+	"github.com/codeen15/pyro/pkg/engine/protocol/httpdriver"
 )
 
 func bundle(base string) *importer.Bundle {

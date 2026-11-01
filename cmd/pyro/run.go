@@ -11,11 +11,11 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/pyrohq/pyro/pkg/engine"
-	"github.com/pyrohq/pyro/pkg/engine/model"
-	"github.com/pyrohq/pyro/pkg/engine/protocol/httpdriver"
-	"github.com/pyrohq/pyro/pkg/engine/report"
-	"github.com/pyrohq/pyro/pkg/engine/runner"
+	"github.com/codeen15/pyro/pkg/engine"
+	"github.com/codeen15/pyro/pkg/engine/model"
+	"github.com/codeen15/pyro/pkg/engine/protocol/httpdriver"
+	"github.com/codeen15/pyro/pkg/engine/report"
+	"github.com/codeen15/pyro/pkg/engine/runner"
 )
 
 // errRunFailed makes `pyro run` exit 1 without printing a usage error.
@@ -63,7 +63,7 @@ func runCmd() *cobra.Command {
 			for i, r := range refs {
 				items[i] = runner.Item{Path: r.Path, Request: r.Request, Chain: r.Chain}
 			}
-			eng := engine.New(httpdriver.New(httpdriver.Options{FileRoot: ws.Root, Timeout: timeout, InsecureTLS: insecure}))
+			eng := engine.New(httpdriver.New(httpdriver.Options{FileRoot: ws.Root, AllowOutsideRoot: ws.Meta.AllowFilesOutsideWorkspace, Timeout: timeout, InsecureTLS: insecure}))
 			if eng.Plugins = openPlugins(); eng.Plugins != nil {
 				defer eng.Plugins.Close()
 			}

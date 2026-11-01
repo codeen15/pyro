@@ -21,7 +21,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pyrohq/pyro/pkg/engine/model"
+	"github.com/codeen15/pyro/pkg/engine/model"
 )
 
 // built holds directories with each example plugin's manifest and module,

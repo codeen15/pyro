@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pyrohq/pyro/pkg/engine/model"
+	"github.com/codeen15/pyro/pkg/engine/model"
 )
 
 // maxDepth bounds nested resolution ({{a}} -> "{{b}}" -> ...) so that

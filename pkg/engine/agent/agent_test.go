@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pyrohq/pyro/pkg/engine/load"
-	"github.com/pyrohq/pyro/pkg/engine/model"
+	"github.com/codeen15/pyro/pkg/engine/load"
+	"github.com/codeen15/pyro/pkg/engine/model"
 )
 
 func newAgent(t *testing.T, name string) (*Server, *httptest.Server) {

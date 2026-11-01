@@ -16,9 +16,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/pyrohq/pyro/internal/version"
-	"github.com/pyrohq/pyro/pkg/engine/agent"
-	"github.com/pyrohq/pyro/pkg/engine/load"
+	"github.com/codeen15/pyro/internal/version"
+	"github.com/codeen15/pyro/pkg/engine/agent"
+	"github.com/codeen15/pyro/pkg/engine/load"
 )
 
 func agentCmd() *cobra.Command {
@@ -68,6 +68,9 @@ func agentCmd() *cobra.Command {
 			fmt.Printf("Pyro agent %s (%s)\n  listening  %s://%s\n", version.Version, name, scheme, ln.Addr())
 			if generated {
 				fmt.Printf("  token      %s\n", token)
+			}
+			if certFile == "" && !isLoopback(host) {
+				fmt.Println("  note       plain HTTP: the token and test data travel unencrypted; use --tls-cert/--tls-key on untrusted networks")
 			}
 			fmt.Printf("\nUse it with: pyro load <test> --agent <this-host>:%d --agent-token <token>\n\n", ln.Addr().(*net.TCPAddr).Port)
 

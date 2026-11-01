@@ -1,8 +1,8 @@
 package main
 
 import (
-	"github.com/pyrohq/pyro/internal/store"
-	"github.com/pyrohq/pyro/pkg/engine/model"
+	"github.com/codeen15/pyro/internal/store"
+	"github.com/codeen15/pyro/pkg/engine/model"
 )
 
 // seedSample adds a small example collection covering each built-in protocol.

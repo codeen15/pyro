@@ -4,12 +4,12 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/pyrohq/pyro/pkg/engine/auth"
-	"github.com/pyrohq/pyro/pkg/engine/model"
-	"github.com/pyrohq/pyro/pkg/engine/protocol"
-	"github.com/pyrohq/pyro/pkg/engine/protocol/sioclient"
-	"github.com/pyrohq/pyro/pkg/engine/protocol/wsdriver"
-	"github.com/pyrohq/pyro/pkg/engine/vars"
+	"github.com/codeen15/pyro/pkg/engine/auth"
+	"github.com/codeen15/pyro/pkg/engine/model"
+	"github.com/codeen15/pyro/pkg/engine/protocol"
+	"github.com/codeen15/pyro/pkg/engine/protocol/sioclient"
+	"github.com/codeen15/pyro/pkg/engine/protocol/wsdriver"
+	"github.com/codeen15/pyro/pkg/engine/vars"
 )
 
 // ConnectResult describes an attempted session. Session is nil when Error is set.

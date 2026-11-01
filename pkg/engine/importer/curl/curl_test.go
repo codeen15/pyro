@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/pyrohq/pyro/pkg/engine/model"
+	"github.com/codeen15/pyro/pkg/engine/model"
 )
 
 func one(t *testing.T, s string) *model.Request {

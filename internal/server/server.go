@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io/fs"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -16,11 +17,11 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
-	"github.com/pyrohq/pyro/internal/history"
-	"github.com/pyrohq/pyro/internal/store"
-	"github.com/pyrohq/pyro/internal/version"
-	"github.com/pyrohq/pyro/pkg/engine"
-	"github.com/pyrohq/pyro/pkg/engine/model"
+	"github.com/codeen15/pyro/internal/history"
+	"github.com/codeen15/pyro/internal/store"
+	"github.com/codeen15/pyro/internal/version"
+	"github.com/codeen15/pyro/pkg/engine"
+	"github.com/codeen15/pyro/pkg/engine/model"
 )
 
 // TokenHeader carries the per-launch session token. The UI receives the token
@@ -41,6 +42,10 @@ type Config struct {
 	AgentInsecure bool
 	// Outputs stream every load test's live metrics (output.Open specs).
 	Outputs []string
+	// AnyHost accepts requests for any Host header. Leave it false when
+	// listening on loopback: only localhost names are accepted then, which
+	// stops DNS-rebinding pages from reaching the API.
+	AnyHost bool
 	// Token, when non-empty, is required on every /api request.
 	Token string
 	// UI is the built single-page app; nil disables UI serving.
@@ -90,7 +95,7 @@ func (s *Server) Close() {
 
 func (s *Server) Handler() http.Handler {
 	r := chi.NewRouter()
-	r.Use(middleware.RealIP, middleware.Recoverer)
+	r.Use(middleware.Recoverer, s.checkHost)
 
 	// The event stream checks its token itself (browsers can't send headers
 	// on WebSocket upgrades) and must not sit behind the request timeout.
@@ -162,6 +167,32 @@ func (s *Server) Handler() http.Handler {
 		r.Handle("/*", spaHandler(s.cfg.UI))
 	}
 	return r
+}
+
+// checkHost rejects requests whose Host isn't a loopback name or address
+// (unless AnyHost). A web page that rebinds its own domain to 127.0.0.1
+// still sends its domain as Host, so it can't use the API or the UI.
+func (s *Server) checkHost(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !s.cfg.AnyHost && !loopbackHost(r.Host) {
+			http.Error(w, "Pyro only answers requests for localhost; open the address pyro serve printed", http.StatusMisdirectedRequest)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func loopbackHost(hostport string) bool {
+	host := hostport
+	if h, _, err := net.SplitHostPort(hostport); err == nil {
+		host = h
+	}
+	host = strings.Trim(host, "[]")
+	if host == "localhost" || strings.HasSuffix(host, ".localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 func (s *Server) requireToken(next http.Handler) http.Handler {

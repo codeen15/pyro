@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/pyrohq/pyro/pkg/engine/model"
+	"github.com/codeen15/pyro/pkg/engine/model"
 )
 
 // Message is one entry in a streaming session's timeline.

@@ -9,7 +9,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/pyrohq/pyro/pkg/engine/plugin"
+	"github.com/codeen15/pyro/pkg/engine/plugin"
 )
 
 const maxPluginArchive = 256 << 20

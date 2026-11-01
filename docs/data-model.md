@@ -34,7 +34,12 @@ YAML is written with 2-space indentation.
 ```yaml
 name: My Workspace
 version: 1
+loadAllowHosts: [staging.example.com]   # load tests may target these without confirmation
+allowFilesOutsideWorkspace: false       # default
 ```
+Request bodies (binary file bodies and multipart file fields) may only read files inside
+the workspace directory, after following symlinks. A collection you import or clone can't
+send other files on your machine. Set `allowFilesOutsideWorkspace: true` to lift this.
 
 ## `collection.yaml` / `folder.yaml`
 ```yaml

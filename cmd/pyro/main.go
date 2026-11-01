@@ -24,16 +24,16 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
-	"github.com/pyrohq/pyro/internal/history"
-	"github.com/pyrohq/pyro/internal/server"
-	"github.com/pyrohq/pyro/internal/store"
-	"github.com/pyrohq/pyro/internal/version"
-	"github.com/pyrohq/pyro/pkg/engine"
-	exportpm "github.com/pyrohq/pyro/pkg/engine/exporter/postman"
-	"github.com/pyrohq/pyro/pkg/engine/importer"
-	"github.com/pyrohq/pyro/pkg/engine/importer/auto"
-	"github.com/pyrohq/pyro/pkg/engine/protocol/httpdriver"
-	"github.com/pyrohq/pyro/web"
+	"github.com/codeen15/pyro/internal/history"
+	"github.com/codeen15/pyro/internal/server"
+	"github.com/codeen15/pyro/internal/store"
+	"github.com/codeen15/pyro/internal/version"
+	"github.com/codeen15/pyro/pkg/engine"
+	exportpm "github.com/codeen15/pyro/pkg/engine/exporter/postman"
+	"github.com/codeen15/pyro/pkg/engine/importer"
+	"github.com/codeen15/pyro/pkg/engine/importer/auto"
+	"github.com/codeen15/pyro/pkg/engine/protocol/httpdriver"
+	"github.com/codeen15/pyro/web"
 )
 
 func main() {
@@ -141,7 +141,7 @@ func serveCmd() *cobra.Command {
 			} else {
 				defer hist.Close()
 			}
-			eng := engine.New(httpdriver.New(httpdriver.Options{FileRoot: ws.Root}))
+			eng := engine.New(httpdriver.New(httpdriver.Options{FileRoot: ws.Root, AllowOutsideRoot: ws.Meta.AllowFilesOutsideWorkspace}))
 			if eng.Plugins = openPlugins(); eng.Plugins != nil {
 				defer eng.Plugins.Close()
 			}
@@ -149,6 +149,7 @@ func serveCmd() *cobra.Command {
 				Workspace: ws, Engine: eng, History: hist, Token: token, UI: web.Dist(),
 				PluginIndex: os.Getenv("PYRO_PLUGIN_INDEX"),
 				Agents:      agents, AgentToken: agentToken, AgentInsecure: agentInsecure, Outputs: outs,
+				AnyHost: !isLoopback(host),
 			})
 			defer api.Close()
 			srv := &http.Server{

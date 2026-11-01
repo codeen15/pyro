@@ -12,11 +12,11 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/pyrohq/pyro/internal/store"
-	"github.com/pyrohq/pyro/pkg/engine/load"
-	"github.com/pyrohq/pyro/pkg/engine/metrics"
-	"github.com/pyrohq/pyro/pkg/engine/output"
-	"github.com/pyrohq/pyro/pkg/engine/report"
+	"github.com/codeen15/pyro/internal/store"
+	"github.com/codeen15/pyro/pkg/engine/load"
+	"github.com/codeen15/pyro/pkg/engine/metrics"
+	"github.com/codeen15/pyro/pkg/engine/output"
+	"github.com/codeen15/pyro/pkg/engine/report"
 )
 
 func loadCmd() *cobra.Command {
@@ -52,7 +52,7 @@ func loadCmd() *cobra.Command {
 				envName = plan.Environment
 			}
 			opts := load.Options{
-				Resolve: ws.Target, LoadData: ws.LoadData, MaxVUs: maxVUs, FileRoot: ws.Root, InsecureTLS: insecure,
+				Resolve: ws.Target, LoadData: ws.LoadData, MaxVUs: maxVUs, FileRoot: ws.Root, AllowFilesOutsideRoot: ws.Meta.AllowFilesOutsideWorkspace, InsecureTLS: insecure,
 			}
 			if opts.Plugins = openPlugins(); opts.Plugins != nil {
 				defer opts.Plugins.Close()

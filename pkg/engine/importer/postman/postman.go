@@ -11,8 +11,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/pyrohq/pyro/pkg/engine/importer"
-	"github.com/pyrohq/pyro/pkg/engine/model"
+	"github.com/codeen15/pyro/pkg/engine/importer"
+	"github.com/codeen15/pyro/pkg/engine/model"
 )
 
 // Parse detects whether data is a collection or an environment export and converts it.
@@ -413,7 +413,7 @@ func (c *converter) body(p string, b *pmBody) *model.Body {
 				if kv.Value == "" {
 					c.b.Report.Warn(p, "body.file", fmt.Sprintf("form-data file field %q has no file selected", f.Key))
 				} else {
-					c.b.Report.Warn(p, "body.file", fmt.Sprintf("form-data file field %q refers to %s; check the path exists on this machine", f.Key, kv.Value))
+					c.b.Report.Warn(p, "body.file", fmt.Sprintf("form-data file field %q refers to %s; copy the file into the workspace (files outside it are blocked by default)", f.Key, kv.Value))
 				}
 			}
 			fields = append(fields, kv)
@@ -424,7 +424,7 @@ func (c *converter) body(p string, b *pmBody) *model.Body {
 		if b.File != nil {
 			src = b.File.Src
 		}
-		c.b.Report.Warn(p, "body.file", fmt.Sprintf("binary body refers to %q; check the path exists on this machine", src))
+		c.b.Report.Warn(p, "body.file", fmt.Sprintf("binary body refers to %q; copy the file into the workspace (files outside it are blocked by default)", src))
 		return &model.Body{Type: model.BodyBinaryFile, File: src}
 	case "graphql":
 		if b.GraphQL == nil {

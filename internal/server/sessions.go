@@ -11,10 +11,10 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/pyrohq/pyro/pkg/engine"
-	"github.com/pyrohq/pyro/pkg/engine/model"
-	"github.com/pyrohq/pyro/pkg/engine/protocol"
-	"github.com/pyrohq/pyro/pkg/engine/vars"
+	"github.com/codeen15/pyro/pkg/engine"
+	"github.com/codeen15/pyro/pkg/engine/model"
+	"github.com/codeen15/pyro/pkg/engine/protocol"
+	"github.com/codeen15/pyro/pkg/engine/vars"
 )
 
 // maxLog bounds the timeline kept per session for UI reloads.

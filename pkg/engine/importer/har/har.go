@@ -10,8 +10,8 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/pyrohq/pyro/pkg/engine/importer"
-	"github.com/pyrohq/pyro/pkg/engine/model"
+	"github.com/codeen15/pyro/pkg/engine/importer"
+	"github.com/codeen15/pyro/pkg/engine/model"
 )
 
 type harFile struct {

@@ -1,0 +1,9 @@
+Pyro
+Copyright 2026 The Pyro Authors
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+It includes third-party software:
+- chai 4.5.0 (MIT), vendored in pkg/engine/script/js/chai-4.5.0.js (license: chai-4.5.0.LICENSE)
+- Go modules listed in go.mod, and npm packages listed in web/package.json,
+  each under its own license.

@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/pyrohq/pyro/pkg/engine/model"
-	"github.com/pyrohq/pyro/pkg/engine/protocol/httpdriver"
+	"github.com/codeen15/pyro/pkg/engine/model"
+	"github.com/codeen15/pyro/pkg/engine/protocol/httpdriver"
 )
 
 func TestSendResolvesVariablesAndInheritsAuth(t *testing.T) {

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pyrohq/pyro/pkg/engine/model"
+	"github.com/codeen15/pyro/pkg/engine/model"
 )
 
 func TestResolveScopesAndNesting(t *testing.T) {

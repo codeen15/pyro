@@ -3,6 +3,7 @@ package httpdriver
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -12,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pyrohq/pyro/pkg/engine/model"
+	"github.com/codeen15/pyro/pkg/engine/model"
 )
 
 // echo replies with a JSON description of the request it received.
@@ -191,5 +192,37 @@ func TestForVUHasOwnCookies(t *testing.T) {
 	rb, _ := b.Execute(context.Background(), &model.Request{URL: ts.URL})
 	if string(ra.Body) != "A" || string(rb.Body) != "B" {
 		t.Fatalf("cookies leaked between VUs: %q %q", ra.Body, rb.Body)
+	}
+}
+
+// Body files must stay inside the workspace: an imported or cloned
+// collection can't send files from elsewhere, directly, via ../ or via a
+// symlink, unless the workspace allows it.
+func TestBodyFilesStayInWorkspace(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(echo))
+	defer ts.Close()
+	root := t.TempDir()
+	outside := filepath.Join(t.TempDir(), "secret.txt")
+	os.WriteFile(outside, []byte("secret"), 0o644)
+	os.WriteFile(filepath.Join(root, "ok.txt"), []byte("fine"), 0o644)
+	os.MkdirAll(filepath.Join(root, "data"), 0o755)
+	if err := os.Symlink(outside, filepath.Join(root, "data", "link.txt")); err != nil {
+		t.Skip("symlinks unavailable:", err)
+	}
+	rel, _ := filepath.Rel(root, outside)
+
+	d := New(Options{FileRoot: root})
+	for _, p := range []string{outside, rel, "data/link.txt"} {
+		_, err := d.Execute(context.Background(), &model.Request{Method: "POST", URL: ts.URL, Body: &model.Body{Type: model.BodyBinaryFile, File: p}})
+		if err == nil || !errors.Is(err, ErrOutsideRoot) {
+			t.Errorf("%s: err = %v, want ErrOutsideRoot", p, err)
+		}
+	}
+	if m := run(t, d, &model.Request{Method: "POST", URL: ts.URL, Body: &model.Body{Type: model.BodyBinaryFile, File: filepath.Join(root, "ok.txt")}}); m["body"] != "fine" {
+		t.Errorf("absolute path inside the workspace: %v", m["body"])
+	}
+	open := New(Options{FileRoot: root, AllowOutsideRoot: true})
+	if m := run(t, open, &model.Request{Method: "POST", URL: ts.URL, Body: &model.Body{Type: model.BodyBinaryFile, File: outside}}); m["body"] != "secret" {
+		t.Errorf("allowed outside: %v", m["body"])
 	}
 }

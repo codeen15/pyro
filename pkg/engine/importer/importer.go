@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/pyrohq/pyro/pkg/engine/model"
+	"github.com/codeen15/pyro/pkg/engine/model"
 )
 
 // Bundle is an imported collection and/or environments, ready to be written

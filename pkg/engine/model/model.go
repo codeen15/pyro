@@ -20,6 +20,9 @@ type Workspace struct {
 	// LoadAllowHosts lists hosts load tests may target without confirmation
 	// (loopback is always allowed).
 	LoadAllowHosts []string `yaml:"loadAllowHosts,omitempty" json:"loadAllowHosts,omitempty"`
+	// AllowFilesOutsideWorkspace lets request bodies read files outside the
+	// workspace directory (off by default, like Postman).
+	AllowFilesOutsideWorkspace bool `yaml:"allowFilesOutsideWorkspace,omitempty" json:"allowFilesOutsideWorkspace,omitempty"`
 }
 
 // Collection is stored as collection.yaml at the root of a collection directory.

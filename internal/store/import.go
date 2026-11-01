@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/pyrohq/pyro/pkg/engine/importer"
-	"github.com/pyrohq/pyro/pkg/engine/model"
+	"github.com/codeen15/pyro/pkg/engine/importer"
+	"github.com/codeen15/pyro/pkg/engine/model"
 )
 
 // Import writes an imported bundle into the workspace. Existing collections

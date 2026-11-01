@@ -20,8 +20,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/pyrohq/pyro/pkg/engine/load"
-	"github.com/pyrohq/pyro/pkg/engine/metrics"
+	"github.com/codeen15/pyro/pkg/engine/load"
+	"github.com/codeen15/pyro/pkg/engine/metrics"
 )
 
 // Point is one metric value at one time.

@@ -8,11 +8,11 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/pyrohq/pyro/pkg/engine/importer"
-	"github.com/pyrohq/pyro/pkg/engine/importer/curl"
-	"github.com/pyrohq/pyro/pkg/engine/importer/har"
-	"github.com/pyrohq/pyro/pkg/engine/importer/openapi"
-	"github.com/pyrohq/pyro/pkg/engine/importer/postman"
+	"github.com/codeen15/pyro/pkg/engine/importer"
+	"github.com/codeen15/pyro/pkg/engine/importer/curl"
+	"github.com/codeen15/pyro/pkg/engine/importer/har"
+	"github.com/codeen15/pyro/pkg/engine/importer/openapi"
+	"github.com/codeen15/pyro/pkg/engine/importer/postman"
 )
 
 // Parse imports data. filename (optional) names collections for formats

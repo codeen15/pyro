@@ -18,10 +18,10 @@ import (
 
 	"github.com/dop251/goja"
 
-	"github.com/pyrohq/pyro/pkg/engine/check"
-	"github.com/pyrohq/pyro/pkg/engine/model"
-	"github.com/pyrohq/pyro/pkg/engine/protocol"
-	"github.com/pyrohq/pyro/pkg/engine/vars"
+	"github.com/codeen15/pyro/pkg/engine/check"
+	"github.com/codeen15/pyro/pkg/engine/model"
+	"github.com/codeen15/pyro/pkg/engine/protocol"
+	"github.com/codeen15/pyro/pkg/engine/vars"
 )
 
 //go:embed js/chai-4.5.0.js

@@ -10,11 +10,11 @@ import (
 	"testing"
 	"testing/fstest"
 
-	"github.com/pyrohq/pyro/internal/history"
-	"github.com/pyrohq/pyro/internal/store"
-	"github.com/pyrohq/pyro/pkg/engine"
-	"github.com/pyrohq/pyro/pkg/engine/model"
-	"github.com/pyrohq/pyro/pkg/engine/protocol/httpdriver"
+	"github.com/codeen15/pyro/internal/history"
+	"github.com/codeen15/pyro/internal/store"
+	"github.com/codeen15/pyro/pkg/engine"
+	"github.com/codeen15/pyro/pkg/engine/model"
+	"github.com/codeen15/pyro/pkg/engine/protocol/httpdriver"
 )
 
 const testToken = "secret"
@@ -142,5 +142,30 @@ func TestEscapedRequestPath(t *testing.T) {
 	_, body := do(t, ts, "GET", "/api/v1/workspace", "", true)
 	if !strings.Contains(body, `"path":"demo/get user"`) {
 		t.Fatalf("expected decoded path in tree: %s", body)
+	}
+}
+
+// A DNS-rebinding page reaches 127.0.0.1 but sends its own domain as Host.
+func TestRejectsNonLoopbackHost(t *testing.T) {
+	ts := newTestServer(t)
+	for host, want := range map[string]int{"evil.example:80": 421, "localhost:7878": 200, "127.0.0.1": 200, "[::1]:7878": 200, "app.localhost": 200} {
+		req, _ := http.NewRequest("GET", ts.URL+"/api/v1/health", nil)
+		req.Host = host
+		req.Header.Set(TokenHeader, testToken)
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		res.Body.Close()
+		if res.StatusCode != want {
+			t.Errorf("Host %s: %d, want %d", host, res.StatusCode, want)
+		}
+	}
+	open := httptest.NewServer(New(Config{Workspace: nil, AnyHost: true}).Handler())
+	defer open.Close()
+	req, _ := http.NewRequest("GET", open.URL+"/api/v1/health", nil)
+	req.Host = "pyro.internal:7878"
+	if res, err := http.DefaultClient.Do(req); err != nil || res.StatusCode != 200 {
+		t.Errorf("AnyHost: %v %v", res.StatusCode, err)
 	}
 }

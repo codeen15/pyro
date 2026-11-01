@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"sync"
 
-	"github.com/pyrohq/pyro/pkg/engine/vars"
+	"github.com/codeen15/pyro/pkg/engine/vars"
 )
 
 // sessionVars keeps values that scripts and extractors set during interactive

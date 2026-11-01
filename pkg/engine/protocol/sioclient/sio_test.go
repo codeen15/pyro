@@ -12,7 +12,7 @@ import (
 
 	"github.com/coder/websocket"
 
-	"github.com/pyrohq/pyro/pkg/engine/protocol"
+	"github.com/codeen15/pyro/pkg/engine/protocol"
 )
 
 func TestParsePacket(t *testing.T) {

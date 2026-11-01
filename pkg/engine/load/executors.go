@@ -8,7 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/pyrohq/pyro/pkg/engine/metrics"
+	"github.com/codeen15/pyro/pkg/engine/metrics"
 )
 
 // feeder hands out data rows to VUs.

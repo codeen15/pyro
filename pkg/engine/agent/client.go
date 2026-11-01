@@ -16,7 +16,7 @@ import (
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
 
-	"github.com/pyrohq/pyro/pkg/engine/load"
+	"github.com/codeen15/pyro/pkg/engine/load"
 )
 
 // silence is how long a running agent may go without reporting before the

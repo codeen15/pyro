@@ -11,8 +11,8 @@ import (
 
 	"github.com/coder/websocket"
 
-	"github.com/pyrohq/pyro/pkg/engine/model"
-	"github.com/pyrohq/pyro/pkg/engine/protocol"
+	"github.com/codeen15/pyro/pkg/engine/model"
+	"github.com/codeen15/pyro/pkg/engine/protocol"
 )
 
 // echoServer echoes messages; "close-me" makes it close with 4001.

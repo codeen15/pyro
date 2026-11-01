@@ -3,7 +3,7 @@ package har
 import (
 	"testing"
 
-	"github.com/pyrohq/pyro/pkg/engine/model"
+	"github.com/codeen15/pyro/pkg/engine/model"
 )
 
 const sample = `{"log":{"version":"1.2","creator":{"name":"WebInspector"},

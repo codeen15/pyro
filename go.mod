@@ -1,4 +1,4 @@
-module github.com/pyrohq/pyro
+module github.com/codeen15/pyro
 
 go 1.27.3
 

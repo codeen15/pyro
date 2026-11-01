@@ -11,13 +11,13 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/pyrohq/pyro/internal/history"
-	"github.com/pyrohq/pyro/internal/store"
-	"github.com/pyrohq/pyro/pkg/engine/agent"
-	"github.com/pyrohq/pyro/pkg/engine/load"
-	"github.com/pyrohq/pyro/pkg/engine/metrics"
-	"github.com/pyrohq/pyro/pkg/engine/output"
-	"github.com/pyrohq/pyro/pkg/engine/report"
+	"github.com/codeen15/pyro/internal/history"
+	"github.com/codeen15/pyro/internal/store"
+	"github.com/codeen15/pyro/pkg/engine/agent"
+	"github.com/codeen15/pyro/pkg/engine/load"
+	"github.com/codeen15/pyro/pkg/engine/metrics"
+	"github.com/codeen15/pyro/pkg/engine/output"
+	"github.com/codeen15/pyro/pkg/engine/report"
 )
 
 type liveLoad struct {
@@ -142,7 +142,7 @@ func (s *Server) startLoadTest(w http.ResponseWriter, r *http.Request) {
 	if envName == "" {
 		envName = plan.Environment
 	}
-	opts := load.Options{Resolve: s.ws.Target, LoadData: s.ws.LoadData, FileRoot: s.ws.Root}
+	opts := load.Options{Resolve: s.ws.Target, LoadData: s.ws.LoadData, FileRoot: s.ws.Root, AllowFilesOutsideRoot: s.ws.Meta.AllowFilesOutsideWorkspace}
 	if s.cfg.Engine != nil {
 		opts.Plugins = s.cfg.Engine.Plugins
 	}

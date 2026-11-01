@@ -16,7 +16,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/pyrohq/pyro/pkg/engine/plugin"
+	"github.com/codeen15/pyro/pkg/engine/plugin"
 )
 
 // pluginsDir is ~/.pyro/plugins, or $PYRO_PLUGINS_DIR.
@@ -417,9 +417,9 @@ const tmplGoMod = `module example.com/pyro-plugin-{{.ID}}
 
 go 1.24
 
-require github.com/pyrohq/pyro/plugins/sdk/go v0.0.0
+require github.com/codeen15/pyro/plugins/sdk/go v0.0.0
 {{if .SDK}}
-replace github.com/pyrohq/pyro/plugins/sdk/go => {{.SDK}}
+replace github.com/codeen15/pyro/plugins/sdk/go => {{.SDK}}
 {{end}}`
 
 const tmplManifest = `name: {{.ID}}
@@ -455,7 +455,7 @@ import (
 	"strings"
 	"time"
 
-	pyro "github.com/pyrohq/pyro/plugins/sdk/go"
+	pyro "github.com/codeen15/pyro/plugins/sdk/go"
 )
 
 func init() {
@@ -490,7 +490,7 @@ package main
 import (
 	"errors"
 
-	pyro "github.com/pyrohq/pyro/plugins/sdk/go"
+	pyro "github.com/codeen15/pyro/plugins/sdk/go"
 )
 
 func init() {

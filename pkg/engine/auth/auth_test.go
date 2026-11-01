@@ -3,7 +3,7 @@ package auth
 import (
 	"testing"
 
-	"github.com/pyrohq/pyro/pkg/engine/model"
+	"github.com/codeen15/pyro/pkg/engine/model"
 )
 
 func header(r *model.Request, k string) string {

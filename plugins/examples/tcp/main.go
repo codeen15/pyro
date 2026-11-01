@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	pyro "github.com/pyrohq/pyro/plugins/sdk/go"
+	pyro "github.com/codeen15/pyro/plugins/sdk/go"
 )
 
 func init() {

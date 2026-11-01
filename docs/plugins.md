@@ -102,7 +102,7 @@ Plugins build with the **standard Go toolchain** (1.24+); no TinyGo needed:
 ```go
 package main
 
-import pyro "github.com/pyrohq/pyro/plugins/sdk/go"
+import pyro "github.com/codeen15/pyro/plugins/sdk/go"
 
 func init() {
 	pyro.RegisterProtocol("echo", pyro.ProtocolFunc(func(ctx *pyro.Context, req *pyro.Request) (*pyro.Response, error) {

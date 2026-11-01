@@ -12,11 +12,11 @@ import (
 
 	"github.com/expr-lang/expr/vm"
 
-	"github.com/pyrohq/pyro/pkg/engine"
-	"github.com/pyrohq/pyro/pkg/engine/metrics"
-	"github.com/pyrohq/pyro/pkg/engine/model"
-	"github.com/pyrohq/pyro/pkg/engine/plugin"
-	"github.com/pyrohq/pyro/pkg/engine/protocol/httpdriver"
+	"github.com/codeen15/pyro/pkg/engine"
+	"github.com/codeen15/pyro/pkg/engine/metrics"
+	"github.com/codeen15/pyro/pkg/engine/model"
+	"github.com/codeen15/pyro/pkg/engine/plugin"
+	"github.com/codeen15/pyro/pkg/engine/protocol/httpdriver"
 )
 
 // DefaultMaxVUs caps how many VUs one test may allocate.
@@ -33,7 +33,9 @@ type Options struct {
 	TickInterval time.Duration
 	OnTick       func(Tick)
 	FileRoot     string
-	InsecureTLS  bool
+	// AllowFilesOutsideRoot lets body files live outside FileRoot.
+	AllowFilesOutsideRoot bool
+	InsecureTLS           bool
 	// Plugins provides plugin request and auth types.
 	Plugins *plugin.Manager
 
@@ -173,7 +175,7 @@ func Prepare(p *Plan, opts Options) (*Test, error) {
 		plan: p, opts: opts, agg: metrics.NewAggregator(), targets: map[string]Target{}, scripted: map[string]bool{},
 		ths: compileThresholds(p), errors: newErrorCounter(), done: make(chan struct{}), reported: make(chan struct{}, 1),
 	}
-	t.http = httpdriver.New(httpdriver.Options{FileRoot: opts.FileRoot, ReadFile: opts.ReadFile, InsecureTLS: opts.InsecureTLS, MaxIdleConnsPerHost: 10000, MaxBodyBytes: 1 << 20})
+	t.http = httpdriver.New(httpdriver.Options{FileRoot: opts.FileRoot, AllowOutsideRoot: opts.AllowFilesOutsideRoot, ReadFile: opts.ReadFile, InsecureTLS: opts.InsecureTLS, MaxIdleConnsPerHost: 10000, MaxBodyBytes: 1 << 20})
 	t.vuSeq.Store(int64(opts.FirstVU))
 
 	// A distributed test's segments are checked by each agent.

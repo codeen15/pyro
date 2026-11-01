@@ -6,12 +6,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pyrohq/pyro/pkg/engine"
-	"github.com/pyrohq/pyro/pkg/engine/check"
-	"github.com/pyrohq/pyro/pkg/engine/load"
-	"github.com/pyrohq/pyro/pkg/engine/metrics"
-	"github.com/pyrohq/pyro/pkg/engine/protocol"
-	"github.com/pyrohq/pyro/pkg/engine/runner"
+	"github.com/codeen15/pyro/pkg/engine"
+	"github.com/codeen15/pyro/pkg/engine/check"
+	"github.com/codeen15/pyro/pkg/engine/load"
+	"github.com/codeen15/pyro/pkg/engine/metrics"
+	"github.com/codeen15/pyro/pkg/engine/protocol"
+	"github.com/codeen15/pyro/pkg/engine/runner"
 )
 
 func TestJUnit(t *testing.T) {

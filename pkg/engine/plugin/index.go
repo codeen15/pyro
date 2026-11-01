@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"sort"
@@ -39,8 +40,8 @@ const maxArchive = 256 << 20
 // FetchIndex downloads and parses an index.
 func FetchIndex(ctx context.Context, indexURL string) (*Index, error) {
 	base, err := url.Parse(indexURL)
-	if err != nil || (base.Scheme != "https" && base.Scheme != "http") {
-		return nil, fmt.Errorf("plugin index URL %q must be http(s)", indexURL)
+	if err != nil || !secureURL(base) {
+		return nil, fmt.Errorf("plugin index URL %q must use https (plain http only for localhost)", indexURL)
 	}
 	body, err := get(ctx, base.String(), 8<<20)
 	if err != nil {
@@ -99,8 +100,8 @@ func (i *Index) Download(ctx context.Context, e IndexEntry) ([]byte, error) {
 		return nil, fmt.Errorf("index entry %s: bad url: %w", e.Name, err)
 	}
 	u := i.base.ResolveReference(ref)
-	if u.Scheme != "https" && u.Scheme != "http" {
-		return nil, fmt.Errorf("index entry %s: archive URL must be http(s)", e.Name)
+	if !secureURL(u) {
+		return nil, fmt.Errorf("index entry %s: archive URL must use https (plain http only for localhost)", e.Name)
 	}
 	body, err := get(ctx, u.String(), maxArchive)
 	if err != nil {
@@ -158,4 +159,22 @@ func versionLess(a, b string) bool {
 func Checksum(data []byte) string {
 	s := sha256.Sum256(data)
 	return hex.EncodeToString(s[:])
+}
+
+// secureURL allows https, and plain http only to loopback hosts (for local
+// testing): over plain http, an attacker could swap the archive and the
+// checksum that is meant to verify it.
+func secureURL(u *url.URL) bool {
+	switch u.Scheme {
+	case "https":
+		return true
+	case "http":
+		h := u.Hostname()
+		if h == "localhost" {
+			return true
+		}
+		ip := net.ParseIP(h)
+		return ip != nil && ip.IsLoopback()
+	}
+	return false
 }

@@ -15,8 +15,8 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/pyrohq/pyro/pkg/engine/importer"
-	"github.com/pyrohq/pyro/pkg/engine/model"
+	"github.com/codeen15/pyro/pkg/engine/importer"
+	"github.com/codeen15/pyro/pkg/engine/model"
 )
 
 // Looks reports whether data is an OpenAPI 3 or Swagger 2 document.

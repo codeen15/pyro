@@ -11,9 +11,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/pyrohq/pyro/pkg/engine"
-	"github.com/pyrohq/pyro/pkg/engine/model"
-	"github.com/pyrohq/pyro/pkg/engine/protocol/httpdriver"
+	"github.com/codeen15/pyro/pkg/engine"
+	"github.com/codeen15/pyro/pkg/engine/model"
+	"github.com/codeen15/pyro/pkg/engine/protocol/httpdriver"
 )
 
 func target(t *testing.T) (*httptest.Server, *[]string) {

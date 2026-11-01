@@ -4,14 +4,14 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/pyrohq/pyro/pkg/engine/metrics"
-	"github.com/pyrohq/pyro/pkg/engine/model"
+	"github.com/codeen15/pyro/pkg/engine/metrics"
+	"github.com/codeen15/pyro/pkg/engine/model"
+	"github.com/codeen15/pyro/pkg/engine/protocol/httpdriver"
 )
 
 // Worker runs one segment of a distributed test, usually a remote agent
@@ -316,9 +316,9 @@ func (t *Test) jobFiles() (map[string][]byte, error) {
 		if p == "" || strings.Contains(p, "{{") || files[p] != nil {
 			return nil
 		}
-		full := p
-		if !filepath.IsAbs(p) && t.opts.FileRoot != "" {
-			full = filepath.Join(t.opts.FileRoot, p)
+		full, err := httpdriver.ResolveFile(t.opts.FileRoot, p, t.opts.AllowFilesOutsideRoot)
+		if err != nil {
+			return nil // reported by the agent when a request needs it
 		}
 		b, err := os.ReadFile(full)
 		if err != nil {

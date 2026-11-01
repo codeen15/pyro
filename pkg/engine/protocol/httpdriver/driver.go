@@ -21,8 +21,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/pyrohq/pyro/pkg/engine/model"
-	"github.com/pyrohq/pyro/pkg/engine/protocol"
+	"github.com/codeen15/pyro/pkg/engine/model"
+	"github.com/codeen15/pyro/pkg/engine/protocol"
 )
 
 type Options struct {
@@ -31,8 +31,12 @@ type Options struct {
 	MaxRedirects    int   // default 10
 	MaxBodyBytes    int64 // response bytes kept in memory, default 10 MiB
 	InsecureTLS     bool
-	// FileRoot resolves relative paths in multipart/file bodies.
-	FileRoot string
+	// FileRoot resolves relative paths in multipart/file bodies. When set,
+	// body files must be inside it (after following symlinks) unless
+	// AllowOutsideRoot: an imported or cloned collection must not be able to
+	// send ~/.ssh/id_rsa somewhere just because you pressed Send.
+	FileRoot         string
+	AllowOutsideRoot bool
 	// ReadFile, when set, replaces reading body files from disk (agents
 	// serve the files a controller sent with the job).
 	ReadFile func(path string) ([]byte, error)
@@ -341,14 +345,43 @@ func (d *Driver) readFile(p string) ([]byte, error) {
 	if d.opts.ReadFile != nil {
 		return d.opts.ReadFile(p)
 	}
-	return os.ReadFile(d.path(p))
+	full, err := ResolveFile(d.opts.FileRoot, p, d.opts.AllowOutsideRoot)
+	if err != nil {
+		return nil, err
+	}
+	return os.ReadFile(full)
 }
 
-func (d *Driver) path(p string) string {
-	if filepath.IsAbs(p) || d.opts.FileRoot == "" {
-		return p
+// ErrOutsideRoot is returned for body files outside the workspace.
+var ErrOutsideRoot = errors.New("is outside the workspace; copy it into the workspace, or set allowFilesOutsideWorkspace: true in pyro.yaml")
+
+// ResolveFile turns a body file path into a path on disk: relative paths
+// are relative to root. Unless allowOutside, the file (with symlinks
+// followed) must be inside root. An empty root allows any path.
+func ResolveFile(root, p string, allowOutside bool) (string, error) {
+	if root == "" {
+		return p, nil
 	}
-	return filepath.Join(d.opts.FileRoot, p)
+	full := p
+	if !filepath.IsAbs(p) {
+		full = filepath.Join(root, p)
+	}
+	if allowOutside {
+		return full, nil
+	}
+	realRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return "", err
+	}
+	real, err := filepath.EvalSymlinks(full)
+	if err != nil {
+		return "", err // missing files report as usual
+	}
+	rel, err := filepath.Rel(realRoot, real)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+		return "", fmt.Errorf("file %s %w", p, ErrOutsideRoot)
+	}
+	return full, nil
 }
 
 func graphQLPayload(query, variables string) ([]byte, error) {

@@ -1,6 +1,6 @@
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
-LDFLAGS := -s -w -X github.com/pyrohq/pyro/internal/version.Version=$(VERSION) -X github.com/pyrohq/pyro/internal/version.Commit=$(COMMIT)
+LDFLAGS := -s -w -X github.com/codeen15/pyro/internal/version.Version=$(VERSION) -X github.com/codeen15/pyro/internal/version.Commit=$(COMMIT)
 
 .PHONY: all build ui ui-deps test vet dev-api dev-ui plugins clean
 

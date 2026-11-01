@@ -12,8 +12,8 @@ import (
 	"github.com/ohler55/ojg/jp"
 	"github.com/ohler55/ojg/oj"
 
-	"github.com/pyrohq/pyro/pkg/engine/model"
-	"github.com/pyrohq/pyro/pkg/engine/protocol"
+	"github.com/codeen15/pyro/pkg/engine/model"
+	"github.com/codeen15/pyro/pkg/engine/protocol"
 )
 
 // Result is one assertion or script test outcome.
