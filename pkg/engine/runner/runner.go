@@ -138,7 +138,7 @@ func Run(ctx context.Context, e *engine.Engine, items []Item, opts Options) *Sum
 
 func runItem(ctx context.Context, e *engine.Engine, rt *script.Runtime, item Item, v *vars.Set, iteration int) ItemResult {
 	ir := ItemResult{Iteration: iteration, Path: item.Path, Name: item.Request.Name, Kind: item.Request.Kind}
-	if k := item.Request.Kind; k != "" && k != model.KindHTTP {
+	if k := item.Request.Kind; k == model.KindWebSocket || k == model.KindSocketIO {
 		ir.Note = string(k) + " requests are skipped in collection runs"
 		return ir
 	}

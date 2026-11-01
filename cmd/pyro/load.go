@@ -46,6 +46,9 @@ func loadCmd() *cobra.Command {
 			opts := load.Options{
 				Resolve: ws.Target, LoadData: ws.LoadData, MaxVUs: maxVUs, FileRoot: ws.Root, InsecureTLS: insecure,
 			}
+			if opts.Plugins = openPlugins(); opts.Plugins != nil {
+				defer opts.Plugins.Close()
+			}
 			if envName != "" {
 				if opts.Environment, err = ws.ReadEnvironment(envName); err != nil {
 					return fmt.Errorf("environment %q: %w", envName, err)
@@ -145,8 +148,7 @@ func readPlan(ws *store.Workspace, arg string) (*load.Plan, error) {
 
 func confirmHosts(hosts []string) error {
 	msg := "This load test will send traffic to: " + strings.Join(hosts, ", ")
-	st, err := os.Stdin.Stat()
-	if err != nil || st.Mode()&os.ModeCharDevice == 0 {
+	if !stdinIsTerminal() {
 		return fmt.Errorf("%s\nRe-run with --yes to confirm, or add the hosts to loadAllowHosts in pyro.yaml", msg)
 	}
 	fmt.Printf("%s\nOnly load test systems you own or are allowed to test. Continue? [y/N] ", msg)

@@ -33,7 +33,7 @@ func (e *Engine) Connect(ctx context.Context, in SendInput) *ConnectResult {
 	}
 	r := in.Vars.Resolver()
 	sent, unresolved := ResolveRequest(in.Request, r)
-	if err := auth.Apply(sent, resolveAuth(auth.Effective(in.Request.Auth, in.Chain), r, &unresolved)); err != nil {
+	if err := e.applyAuth(ctx, sent, resolveAuth(auth.Effective(in.Request.Auth, in.Chain), r, &unresolved), nil); err != nil {
 		res.Sent, res.Unresolved, res.Error = sent, unresolved, err.Error()
 		return res
 	}

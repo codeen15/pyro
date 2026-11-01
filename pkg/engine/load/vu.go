@@ -54,7 +54,7 @@ func (t *Test) newVU(scenario string, sc *Scenario, feed *feeder) *vu {
 	id := int(t.vuSeq.Add(1))
 	v := &vu{
 		id: id, scenario: scenario, sc: sc, t: t,
-		eng:      &engine.Engine{HTTP: t.http.ForVU(), Scripts: &script.Pool{}},
+		eng:      &engine.Engine{HTTP: t.http.ForVU(), Scripts: &script.Pool{}, Plugins: t.opts.Plugins},
 		vars:     engine.NewVars(t.opts.Environment, nil),
 		collVars: map[string]map[string]string{},
 		buf:      t.agg.NewBuffer(),
@@ -260,6 +260,11 @@ func (v *vu) recordHTTP(res *engine.Result, tags metrics.Tags, name string) {
 	method := "GET"
 	if res.Sent != nil && res.Sent.Method != "" {
 		method = strings.ToUpper(res.Sent.Method)
+	}
+	if res.Sent != nil {
+		if id, ok := engine.PluginID(res.Sent.Kind); ok {
+			method = strings.ToUpper(id) // e.g. TCP, shown where HTTP shows the method
+		}
 	}
 	tags.Method = method
 	samples := make([]metrics.Sample, 0, 12)

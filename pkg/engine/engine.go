@@ -8,11 +8,13 @@ package engine
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/pyrohq/pyro/pkg/engine/auth"
 	"github.com/pyrohq/pyro/pkg/engine/check"
 	"github.com/pyrohq/pyro/pkg/engine/model"
+	"github.com/pyrohq/pyro/pkg/engine/plugin"
 	"github.com/pyrohq/pyro/pkg/engine/protocol"
 	"github.com/pyrohq/pyro/pkg/engine/protocol/httpdriver"
 	"github.com/pyrohq/pyro/pkg/engine/script"
@@ -22,6 +24,13 @@ import (
 type Engine struct {
 	HTTP    *httpdriver.Driver
 	Scripts *script.Pool
+	// Plugins provides plugin request and auth types; nil disables them.
+	Plugins *plugin.Manager
+}
+
+// PluginID returns the id of a plugin kind ("plugin:tcp" → "tcp").
+func PluginID(k model.Kind) (string, bool) {
+	return strings.CutPrefix(string(k), "plugin:")
 }
 
 func New(http *httpdriver.Driver) *Engine {
@@ -102,7 +111,7 @@ func (e *Engine) Send(ctx context.Context, in SendInput) *Result {
 		res.Error = "no request"
 		return res
 	}
-	if k := in.Request.Kind; k != "" && k != model.KindHTTP {
+	if k := in.Request.Kind; k == model.KindWebSocket || k == model.KindSocketIO {
 		res.Error = fmt.Sprintf("%s requests are opened as sessions, not sent", k)
 		return res
 	}
@@ -148,7 +157,7 @@ func (e *Engine) Send(ctx context.Context, in SendInput) *Result {
 
 	r := in.Vars.Resolver()
 	sent, unresolved := ResolveRequest(req, r)
-	if err := auth.Apply(sent, resolveAuth(auth.Effective(req.Auth, in.Chain), r, &unresolved)); err != nil {
+	if err := e.applyAuth(ctx, sent, resolveAuth(auth.Effective(req.Auth, in.Chain), r, &unresolved), res); err != nil {
 		res.Sent, res.Unresolved, res.Error = sent, unresolved, err.Error()
 		return res
 	}
@@ -156,7 +165,7 @@ func (e *Engine) Send(ctx context.Context, in SendInput) *Result {
 	sent.Scripts = nil
 	res.Sent, res.Unresolved = sent, unresolved
 
-	resp, err := e.HTTP.Execute(ctx, sent)
+	resp, err := e.execute(ctx, sent, res)
 	if err != nil {
 		res.Error = err.Error()
 		res.Tests = append(res.Tests, check.Assert(req.Assertions, nil)...)
@@ -181,6 +190,45 @@ func (e *Engine) Send(ctx context.Context, in SendInput) *Result {
 		res.Extracted, res.Problems = vals, problems
 	}
 	return res
+}
+
+// execute sends a resolved request with the HTTP driver or its plugin.
+func (e *Engine) execute(ctx context.Context, sent *model.Request, res *Result) (*protocol.Response, error) {
+	id, ok := PluginID(sent.Kind)
+	if !ok {
+		return e.HTTP.Execute(ctx, sent)
+	}
+	if e.Plugins == nil {
+		return nil, fmt.Errorf("%s requests need plugins, which aren't available here", sent.Kind)
+	}
+	resp, logs, err := e.Plugins.Execute(ctx, id, sent)
+	res.addPluginLogs(logs)
+	return resp, err
+}
+
+// applyAuth applies built-in auth or runs a plugin auth type.
+func (e *Engine) applyAuth(ctx context.Context, sent *model.Request, a *model.Auth, res *Result) error {
+	if a == nil {
+		return nil
+	}
+	id, ok := strings.CutPrefix(a.Type, "plugin:")
+	if !ok {
+		return auth.Apply(sent, a)
+	}
+	if e.Plugins == nil {
+		return fmt.Errorf("auth type %s needs plugins, which aren't available here", a.Type)
+	}
+	logs, err := e.Plugins.Sign(ctx, id, sent, a.Params)
+	if res != nil {
+		res.addPluginLogs(logs)
+	}
+	return err
+}
+
+func (res *Result) addPluginLogs(logs []plugin.Log) {
+	for _, l := range logs {
+		res.Logs = append(res.Logs, script.Log{Level: l.Level, Message: "[plugin] " + l.Message})
+	}
 }
 
 func (res *Result) absorb(out script.Output) {
@@ -274,6 +322,12 @@ func ResolveRequest(req *model.Request, r *vars.Resolver) (*model.Request, []str
 	}
 	if req.Auth != nil {
 		out.Auth = resolveAuthWith(req.Auth, res)
+	}
+	if req.Options != nil {
+		out.Options = make(map[string]string, len(req.Options))
+		for k, v := range req.Options {
+			out.Options[k] = res(v)
+		}
 	}
 	return &out, missing
 }

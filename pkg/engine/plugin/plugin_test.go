@@ -11,6 +11,8 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -299,5 +301,59 @@ func TestConcurrentCallsUseThePool(t *testing.T) {
 	close(errs)
 	for err := range errs {
 		t.Error(err)
+	}
+}
+
+func TestIndex(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	for _, f := range []string{ManifestFile, "tcp.wasm"} {
+		data, _ := os.ReadFile(filepath.Join(built["tcp"], f))
+		w, _ := zw.Create(f)
+		w.Write(data)
+	}
+	zw.Close()
+	archive := buf.Bytes()
+	sum := Checksum(archive)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/index.json":
+			fmt.Fprintf(w, `{"plugins":[
+				{"name":"tcp","version":"0.9.0","url":"tcp-old.zip","sha256":"%s"},
+				{"name":"tcp","version":"0.10.0","url":"files/tcp.zip","sha256":"%s","title":"Raw TCP"},
+				{"name":"bad","version":"1.0.0","url":"files/tcp.zip","sha256":"%s"}]}`, sum, sum, strings.Repeat("0", 64))
+		case "/files/tcp.zip":
+			w.Write(archive)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	idx, err := FetchIndex(context.Background(), srv.URL+"/index.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	e, ok := idx.Find("tcp", "")
+	if !ok || e.Version != "0.10.0" {
+		t.Fatalf("latest = %+v", e)
+	}
+	if got := idx.Search("raw"); len(got) != 1 || got[0].Version != "0.10.0" {
+		t.Fatalf("search = %+v", got)
+	}
+	data, err := idx.Download(context.Background(), e)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := manager(t)
+	if info, err := m.InstallArchive(data, false); err != nil || info.Name != "tcp" {
+		t.Fatalf("install from index: %+v %v", info, err)
+	}
+	bad, _ := idx.Find("bad", "")
+	if _, err := idx.Download(context.Background(), bad); err == nil || !strings.Contains(err.Error(), "checksum mismatch") {
+		t.Fatalf("bad checksum: %v", err)
+	}
+	if _, err := FetchIndex(context.Background(), "file:///etc/passwd"); err == nil {
+		t.Fatal("non-http index must be refused")
 	}
 }

@@ -15,6 +15,7 @@ import (
 	"github.com/pyrohq/pyro/pkg/engine"
 	"github.com/pyrohq/pyro/pkg/engine/metrics"
 	"github.com/pyrohq/pyro/pkg/engine/model"
+	"github.com/pyrohq/pyro/pkg/engine/plugin"
 	"github.com/pyrohq/pyro/pkg/engine/protocol/httpdriver"
 )
 
@@ -33,6 +34,8 @@ type Options struct {
 	OnTick       func(Tick)
 	FileRoot     string
 	InsecureTLS  bool
+	// Plugins provides plugin request and auth types.
+	Plugins *plugin.Manager
 }
 
 // Latency is a duration distribution in milliseconds.

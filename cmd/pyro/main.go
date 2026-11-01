@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 
 	"github.com/pyrohq/pyro/internal/history"
 	"github.com/pyrohq/pyro/internal/server"
@@ -49,7 +50,7 @@ func rootCmd() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
-	root.AddCommand(serveCmd(), initCmd(), importCmd(), runCmd(), loadCmd(), versionCmd())
+	root.AddCommand(serveCmd(), initCmd(), importCmd(), runCmd(), loadCmd(), pluginCmd(), versionCmd())
 	return root
 }
 
@@ -130,6 +131,9 @@ func serveCmd() *cobra.Command {
 				defer hist.Close()
 			}
 			eng := engine.New(httpdriver.New(httpdriver.Options{FileRoot: ws.Root}))
+			if eng.Plugins = openPlugins(); eng.Plugins != nil {
+				defer eng.Plugins.Close()
+			}
 			api := server.New(server.Config{
 				Workspace: ws, Engine: eng, History: hist, Token: token, UI: web.Dist(),
 			})
@@ -311,6 +315,10 @@ func openBrowser(url string) error {
 	}
 	return c.Start()
 }
+
+// stdinIsTerminal reports whether prompts can be answered (not a pipe,
+// file or /dev/null, which is also a character device).
+func stdinIsTerminal() bool { return term.IsTerminal(int(os.Stdin.Fd())) }
 
 func isWSL() bool {
 	b, err := os.ReadFile("/proc/version")

@@ -64,6 +64,9 @@ func runCmd() *cobra.Command {
 				items[i] = runner.Item{Path: r.Path, Request: r.Request, Chain: r.Chain}
 			}
 			eng := engine.New(httpdriver.New(httpdriver.Options{FileRoot: ws.Root, Timeout: timeout, InsecureTLS: insecure}))
+			if eng.Plugins = openPlugins(); eng.Plugins != nil {
+				defer eng.Plugins.Close()
+			}
 
 			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 			defer stop()
@@ -180,7 +183,13 @@ func (p *printer) result(ir runner.ItemResult) {
 }
 
 func methodOf(r *model.Request) string {
-	if r == nil || r.Method == "" {
+	if r == nil {
+		return "GET"
+	}
+	if id, ok := engine.PluginID(r.Kind); ok {
+		return strings.ToUpper(id)
+	}
+	if r.Method == "" {
 		return "GET"
 	}
 	return strings.ToUpper(r.Method)
