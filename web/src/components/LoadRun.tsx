@@ -25,6 +25,7 @@ interface State {
   thresholds: ThresholdResult[];
   totals?: Record<string, { value: number; perSecond?: number; p95?: number }>;
   maxVUs?: number;
+  maxRPS?: number;
   agents?: AgentStatus[];
   warnings?: string[];
 }
@@ -56,6 +57,7 @@ export function LoadRunPage({ id }: { id: string }) {
           maxVUs: r.maxVUs,
           agents: r.agents,
           warnings: r.warnings,
+          maxRPS: r.maxRPS,
         };
       }
       return {
@@ -167,6 +169,7 @@ export function LoadRunPage({ id }: { id: string }) {
                 loadtests/{st.test}.load.yaml
               </button>
             )}
+            {st.maxRPS ? <> · capped at {st.maxRPS} req/s</> : null}
             {st.reason && <> · {st.reason}</>}
           </p>
         </div>

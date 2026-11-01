@@ -25,6 +25,7 @@ func loadCmd() *cobra.Command {
 		agentToken                       string
 		agents, outs                     []string
 		maxVUs                           int
+		maxRPS                           float64
 		yes, insecure, quiet             bool
 		agentInsecure                    bool
 	)
@@ -53,6 +54,7 @@ func loadCmd() *cobra.Command {
 			}
 			opts := load.Options{
 				Resolve: ws.Target, LoadData: ws.LoadData, MaxVUs: maxVUs, FileRoot: ws.Root, AllowFilesOutsideRoot: ws.Meta.AllowFilesOutsideWorkspace, Globals: ws.GlobalVars(), InsecureTLS: insecure,
+				MaxRPS: effectiveCap(ws.Meta.LoadMaxRPS, maxRPS),
 			}
 			if opts.Plugins = openPlugins(); opts.Plugins != nil {
 				defer opts.Plugins.Close()
@@ -154,6 +156,7 @@ func loadCmd() *cobra.Command {
 	f.StringVarP(&wsDir, "workspace", "w", "", "workspace directory (same default as serve)")
 	f.StringVarP(&envName, "environment", "e", "", "environment (overrides the plan's)")
 	f.IntVar(&maxVUs, "max-vus", load.DefaultMaxVUs, "refuse plans that need more VUs than this")
+	f.Float64Var(&maxRPS, "max-rps", 0, "cap requests per second across all VUs (the plan's maxRPS and pyro.yaml's loadMaxRPS also apply; the lowest wins)")
 	f.BoolVarP(&yes, "yes", "y", false, "don't ask before targeting non-local hosts")
 	f.BoolVar(&insecure, "insecure", false, "skip TLS certificate verification")
 	f.BoolVarP(&quiet, "quiet", "q", false, "no live progress line")
@@ -276,6 +279,9 @@ func printLoadSummary(r *load.Result) {
 		load.StatusPassed: "PASSED", load.StatusFailed: "FAILED", load.StatusAborted: "ABORTED", load.StatusStopped: "STOPPED",
 	}[r.Status]
 	fmt.Printf("%s  %s in %s, up to %d VUs", verdict, r.Name, clockOf(r.Duration), r.MaxVUs)
+	if r.MaxRPS > 0 {
+		fmt.Printf(", capped at %g req/s", r.MaxRPS)
+	}
 	if r.Reason != "" {
 		fmt.Printf(" (%s)", r.Reason)
 	}
@@ -348,4 +354,15 @@ func printLoadSummary(r *load.Result) {
 			fmt.Printf("  %6d  %s\n", e.Count, e.Message)
 		}
 	}
+}
+
+// effectiveCap is the lower of two caps, ignoring zeros.
+func effectiveCap(a, b float64) float64 {
+	switch {
+	case a <= 0:
+		return b
+	case b <= 0 || a < b:
+		return a
+	}
+	return b
 }

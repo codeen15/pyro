@@ -142,7 +142,7 @@ func (s *Server) startLoadTest(w http.ResponseWriter, r *http.Request) {
 	if envName == "" {
 		envName = plan.Environment
 	}
-	opts := load.Options{Resolve: s.ws.Target, LoadData: s.ws.LoadData, FileRoot: s.ws.Root, AllowFilesOutsideRoot: s.ws.Meta.AllowFilesOutsideWorkspace, Globals: s.ws.GlobalVars()}
+	opts := load.Options{Resolve: s.ws.Target, LoadData: s.ws.LoadData, FileRoot: s.ws.Root, AllowFilesOutsideRoot: s.ws.Meta.AllowFilesOutsideWorkspace, Globals: s.ws.GlobalVars(), MaxRPS: s.ws.Meta.LoadMaxRPS}
 	if s.cfg.Engine != nil {
 		opts.Plugins = s.cfg.Engine.Plugins
 	}

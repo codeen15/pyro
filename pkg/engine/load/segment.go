@@ -10,6 +10,9 @@ import "math"
 func (p *Plan) Segment(i, n int) *Plan {
 	out := *p
 	out.Thresholds = nil
+	if n > 1 {
+		out.MaxRPS = p.MaxRPS / float64(n)
+	}
 	out.Scenarios = map[string]*Scenario{}
 	if n <= 1 {
 		for name, sc := range p.Scenarios {

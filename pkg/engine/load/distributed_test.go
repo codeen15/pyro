@@ -208,3 +208,36 @@ type badWorker struct{ memWorker }
 func (*badWorker) Name() string                            { return "bad" }
 func (*badWorker) Prepare(context.Context, Job) error      { return errors.New("busy") }
 func (*badWorker) Run(context.Context, func(Report)) error { return nil }
+
+func TestMaxRPSCap(t *testing.T) {
+	tg := newTarget(t, 0)
+	plan := `
+name: capped
+maxRPS: 50
+scenarios:
+  s: { executor: constant-vus, vus: 20, duration: 2s, flow: [ { request: c/ok } ] }
+`
+	// The cap bounds the rate, also while in-flight iterations finish after
+	// the duration, so check requests over the whole run.
+	res := run(t, tg.URL, plan)
+	n := res.Metrics["http_reqs"].Value
+	if rate := n / res.Duration; rate < 42 || rate > 53 || n < 90 || res.MaxRPS != 50 {
+		t.Errorf("local: %v requests in %.2fs = %.1f/s at maxRPS 50 (cap reported %v)", n, res.Duration, rate, res.MaxRPS)
+	}
+	// The run's own cap applies when lower; agents split it.
+	tg.hits.Store(0)
+	workers := []*memWorker{{name: "a"}, {name: "b"}}
+	res = run(t, tg.URL, plan, func(o *Options) {
+		o.MaxRPS = 30
+		for _, w := range workers {
+			o.Workers = append(o.Workers, w)
+		}
+	})
+	n = res.Metrics["http_reqs"].Value
+	if rate := n / res.Duration; rate < 25 || rate > 32 || res.MaxRPS != 30 || workers[0].job.Plan.MaxRPS != 15 {
+		t.Errorf("distributed: %v requests in %.2fs = %.1f/s at 30 req/s (segment cap %v)", n, res.Duration, rate, workers[0].job.Plan.MaxRPS)
+	}
+	if p, err := ParsePlan([]byte("maxRPS: -1\nscenarios:\n  s: { executor: constant-vus, vus: 1, duration: 1s, flow: [ { request: c/ok } ] }\n"), nil); err == nil {
+		t.Errorf("negative maxRPS accepted: %+v", p)
+	}
+}

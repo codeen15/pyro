@@ -429,6 +429,7 @@ export interface LoadResult {
   thresholds: ThresholdResult[] | null;
   errors: ErrorCount[] | null;
   maxVUs: number;
+  maxRPS?: number;
   agents?: AgentStatus[];
   warnings?: string[];
 }

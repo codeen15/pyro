@@ -39,6 +39,7 @@ Templates in the UI that fill in a plan: **Smoke** (1–2 VUs, short), **Load** 
 ```yaml
 name: Checkout stress
 environment: staging
+maxRPS: 800                     # optional cap on requests started per second, all scenarios
 scenarios:
   browse_and_buy:
     executor: ramping-vus
@@ -174,7 +175,14 @@ Accuracy: against a target that sleeps exactly 50 ms, 5000 VUs measured p95 52 m
 ## Safety
 - Pyro asks for confirmation before load testing any host that is not loopback or in the workspace allow-list (`pyro.yaml: loadAllowHosts`). `--yes` skips the prompt in CI.
 - The UI asks the same way, inline, listing the hosts.
-- VU cap: a plan needing more than 50,000 VUs (or `--max-vus`) is refused. A global RPS cap is planned.
+- VU cap: a plan needing more than 50,000 VUs (or `--max-vus`) is refused.
+- Requests-per-second cap: `maxRPS` in the plan, `--max-rps` on `pyro load`, and
+  `loadMaxRPS` in `pyro.yaml` (a workspace-wide ceiling); the lowest applies. Request starts
+  are spaced evenly across every VU (WebSocket/Socket.IO connects count too); the wait comes
+  before sending, so it isn't counted in `http_req_duration`. Distributed tests split the cap
+  between agents. VUs still waiting for a slot when their scenario ends give up rather than
+  sending late. With arrival-rate executors, a cap below the arrival rate shows up as busy
+  VUs and dropped iterations.
 - One load test at a time per `pyro serve`.
 - Stop is graceful: VUs stop taking new iterations, in-flight requests finish within `gracefulStop`, and then they are cancelled. A second stop (Ctrl+C twice, or "Abort now") cancels immediately.
 

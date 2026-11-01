@@ -23,6 +23,9 @@ type Plan struct {
 	Environment string               `yaml:"environment,omitempty" json:"environment,omitempty"`
 	Scenarios   map[string]*Scenario `yaml:"scenarios" json:"scenarios"`
 	Thresholds  map[string]Criteria  `yaml:"thresholds,omitempty" json:"thresholds,omitempty"`
+	// MaxRPS caps how many requests start per second across all scenarios
+	// and VUs (0 = no cap).
+	MaxRPS float64 `yaml:"maxRPS,omitempty" json:"maxRPS,omitempty"`
 }
 
 // Executor names.
@@ -301,6 +304,9 @@ func (p *Plan) Validate(exists func(string) bool) error {
 				add("%s: data onEnd must be recycle or stop", where)
 			}
 		}
+	}
+	if p.MaxRPS < 0 {
+		add("maxRPS must be positive")
 	}
 	for key, crit := range p.Thresholds {
 		if _, _, err := parseThresholdKey(key); err != nil {

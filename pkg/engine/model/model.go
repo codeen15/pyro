@@ -20,6 +20,9 @@ type Workspace struct {
 	// LoadAllowHosts lists hosts load tests may target without confirmation
 	// (loopback is always allowed).
 	LoadAllowHosts []string `yaml:"loadAllowHosts,omitempty" json:"loadAllowHosts,omitempty"`
+	// LoadMaxRPS caps every load test's requests per second (a safety
+	// ceiling; a plan's maxRPS can only go lower). 0 = no cap.
+	LoadMaxRPS float64 `yaml:"loadMaxRPS,omitempty" json:"loadMaxRPS,omitempty"`
 	// AllowFilesOutsideWorkspace lets request bodies read files outside the
 	// workspace directory (off by default, like Postman).
 	AllowFilesOutsideWorkspace bool `yaml:"allowFilesOutsideWorkspace,omitempty" json:"allowFilesOutsideWorkspace,omitempty"`

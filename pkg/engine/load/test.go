@@ -41,6 +41,9 @@ type Options struct {
 	InsecureTLS           bool
 	// Plugins provides plugin request and auth types.
 	Plugins *plugin.Manager
+	// MaxRPS caps request starts per second (with the plan's maxRPS, the
+	// lower applies; 0 = no cap). Workspaces set it from loadMaxRPS.
+	MaxRPS float64
 
 	// Workers run the test distributed: each runs a segment of the plan and
 	// reports metric deltas, which are merged here, so thresholds and
@@ -113,7 +116,9 @@ type Result struct {
 	Thresholds []ThresholdResult       `json:"thresholds"`
 	Errors     []ErrorCount            `json:"errors"`
 	MaxVUs     int                     `json:"maxVUs"`
-	Agents     []AgentStatus           `json:"agents,omitempty"`
+	// MaxRPS is the cap that applied (0 = none).
+	MaxRPS float64       `json:"maxRPS,omitempty"`
+	Agents []AgentStatus `json:"agents,omitempty"`
 	// Warnings are about the run itself (e.g. a CPU-bound load generator).
 	Warnings []string `json:"warnings,omitempty"`
 }
@@ -134,6 +139,7 @@ type Test struct {
 	reported chan struct{} // a worker sent a report
 	cpu      *cpuSampler
 	oauth    *auth.OAuth2 // shared by every VU, so a token is fetched once
+	pace     *pacer       // the requests-per-second cap, if any
 	sat      saturation
 
 	vuSeq     atomic.Int64
@@ -180,6 +186,7 @@ func Prepare(p *Plan, opts Options) (*Test, error) {
 		ths: compileThresholds(p), errors: newErrorCounter(), done: make(chan struct{}), reported: make(chan struct{}, 1),
 	}
 	t.oauth = auth.NewOAuth2()
+	t.pace = newPacer(effectiveRPS(p.MaxRPS, opts.MaxRPS))
 	t.http = httpdriver.New(httpdriver.Options{FileRoot: opts.FileRoot, AllowOutsideRoot: opts.AllowFilesOutsideRoot, ReadFile: opts.ReadFile, InsecureTLS: opts.InsecureTLS, MaxIdleConnsPerHost: 10000, MaxBodyBytes: 1 << 20})
 	t.vuSeq.Store(int64(opts.FirstVU))
 
@@ -447,6 +454,7 @@ func (t *Test) finish() {
 		Duration: time.Since(t.started).Seconds(), Ticks: append([]Tick(nil), t.ticks...),
 		Metrics: t.agg.Totals(), Requests: t.agg.Requests(), Thresholds: results,
 		Errors: t.errorsTop(20), MaxVUs: t.maxVUs(), Agents: t.agentStatus(0), Warnings: t.warnings(),
+		MaxRPS: effectiveRPS(t.plan.MaxRPS, t.opts.MaxRPS),
 	}
 	t.result = res
 	t.mu.Unlock()

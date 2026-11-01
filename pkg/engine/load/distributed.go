@@ -131,6 +131,9 @@ func (t *Test) prepareWorkers(rows map[string][]map[string]string) error {
 	var jobs []Job
 	for i, w := range t.opts.Workers {
 		seg := t.plan.Segment(i, n)
+		// Each agent gets its share of the cap, whether it came from the
+		// plan or from this run's options.
+		seg.MaxRPS = effectiveRPS(t.plan.MaxRPS, t.opts.MaxRPS) / float64(n)
 		if len(seg.Scenarios) == 0 {
 			continue // too little load to give this worker any
 		}

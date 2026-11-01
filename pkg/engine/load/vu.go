@@ -7,6 +7,7 @@ import (
 	"math/rand/v2"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/expr-lang/expr"
@@ -44,8 +45,10 @@ type vu struct {
 	// rt is created on first use, so flows without scripts never pay for it.
 	rt *script.Runtime
 
-	iteration  int
-	onceDone   map[*Step]bool
+	iteration int
+	onceDone  map[*Step]bool
+	// stop is the running slot's stop flag (VU executors); nil otherwise.
+	stop       *atomic.Bool
 	lastStatus int
 	lastMS     float64
 }
@@ -80,7 +83,7 @@ func (v *vu) iterate(ctx context.Context) error {
 	err := v.steps(ctx, v.sc.Flow, "")
 	v.t.busy.Add(-1)
 	tags := metrics.Tags{Scenario: v.scenario}
-	if ctx.Err() == nil {
+	if ctx.Err() == nil && !errors.Is(err, errStopping) {
 		v.buf.AddMany(
 			metrics.Sample{Metric: "iterations", Tags: tags, Value: 1},
 			metrics.Sample{Metric: "iteration_duration", Tags: tags, Value: ms(time.Since(start))},
@@ -242,6 +245,9 @@ func (v *vu) request(ctx context.Context, st *Step, group string) error {
 		in.Script = v.rt
 	}
 
+	if err := v.t.pace.wait(ctx, v.stopping); err != nil {
+		return err
+	}
 	if k := target.Request.Kind; k == model.KindWebSocket || k == model.KindSocketIO {
 		return v.stream(ctx, st, in, tags)
 	}
@@ -416,4 +422,10 @@ func newVUVars(env *model.Environment, globals map[string]string) *vars.Set {
 		v.Globals[k] = val
 	}
 	return v
+}
+
+// stopping reports whether this VU should start no more requests: the test
+// is stopping, or its slot was asked to stop (scenario over, ramp-down).
+func (v *vu) stopping() bool {
+	return v.t.soft.Err() != nil || (v.stop != nil && v.stop.Load())
 }

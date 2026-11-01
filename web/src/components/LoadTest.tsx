@@ -294,6 +294,24 @@ function Designer({
           onChange={(e) => update((d) => d.set("name", e.target.value))}
         />
       </label>
+      <label className="field-row">
+        <span className="field-label">Max requests/s</span>
+        <input
+          className="cell mono"
+          inputMode="decimal"
+          value={doc.get("maxRPS") === undefined ? "" : String(doc.get("maxRPS"))}
+          placeholder="no cap"
+          aria-label="Max requests per second"
+          onChange={(e) =>
+            update((d) => {
+              const n = Number(e.target.value);
+              if (e.target.value.trim() === "" || !Number.isFinite(n) || n <= 0) d.delete("maxRPS");
+              else d.set("maxRPS", n);
+            })
+          }
+        />
+        <span className="muted small">Spaces request starts across all VUs; waiting isn't counted as response time.</span>
+      </label>
 
       {names.map((sn) => (
         <ScenarioEditor

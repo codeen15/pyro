@@ -97,6 +97,7 @@ type vuSlot struct {
 func launchVU(t *Test, v *vu, iterations int) *vuSlot {
 	ctx, cancel := context.WithCancel(t.hard)
 	s := &vuSlot{v: v, cancel: cancel, done: make(chan struct{})}
+	v.stop = &s.stop
 	t.active.Add(1)
 	go func() {
 		defer close(s.done)

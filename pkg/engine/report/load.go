@@ -342,7 +342,7 @@ details{margin-top:12px}summary{cursor:pointer;color:var(--muted)}
 footer{margin-top:48px;color:var(--faint);font-size:12px}
 </style></head><body><main>
 <h1>{{.R.Name}}<span class="status {{.R.Status}}">{{if eq .R.Status "passed"}}✓ Passed{{else if eq .R.Status "failed"}}✗ Failed{{else if eq .R.Status "aborted"}}✗ Aborted{{else}}■ Stopped{{end}}</span></h1>
-<p class="sub">Started {{.Started}} · ran {{.Duration}} · up to {{.R.MaxVUs}} virtual users{{if .R.Reason}} · {{.R.Reason}}{{end}}</p>
+<p class="sub">Started {{.Started}} · ran {{.Duration}} · up to {{.R.MaxVUs}} virtual users{{if .R.MaxRPS}} · capped at {{.R.MaxRPS}} req/s{{end}}{{if .R.Reason}} · {{.R.Reason}}{{end}}</p>
 {{range .R.Warnings}}<p class="warn">⚠ {{.}}</p>{{end}}
 
 <div class="kpis">

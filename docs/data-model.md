@@ -36,6 +36,7 @@ YAML is written with 2-space indentation.
 name: My Workspace
 version: 1
 loadAllowHosts: [staging.example.com]   # load tests may target these without confirmation
+loadMaxRPS: 500                         # optional ceiling on every load test's requests per second
 allowFilesOutsideWorkspace: false       # default
 ```
 Request bodies (binary file bodies and multipart file fields) may only read files inside
