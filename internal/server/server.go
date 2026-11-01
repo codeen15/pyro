@@ -47,6 +47,7 @@ type Server struct {
 	hub      *hub
 	sessions *sessionRegistry
 	runs     *runRegistry
+	loads    *loadRegistry
 }
 
 func New(cfg Config) *Server {
@@ -57,6 +58,7 @@ func New(cfg Config) *Server {
 		cfg: cfg, ws: cfg.Workspace, log: cfg.Logger, session: newSessionVars(), hub: newHub(),
 		sessions: &sessionRegistry{byID: map[string]*liveSession{}},
 		runs:     &runRegistry{byID: map[string]*liveRun{}},
+		loads:    &loadRegistry{byID: map[string]*liveLoad{}},
 	}
 }
 
@@ -68,6 +70,13 @@ func (s *Server) Close() {
 		run.cancel()
 	}
 	s.runs.mu.Unlock()
+	s.loads.mu.Lock()
+	cur := s.loads.current
+	s.loads.mu.Unlock()
+	if cur != nil {
+		cur.test.Abort()
+		cur.test.Wait()
+	}
 }
 
 func (s *Server) Handler() http.Handler {
@@ -112,6 +121,17 @@ func (s *Server) Handler() http.Handler {
 		r.Post("/runs", s.startRun)
 		r.Get("/runs/{id}", s.getRun)
 		r.Delete("/runs/{id}", s.cancelRun)
+
+		r.Get("/loadtests", s.listLoadTests)
+		r.Get("/loadtests/{name}", s.getLoadTest)
+		r.Put("/loadtests/{name}", s.putLoadTest)
+		r.Delete("/loadtests/{name}", s.deleteLoadTest)
+		r.Post("/loadtests/{name}/start", s.startLoadTest)
+		r.Get("/loadruns", s.listLoadRuns)
+		r.Get("/loadruns/{id}", s.getLoadRun)
+		r.Get("/loadruns/{id}/report", s.loadRunReport)
+		r.Post("/loadruns/{id}/stop", s.stopLoadRun)
+		r.Delete("/loadruns/{id}", s.deleteLoadRun)
 
 		r.Get("/session/variables", s.getSessionVars)
 		r.Delete("/session/variables", s.clearSessionVars)
@@ -266,7 +286,7 @@ func (s *Server) fail(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, store.ErrNotFound), errors.Is(err, history.ErrNotFound):
 		writeError(w, http.StatusNotFound, err.Error())
-	case errors.Is(err, store.ErrInvalidPath):
+	case errors.Is(err, store.ErrInvalidPath), isValidation(err):
 		writeError(w, http.StatusBadRequest, err.Error())
 	case errors.Is(err, store.ErrExists):
 		writeError(w, http.StatusConflict, err.Error())

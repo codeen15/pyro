@@ -65,7 +65,12 @@ func Open(file string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("init history db: %w", err)
 	}
-	return &Store{db: db}, nil
+	st := &Store{db: db}
+	if err := st.initLoadRuns(); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("init history db: %w", err)
+	}
+	return st, nil
 }
 
 func (s *Store) Close() error { return s.db.Close() }
