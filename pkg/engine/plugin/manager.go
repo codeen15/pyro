@@ -403,6 +403,13 @@ func (m *Manager) find(ctx context.Context, kind, id string) (*loaded, *pluginSt
 	return hit, ps, nil
 }
 
+// Check reports whether a plugin provides kind/id and is ready to use
+// (installed, enabled, approved, compiled).
+func (m *Manager) Check(ctx context.Context, kind, id string) error {
+	_, _, err := m.find(ctx, kind, id)
+	return err
+}
+
 func (m *Manager) compile(ctx context.Context, l *loaded) error {
 	h, err := m.host(ctx)
 	if err != nil {

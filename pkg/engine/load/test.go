@@ -36,6 +36,20 @@ type Options struct {
 	InsecureTLS  bool
 	// Plugins provides plugin request and auth types.
 	Plugins *plugin.Manager
+
+	// Workers run the test distributed: each runs a segment of the plan and
+	// reports metric deltas, which are merged here, so thresholds and
+	// percentiles cover every sample. Nothing runs locally.
+	Workers []Worker
+	// The options below are for running one segment on a worker (agent).
+	// Rows are data rows by scenario, used instead of LoadData.
+	Rows map[string][]map[string]string
+	// FirstVU offsets VU ids, so they don't repeat across workers.
+	FirstVU int
+	// ReadFile replaces reading body files from FileRoot.
+	ReadFile func(path string) ([]byte, error)
+	// OnReport receives each tick's metric deltas and cumulative errors.
+	OnReport func(Report)
 }
 
 // Latency is a duration distribution in milliseconds.
@@ -66,6 +80,8 @@ type Tick struct {
 	WSMessagesPS float64           `json:"wsMessagesPerSecond,omitempty"`
 	Latency      Latency           `json:"latency"`
 	Thresholds   []ThresholdResult `json:"thresholds,omitempty"`
+	// Agents is set for distributed tests.
+	Agents []AgentStatus `json:"agents,omitempty"`
 }
 
 // Status of a finished test.
@@ -88,6 +104,7 @@ type Result struct {
 	Thresholds []ThresholdResult       `json:"thresholds"`
 	Errors     []ErrorCount            `json:"errors"`
 	MaxVUs     int                     `json:"maxVUs"`
+	Agents     []AgentStatus           `json:"agents,omitempty"`
 }
 
 // Test is a running load test.
@@ -101,6 +118,8 @@ type Test struct {
 	ths      thresholds
 	errors   *errorCounter
 	progs    sync.Map // expression -> *vm.Program
+	feeders  map[string]*feeder
+	workers  []*workerState
 
 	vuSeq     atomic.Int64
 	allocated atomic.Int64 // VUs created
@@ -123,6 +142,18 @@ type Test struct {
 
 // Start validates the plan's references, then runs it in the background.
 func Start(p *Plan, opts Options) (*Test, error) {
+	t, err := Prepare(p, opts)
+	if err != nil {
+		return nil, err
+	}
+	t.Begin()
+	return t, nil
+}
+
+// Prepare validates the plan's references and loads its data (and, for a
+// distributed test, sends every worker its segment) without starting.
+// Call Begin to start, or Close to discard it.
+func Prepare(p *Plan, opts Options) (*Test, error) {
 	if opts.TickInterval == 0 {
 		opts.TickInterval = time.Second
 	}
@@ -133,9 +164,11 @@ func Start(p *Plan, opts Options) (*Test, error) {
 		plan: p, opts: opts, agg: metrics.NewAggregator(), targets: map[string]Target{}, scripted: map[string]bool{},
 		ths: compileThresholds(p), errors: newErrorCounter(), done: make(chan struct{}),
 	}
-	t.http = httpdriver.New(httpdriver.Options{FileRoot: opts.FileRoot, InsecureTLS: opts.InsecureTLS, MaxIdleConnsPerHost: 10000, MaxBodyBytes: 1 << 20})
+	t.http = httpdriver.New(httpdriver.Options{FileRoot: opts.FileRoot, ReadFile: opts.ReadFile, InsecureTLS: opts.InsecureTLS, MaxIdleConnsPerHost: 10000, MaxBodyBytes: 1 << 20})
+	t.vuSeq.Store(int64(opts.FirstVU))
 
-	if need := PeakVUs(p); need > opts.MaxVUs {
+	// A distributed test's segments are checked by each agent.
+	if need := PeakVUs(p); need > opts.MaxVUs && len(opts.Workers) == 0 {
 		return nil, fmt.Errorf("this plan needs up to %d VUs; the limit is %d", need, opts.MaxVUs)
 	}
 	for _, name := range p.ScenarioNames() {
@@ -143,28 +176,60 @@ func Start(p *Plan, opts Options) (*Test, error) {
 			return nil, err
 		}
 	}
-	feeders := map[string]*feeder{}
+	t.feeders = map[string]*feeder{}
+	rows := map[string][]map[string]string{}
 	for _, name := range p.ScenarioNames() {
 		if d := p.Scenarios[name].Data; d != nil {
+			if r, ok := opts.Rows[name]; ok {
+				t.feeders[name], rows[name] = newFeeder(r, d), r
+				continue
+			}
 			if opts.LoadData == nil {
 				return nil, fmt.Errorf("scenario %s: data files are not available here", name)
 			}
-			rows, err := opts.LoadData(d.File)
+			data, err := opts.LoadData(d.File)
 			if err != nil {
 				return nil, fmt.Errorf("scenario %s: %w", name, err)
 			}
-			if len(rows) == 0 {
+			if len(data) == 0 {
 				return nil, fmt.Errorf("scenario %s: data file %s has no rows", name, d.File)
 			}
-			feeders[name] = newFeeder(rows, d)
+			t.feeders[name] = newFeeder(data, d)
+			rows[name] = data
 		}
 	}
 
 	t.soft, t.softStop = context.WithCancel(context.Background())
 	t.hard, t.hardStop = context.WithCancel(context.Background())
-	t.started = time.Now()
-	go t.run(feeders)
+	if len(opts.Workers) > 0 {
+		if err := t.prepareWorkers(rows); err != nil {
+			t.Close()
+			return nil, err
+		}
+	}
 	return t, nil
+}
+
+// Begin starts a prepared test in the background.
+func (t *Test) Begin() {
+	t.agg = metrics.NewAggregator()
+	if len(t.workers) > 0 {
+		t.agg.MinWindow = t.opts.TickInterval
+	}
+	if t.opts.OnReport != nil {
+		t.agg.TrackDeltas()
+	}
+	t.started = time.Now()
+	go t.run()
+}
+
+// Close releases a prepared test that was never begun.
+func (t *Test) Close() {
+	for _, w := range t.workers {
+		w.w.Close()
+	}
+	t.softStop()
+	t.hardStop()
 }
 
 func (t *Test) resolveSteps(steps []Step) error {
@@ -222,23 +287,15 @@ func (t *Test) program(src string) (*vm.Program, error) {
 	return p, nil
 }
 
-func (t *Test) run(feeders map[string]*feeder) {
-	var wg sync.WaitGroup
-	for _, name := range t.plan.ScenarioNames() {
-		wg.Add(1)
-		go func(name string) {
-			defer wg.Done()
-			sc := t.plan.Scenarios[name]
-			if sleep(t.soft, sc.StartTime.D()) != nil {
-				return
-			}
-			runScenario(t, name, sc, feeders[name])
-		}(name)
-	}
+func (t *Test) run() {
 	finished := make(chan struct{})
 	go func() {
-		wg.Wait()
-		close(finished)
+		defer close(finished)
+		if len(t.workers) > 0 {
+			t.runWorkers()
+		} else {
+			t.runScenarios()
+		}
 	}()
 
 	ticker := time.NewTicker(t.opts.TickInterval)
@@ -258,17 +315,50 @@ func (t *Test) run(feeders map[string]*feeder) {
 	}
 }
 
+func (t *Test) runScenarios() {
+	var wg sync.WaitGroup
+	for _, name := range t.plan.ScenarioNames() {
+		wg.Add(1)
+		go func(name string) {
+			defer wg.Done()
+			sc := t.plan.Scenarios[name]
+			if sleep(t.soft, sc.StartTime.D()) != nil {
+				return
+			}
+			runScenario(t, name, sc, t.feeders[name])
+		}(name)
+	}
+	wg.Wait()
+}
+
+// vus returns the running and allocated VU counts, over all workers in a
+// distributed test.
+func (t *Test) vus() (active, allocated int) {
+	if len(t.workers) == 0 {
+		return int(t.active.Load()), int(t.allocated.Load())
+	}
+	for _, w := range t.workers {
+		a, al := w.vus()
+		active, allocated = active+a, allocated+al
+	}
+	return active, allocated
+}
+
 // tick flushes metrics, evaluates thresholds and publishes a Tick.
 func (t *Test) tick() (abort bool) {
-	t.agg.Record(metrics.Sample{Metric: "vus", Value: float64(t.active.Load())})
-	t.agg.Record(metrics.Sample{Metric: "vus_max", Value: float64(t.allocated.Load())})
+	active, allocated := t.vus()
+	t.agg.Record(metrics.Sample{Metric: "vus", Value: float64(active)})
+	t.agg.Record(metrics.Sample{Metric: "vus_max", Value: float64(allocated)})
 	iv := t.agg.Flush()
+	if t.opts.OnReport != nil {
+		t.opts.OnReport(Report{Active: active, Allocated: allocated, Deltas: t.agg.TakeDelta(), Errors: t.errors.top(maxDistinct)})
+	}
 	results, abort := t.ths.evaluate(t.agg, time.Since(t.started))
 	reqs := iv.Metric("http_reqs")
 	tk := Tick{
 		Elapsed:      iv.Elapsed.Seconds(),
-		VUs:          int(t.active.Load()),
-		VUsMax:       int(t.allocated.Load()),
+		VUs:          active,
+		VUsMax:       allocated,
 		RPS:          reqs.PerSecond,
 		Requests:     int64(reqs.Value),
 		IterationsPS: iv.Metric("iterations").PerSecond,
@@ -278,6 +368,7 @@ func (t *Test) tick() (abort bool) {
 		WSMessagesPS: iv.Metric("ws_msgs_received").PerSecond,
 		Latency:      latencyOf(iv.Metric("http_req_duration")),
 		Thresholds:   results,
+		Agents:       t.agentStatus(max(iv.End.Sub(iv.Start), t.opts.TickInterval).Seconds()),
 	}
 	t.mu.Lock()
 	t.ticks = append(t.ticks, tk)
@@ -320,7 +411,7 @@ func (t *Test) finish() {
 		Name: t.plan.Name, Status: t.status, Reason: t.reason, StartedAt: t.started,
 		Duration: time.Since(t.started).Seconds(), Ticks: append([]Tick(nil), t.ticks...),
 		Metrics: t.agg.Totals(), Requests: t.agg.Requests(), Thresholds: results,
-		Errors: t.errors.top(20), MaxVUs: int(t.allocated.Load()),
+		Errors: t.errorsTop(20), MaxVUs: t.maxVUs(), Agents: t.agentStatus(0),
 	}
 	t.result = res
 	t.mu.Unlock()
@@ -360,7 +451,12 @@ func (t *Test) Ticks() []Tick {
 
 // Snapshot returns the live per-request table and totals.
 func (t *Test) Snapshot() ([]metrics.RequestStat, []ErrorCount) {
-	return t.agg.Requests(), t.errors.top(20)
+	return t.agg.Requests(), t.errorsTop(20)
+}
+
+func (t *Test) maxVUs() int {
+	_, allocated := t.vus()
+	return allocated
 }
 
 func (t *Test) Plan() *Plan { return t.plan }

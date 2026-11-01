@@ -38,6 +38,10 @@ export function LoadTestPage({ name }: { name: string }) {
   const [tab, setTab] = useState<Tab>("designer");
   const [confirm, setConfirm] = useState<string[] | null>(null);
   const [startError, setStartError] = useState<string | null>(null);
+  const agents = useQuery({ queryKey: ["agents"], queryFn: api.agents, staleTime: 10_000 });
+  const [where, setWhere] = useState<"local" | "agents">("local");
+  const agentCount = agents.data?.length ?? 0;
+  const distributed = where === "agents" && agentCount > 0;
   const yamlText = text ?? q.data?.yaml ?? "";
   const dirty = text !== null && text !== q.data?.yaml;
 
@@ -54,7 +58,7 @@ export function LoadTestPage({ name }: { name: string }) {
     setStartError(null);
     try {
       if (dirty) await save.mutateAsync();
-      const r = await api.startLoadTest(name, { environment: environment ?? undefined, confirmHosts });
+      const r = await api.startLoadTest(name, { environment: environment ?? undefined, confirmHosts, distributed });
       setConfirm(null);
       qc.invalidateQueries({ queryKey: ["loadruns"] });
       select(`loadrun:${r.id}`);
@@ -98,6 +102,22 @@ export function LoadTestPage({ name }: { name: string }) {
           <button className="btn ghost" onClick={() => save.mutate()} disabled={!dirty || save.isPending} title="Save (Ctrl+S)">
             <Save size={14} /> {save.isPending ? "Saving…" : dirty ? "Save" : "Saved"}
           </button>
+          {agentCount > 0 && (
+            <select
+              className="run-on"
+              value={where}
+              onChange={(e) => {
+                setWhere(e.target.value as "local" | "agents");
+                agents.refetch();
+              }}
+              aria-label="Run on"
+            >
+              <option value="local">This machine</option>
+              <option value="agents">
+                {agentCount} agent{agentCount === 1 ? "" : "s"}
+              </option>
+            </select>
+          )}
           <button className="btn primary" onClick={() => start(false)} disabled={!!v.error && !dirty}>
             <Play size={14} /> Start
           </button>
@@ -106,6 +126,23 @@ export function LoadTestPage({ name }: { name: string }) {
       <p className="muted small">
         Environment: {environment ? <code>{environment}</code> : "none selected"} (from the top bar). Only load test systems you own or are allowed to test.
       </p>
+      {distributed && agents.data && (
+        <ul className="agent-list small" aria-label="Agents">
+          {agents.data.map((a) => (
+            <li key={a.address}>
+              <span className="mono">{a.info?.name ?? a.address}</span>
+              {a.info ? (
+                <span className="muted">
+                  {a.address} · {a.info.cpus} CPUs · {a.info.busy ? "busy with another test" : "ready"}
+                </span>
+              ) : (
+                <span className="fail-text">{a.error}</span>
+              )}
+            </li>
+          ))}
+          <li className="muted">The plan's VUs and arrival rates are split evenly between them; results are merged here.</li>
+        </ul>
+      )}
       {save.error && <p className="inline-error">{save.error.message}</p>}
       {!dirty && v.error && <pre className="inline-error mono pre-wrap">{v.error}</pre>}
       {startError && <p className="inline-error">{startError}</p>}

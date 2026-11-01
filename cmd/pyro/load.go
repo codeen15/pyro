@@ -19,8 +19,11 @@ import (
 func loadCmd() *cobra.Command {
 	var (
 		wsDir, envName, jsonOut, htmlOut string
+		agentToken                       string
+		agents                           []string
 		maxVUs                           int
 		yes, insecure, quiet             bool
+		agentInsecure                    bool
 	)
 	cmd := &cobra.Command{
 		Use:   "load <load-test | file.load.yaml>",
@@ -29,8 +32,9 @@ func loadCmd() *cobra.Command {
 			"workspace's requests. Exits 1 unless every threshold passes.\n\n" +
 			"Before sending traffic to hosts that are not loopback or listed under\n" +
 			"loadAllowHosts in pyro.yaml, Pyro asks for confirmation (--yes skips it).",
-		Example: "  pyro load checkout-stress -e staging --html report.html\n  pyro load ./plans/smoke.load.yaml --yes",
-		Args:    cobra.ExactArgs(1),
+		Example: "  pyro load checkout-stress -e staging --html report.html\n  pyro load ./plans/smoke.load.yaml --yes\n" +
+			"  pyro load checkout-stress --agent 10.0.0.5:7979 --agent 10.0.0.6:7979 --agent-token s3cret",
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ws, err := openWorkspace(wsDir)
 			if err != nil {
@@ -61,9 +65,24 @@ func loadCmd() *cobra.Command {
 				}
 			}
 
+			if len(agents) > 0 {
+				workers, infos, err := connectAgents(agents, agentToken, agentInsecure)
+				if err != nil {
+					return err
+				}
+				opts.Workers = workers
+				for i, in := range infos {
+					fmt.Printf("  agent %-24s %s, %d CPUs, %s/%s\n", workers[i].Name(), in.Name, in.CPUs, in.OS, in.Arch)
+				}
+			}
+
 			live := newLiveLine(quiet)
 			opts.OnTick = live.tick
-			fmt.Printf("Load test %q: %d scenario(s), up to %d VUs\n", plan.Name, len(plan.Scenarios), load.PeakVUs(plan))
+			where := ""
+			if len(agents) > 0 {
+				where = fmt.Sprintf(" on %d agents", len(agents))
+			}
+			fmt.Printf("Load test %q: %d scenario(s), up to %d VUs%s\n", plan.Name, len(plan.Scenarios), load.PeakVUs(plan), where)
 			test, err := load.Start(plan, opts)
 			if err != nil {
 				return err
@@ -117,6 +136,9 @@ func loadCmd() *cobra.Command {
 	f.BoolVarP(&quiet, "quiet", "q", false, "no live progress line")
 	f.StringVar(&jsonOut, "json", "", "write the full result as JSON")
 	f.StringVar(&htmlOut, "html", "", "write a self-contained HTML report")
+	f.StringSliceVar(&agents, "agent", nil, "run distributed on these agents (host:port; repeat or comma-separate)")
+	f.StringVar(&agentToken, "agent-token", "", "token for the agents (default: $PYRO_AGENT_TOKEN)")
+	f.BoolVar(&agentInsecure, "agent-insecure", false, "skip TLS certificate verification for https agents")
 	return cmd
 }
 
@@ -263,6 +285,16 @@ func printLoadSummary(r *load.Result) {
 				name = name[:39] + "…"
 			}
 			fmt.Printf("  %-40s %7d %8d %8s %8s\n", name, q.Count, q.Failed, report.FormatMS(q.Duration.P95), report.FormatMS(q.Duration.P99))
+		}
+	}
+	if len(r.Agents) > 0 {
+		fmt.Println("\n  Agent                                     segment requests  VUs  state")
+		for _, a := range r.Agents {
+			state := a.State
+			if a.Error != "" {
+				state += ": " + a.Error
+			}
+			fmt.Printf("  %-40s %8d %8d %4d  %s\n", a.Name, a.Segment+1, a.Requests, a.VUs, state)
 		}
 	}
 	if len(r.Thresholds) > 0 {

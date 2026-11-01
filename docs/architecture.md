@@ -22,7 +22,7 @@
 │                  └───────────────────────────────────────────────────────┘  │
 │  Storage: workspace files (YAML, git-friendly) + SQLite (history, results)  │
 └─────────────────────────────────────────────────────────────────────────────┘
-           (Phase 5) controller ⇄ remote `pyro agent` nodes over gRPC
+           controller ⇄ remote `pyro agent` nodes over WebSocket (ADR 0006)
 ```
 
 ## Principles
@@ -49,7 +49,8 @@
 | Assertions, extractors | `pkg/engine/check` | ✅ Phase 2 | Declarative checks; capture response values into variables. |
 | Collection runner | `pkg/engine/runner` | ✅ Phase 2 | Iterations, data files, setNextRequest, bail. |
 | Load engine | `pkg/engine/load` | ✅ Phase 3 | Plans, executors, VUs, flow steps, data feeders, thresholds. See [load-engine.md](load-engine.md). |
-| Metrics | `pkg/engine/metrics` | ✅ Phase 3 | Per-VU buffers → HDR histograms (cumulative per series, per-interval per metric). |
+| Metrics | `pkg/engine/metrics` | ✅ Phase 3 | Per-VU buffers → HDR histograms (cumulative per series, per-interval per metric); deltas for merging across agents. |
+| Distributed agents | `pkg/engine/agent` | ✅ Phase 5 | `pyro agent` server and the controller's client (`load.Worker`); see [load-engine.md](load-engine.md#distributed-tests) and [ADR 0006](adr/0006-agents-over-websocket.md). |
 | Plugin host | `pkg/engine/plugin` | ✅ Phase 4 | wazero runtime, ABI v1 (JSON), capabilities, install/approve, index. See [plugins.md](plugins.md). |
 | Importers | `pkg/engine/importer/postman` | ✅ Phase 1 | See [postman-import.md](postman-import.md). |
 | Reporters | `pkg/engine/report` | ✅ JUnit, JSON (runs); HTML, JSON (load) | Reports for CI; CSV planned. |

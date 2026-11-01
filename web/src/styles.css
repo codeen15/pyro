@@ -2297,3 +2297,31 @@ fieldset legend {
     transition: none !important;
   }
 }
+
+/* Distributed load tests */
+.run-on {
+  height: 30px;
+}
+.agent-list {
+  display: grid;
+  gap: 4px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.agent-list li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+.agent-table td:first-child,
+.agent-state {
+  white-space: nowrap;
+}
+.agent-state svg {
+  vertical-align: -2px;
+}
+.agent-state.is-failed {
+  color: var(--error);
+  white-space: normal;
+}

@@ -33,6 +33,9 @@ type Options struct {
 	InsecureTLS     bool
 	// FileRoot resolves relative paths in multipart/file bodies.
 	FileRoot string
+	// ReadFile, when set, replaces reading body files from disk (agents
+	// serve the files a controller sent with the job).
+	ReadFile func(path string) ([]byte, error)
 	// MaxIdleConnsPerHost keeps connections open for reuse; default 100
 	// (net/http's default of 2 throttles load tests).
 	MaxIdleConnsPerHost int
@@ -294,7 +297,7 @@ func (d *Driver) body(b *model.Body) (io.Reader, string, error) {
 	case model.BodyMultipart:
 		return d.multipart(b.Fields)
 	case model.BodyBinaryFile:
-		data, err := os.ReadFile(d.path(b.File))
+		data, err := d.readFile(b.File)
 		if err != nil {
 			return nil, "", fmt.Errorf("body file: %w", err)
 		}
@@ -316,7 +319,7 @@ func (d *Driver) multipart(fields []model.KeyValue) (io.Reader, string, error) {
 			}
 			continue
 		}
-		data, err := os.ReadFile(d.path(f.Value))
+		data, err := d.readFile(f.Value)
 		if err != nil {
 			return nil, "", fmt.Errorf("form file %q: %w", f.Key, err)
 		}
@@ -332,6 +335,13 @@ func (d *Driver) multipart(fields []model.KeyValue) (io.Reader, string, error) {
 		return nil, "", err
 	}
 	return &buf, w.FormDataContentType(), nil
+}
+
+func (d *Driver) readFile(p string) ([]byte, error) {
+	if d.opts.ReadFile != nil {
+		return d.opts.ReadFile(p)
+	}
+	return os.ReadFile(d.path(p))
 }
 
 func (d *Driver) path(p string) string {

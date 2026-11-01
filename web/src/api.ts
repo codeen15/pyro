@@ -278,6 +278,36 @@ export interface LoadTick {
   wsMessagesPerSecond?: number;
   latency: Latency;
   thresholds?: ThresholdResult[];
+  agents?: AgentStatus[];
+}
+
+/** One agent's part of a distributed load test. */
+export interface AgentStatus {
+  name: string;
+  segment: number;
+  vus: number;
+  requests: number;
+  rps?: number;
+  state: "running" | "done" | "failed";
+  error?: string;
+}
+
+export interface AgentInfo {
+  name: string;
+  version: string;
+  protocol: number;
+  cpus: number;
+  os: string;
+  arch: string;
+  busy: boolean;
+  maxVUs: number;
+  plugins?: string[];
+}
+
+export interface AgentView {
+  address: string;
+  info?: AgentInfo;
+  error?: string;
 }
 
 export interface Stat {
@@ -321,6 +351,7 @@ export interface LoadResult {
   thresholds: ThresholdResult[] | null;
   errors: ErrorCount[] | null;
   maxVUs: number;
+  agents?: AgentStatus[];
 }
 
 export interface LiveSnapshot {
@@ -499,7 +530,8 @@ export const api = {
   loadTest: (name: string) => call<LoadTestView>("GET", `/loadtests/${encodeURIComponent(name)}`),
   saveLoadTest: (name: string, yaml: string) => call<LoadTestView>("PUT", `/loadtests/${encodeURIComponent(name)}`, { yaml }),
   deleteLoadTest: (name: string) => call<void>("DELETE", `/loadtests/${encodeURIComponent(name)}`),
-  startLoadTest: (name: string, body: { environment?: string; confirmHosts?: boolean }) =>
+  agents: () => call<AgentView[]>("GET", "/agents"),
+  startLoadTest: (name: string, body: { environment?: string; confirmHosts?: boolean; distributed?: boolean }) =>
     call<{ id: string; test: string }>("POST", `/loadtests/${encodeURIComponent(name)}/start`, body),
   plugins: () => call<PluginList>("GET", "/plugins"),
   installPlugin: (archive: Blob) => call<PluginInfo>("POST", "/plugins", archive),

@@ -134,7 +134,42 @@ Accuracy: against a target that sleeps exactly 50 ms, 5000 VUs measured p95 52 m
 - One load test at a time per `pyro serve`.
 - Stop is graceful: VUs stop taking new iterations, in-flight requests finish within `gracefulStop`, and then they are cancelled. A second stop (Ctrl+C twice, or "Abort now") cancels immediately.
 
-## Distributed mode (Phase 5)
-`pyro agent --controller host:port` registers a node over gRPC. The controller splits
-VUs and arrival rates in proportion to agent capacity, streams plans and data slices,
-and merges the agents' HDR histograms, which is exact because they can be merged.
+## Distributed tests
+Run one test from several machines when one load generator isn't enough. Start an agent on
+each machine, then point the controller at them:
+
+```sh
+pyro agent --token s3cret                       # on each load machine (port 7979)
+pyro load checkout-stress --agent 10.0.0.5:7979 --agent 10.0.0.6:7979 --agent-token s3cret
+pyro serve --agent 10.0.0.5:7979,10.0.0.6:7979 --agent-token s3cret   # UI: "Run on: N agents"
+```
+`PYRO_AGENT_TOKEN` can replace `--token`/`--agent-token`. Agents with `--tls-cert/--tls-key`
+are addressed as `https://host:port` (`--agent-insecure` skips verification).
+
+How it works ([ADR 0006](adr/0006-agents-over-websocket.md)):
+- **Splitting.** Each agent gets a segment of the plan. VU counts (`vus`, `startVUs`, stage
+  targets, `preAllocatedVUs`, `maxVUs`) are split as evenly as whole numbers allow, so they
+  add up to the original; arrival rates are divided exactly. A scenario that leaves an agent
+  with no VUs (2 VUs over 3 agents) is skipped on that agent. VU ids don't overlap across
+  agents.
+- **What agents receive.** The plan segment, the requests it uses with their collection
+  settings, the environment, data rows and body files. Agents don't need the workspace.
+  Data in `shared` mode is split so each row is used by one agent; `per-vu` and `random`
+  data go to every agent whole. Body files whose path contains `{{variables}}` can't be
+  sent; requests using them fail on the agent.
+- **Merging.** Agents send per-series deltas (counts, sums, HDR bucket counts) every tick.
+  The controller merges them, so percentiles, per-request tables and thresholds cover
+  every sample exactly. Thresholds (and `abortOnFail`) are evaluated on the controller only.
+  Live charts trail the agents by up to one tick.
+- **Plugins.** Plugin request and auth types must be installed and approved on every agent;
+  the controller checks before starting.
+- **Failures.** Before starting, the controller checks every agent (token, protocol
+  version, busy). If an agent disconnects or stops reporting for 30 s during the test, the
+  others are stopped and the test fails with `agent <name> failed: …`. Stopping or
+  aborting the test stops or aborts every agent.
+- **Results** list each agent's segment, requests and peak VUs (`agents` in the JSON, an
+  Agents table in the dashboard and the HTML report).
+
+Agents run one test at a time and enforce their own `--max-vus`. The host confirmation
+(see Safety) happens on the controller. Agents trust any controller with the token: keep
+the token secret and the port reachable only from controllers.

@@ -6,11 +6,12 @@ engine and serves a React web UI on localhost. **Current phase: 4 done → Phase
 (see `docs/roadmap.md`). Product context: `PRODUCT.md`; visual system: `DESIGN.md`.
 
 ## Layout
-- `cmd/pyro`: CLI (cobra): `serve`, `init`, `import`, `run`, `load`, `plugin`, `version`
+- `cmd/pyro`: CLI (cobra): `serve`, `init`, `import`, `run`, `load`, `agent`, `plugin`, `version`
 - `pkg/engine/...`: the engine, a library with no dependency on server/CLI/UI. `model/` is the shared data model;
   `engine.go` is the send pipeline, `session.go` opens WS/SIO sessions; `vars/`, `auth/`, `check/` (assertions,
   extractors), `script/` (goja + pm.* shim, vendored chai), `runner/`, `report/` (JUnit, JSON, load HTML),
-  `load/` (plans, executors, VUs, thresholds), `metrics/` (HDR histograms), `plugin/` (wazero host), `importer/postman/`,
+  `load/` (plans, executors, VUs, thresholds, segments and workers for distributed runs), `metrics/` (HDR histograms,
+  deltas), `agent/` (distributed load agents), `plugin/` (wazero host), `importer/postman/`,
   `protocol/{httpdriver,wsdriver,sioclient}/`.
 - `internal/store`: workspace persistence (YAML files, path safety, atomic writes, `Import`)
 - `internal/history`: request history and saved load runs in SQLite (`~/.pyro/pyro.db`)

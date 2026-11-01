@@ -50,7 +50,7 @@ func rootCmd() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
-	root.AddCommand(serveCmd(), initCmd(), importCmd(), runCmd(), loadCmd(), pluginCmd(), versionCmd())
+	root.AddCommand(serveCmd(), initCmd(), importCmd(), runCmd(), loadCmd(), agentCmd(), pluginCmd(), versionCmd())
 	return root
 }
 
@@ -100,9 +100,12 @@ func initCmd() *cobra.Command {
 
 func serveCmd() *cobra.Command {
 	var (
-		host, wsDir string
-		port        int
-		open, noTok bool
+		host, wsDir   string
+		port          int
+		open, noTok   bool
+		agents        []string
+		agentToken    string
+		agentInsecure bool
 	)
 	cmd := &cobra.Command{
 		Use:   "serve",
@@ -120,6 +123,12 @@ func serveCmd() *cobra.Command {
 				return errors.New("--no-token is only allowed when binding to a loopback address")
 			}
 
+			if agentToken == "" {
+				agentToken = os.Getenv("PYRO_AGENT_TOKEN")
+			}
+			if len(agents) > 0 && agentToken == "" {
+				return errors.New("agents need a token: pass --agent-token or set PYRO_AGENT_TOKEN")
+			}
 			ln, err := net.Listen("tcp", net.JoinHostPort(host, fmt.Sprint(port)))
 			if err != nil {
 				return err
@@ -137,6 +146,7 @@ func serveCmd() *cobra.Command {
 			api := server.New(server.Config{
 				Workspace: ws, Engine: eng, History: hist, Token: token, UI: web.Dist(),
 				PluginIndex: os.Getenv("PYRO_PLUGIN_INDEX"),
+				Agents:      agents, AgentToken: agentToken, AgentInsecure: agentInsecure,
 			})
 			defer api.Close()
 			srv := &http.Server{
@@ -148,8 +158,11 @@ func serveCmd() *cobra.Command {
 			if token != "" {
 				url += "?token=" + token
 			}
-			fmt.Printf("Pyro %s\n  workspace  %s (%s)\n  open       %s\n\nPress Ctrl+C to stop.\n",
-				version.Version, ws.Meta.Name, ws.Root, url)
+			fmt.Printf("Pyro %s\n  workspace  %s (%s)\n  open       %s\n", version.Version, ws.Meta.Name, ws.Root, url)
+			if len(agents) > 0 {
+				fmt.Printf("  agents     %s\n", strings.Join(agents, ", "))
+			}
+			fmt.Println("\nPress Ctrl+C to stop.")
 			if open {
 				if err := openBrowser(url); err != nil {
 					slog.Warn("could not open browser", "err", err)
@@ -175,6 +188,9 @@ func serveCmd() *cobra.Command {
 	cmd.Flags().StringVarP(&wsDir, "workspace", "w", "", "workspace directory (default: ./ if it has pyro.yaml, else ~/.pyro/workspace)")
 	cmd.Flags().BoolVar(&open, "open", false, "open the UI in a browser")
 	cmd.Flags().BoolVar(&noTok, "no-token", false, "disable the session token (loopback only; for development)")
+	cmd.Flags().StringSliceVar(&agents, "agent", nil, "load agents for distributed tests (host:port; repeat or comma-separate)")
+	cmd.Flags().StringVar(&agentToken, "agent-token", "", "token for the agents (default: $PYRO_AGENT_TOKEN)")
+	cmd.Flags().BoolVar(&agentInsecure, "agent-insecure", false, "skip TLS certificate verification for https agents")
 	return cmd
 }
 

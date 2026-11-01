@@ -13,6 +13,7 @@ import (
 
 	"github.com/pyrohq/pyro/internal/history"
 	"github.com/pyrohq/pyro/internal/store"
+	"github.com/pyrohq/pyro/pkg/engine/agent"
 	"github.com/pyrohq/pyro/pkg/engine/load"
 	"github.com/pyrohq/pyro/pkg/engine/metrics"
 	"github.com/pyrohq/pyro/pkg/engine/report"
@@ -121,6 +122,8 @@ func (s *Server) startLoadTest(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Environment  string `json:"environment,omitempty"`
 		ConfirmHosts bool   `json:"confirmHosts,omitempty"`
+		// Distributed runs the test on the configured agents.
+		Distributed bool `json:"distributed,omitempty"`
 	}
 	if !decode(w, r, &body) {
 		return
@@ -139,6 +142,18 @@ func (s *Server) startLoadTest(w http.ResponseWriter, r *http.Request) {
 		envName = plan.Environment
 	}
 	opts := load.Options{Resolve: s.ws.Target, LoadData: s.ws.LoadData, FileRoot: s.ws.Root}
+	if s.cfg.Engine != nil {
+		opts.Plugins = s.cfg.Engine.Plugins
+	}
+	if body.Distributed {
+		if len(s.cfg.Agents) == 0 {
+			writeError(w, http.StatusBadRequest, "no agents are configured: start pyro serve with --agent")
+			return
+		}
+		for _, a := range s.cfg.Agents {
+			opts.Workers = append(opts.Workers, agent.NewClient(a, s.cfg.AgentToken, s.cfg.AgentInsecure))
+		}
+	}
 	if envName != "" {
 		env, err := s.ws.ReadEnvironment(envName)
 		if err != nil {
@@ -332,4 +347,33 @@ func (s *Server) loadRunReport(w http.ResponseWriter, r *http.Request) {
 func isValidation(err error) bool {
 	var ve *store.ValidationError
 	return errors.As(err, &ve)
+}
+
+type agentView struct {
+	Address string      `json:"address"`
+	Info    *agent.Info `json:"info,omitempty"`
+	Error   string      `json:"error,omitempty"`
+}
+
+// listAgents reports each configured agent's status.
+func (s *Server) listAgents(w http.ResponseWriter, r *http.Request) {
+	out := make([]agentView, len(s.cfg.Agents))
+	var wg sync.WaitGroup
+	for i, a := range s.cfg.Agents {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+			defer cancel()
+			out[i].Address = a
+			in, err := agent.NewClient(a, s.cfg.AgentToken, s.cfg.AgentInsecure).Info(ctx)
+			if err != nil {
+				out[i].Error = err.Error()
+				return
+			}
+			out[i].Info = in
+		}()
+	}
+	wg.Wait()
+	writeJSON(w, http.StatusOK, out)
 }

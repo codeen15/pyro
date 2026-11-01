@@ -105,6 +105,13 @@ func TestPluginAPI(t *testing.T) {
 	if b := send(); !strings.Contains(b, b64.StdEncoding.EncodeToString([]byte("got hello\n"))) {
 		t.Fatalf("approved send: %s", b)
 	}
+	// Regression: load tests started through the API get the plugins too.
+	do(t, ts, "PUT", "/api/v1/requests/demo/tcp", `{"kind":"plugin:tcp","name":"t","url":"tcp://`+ln.Addr().String()+`","body":{"type":"text","content":"hi\n"}}`, true)
+	plan := "name: TCP\nscenarios:\n  s: { executor: per-vu-iterations, vus: 2, iterations: 3, flow: [ { request: demo/tcp } ] }\nthresholds:\n  http_req_failed: [\"rate==0\"]\n  http_reqs: [\"count==6\"]\n"
+	do(t, ts, "PUT", "/api/v1/loadtests/tcp", loadPlanJSON(plan), true)
+	if status := runLoad(t, ts, "tcp", `{}`); status["status"] != "passed" {
+		t.Fatalf("plugin load test: %+v", status)
+	}
 	do(t, ts, "POST", "/api/v1/plugins/tcp/enabled", `{"enabled":false}`, true)
 	if b := send(); !strings.Contains(b, "disabled") {
 		t.Fatalf("disabled send: %s", b)

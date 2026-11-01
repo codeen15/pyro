@@ -288,6 +288,7 @@ var loadTmpl = template.Must(template.New("load").Funcs(template.FuncMap{
 	"clock": clock,
 	"pct":   func(f float64) string { return fmt.Sprintf("%.2f%%", f*100) },
 	"f1":    func(f float64) string { return fmt.Sprintf("%.1f", f) },
+	"inc":   func(i int) int { return i + 1 },
 	"actual": func(t load.ThresholdResult) string {
 		if t.NoData {
 			return "no data"
@@ -367,6 +368,12 @@ footer{margin-top:48px;color:var(--faint);font-size:12px}
 {{range .R.Requests}}<tr><td class="mono">{{.Method}} {{.Request}}</td><td>{{.Scenario}}</td><td class="n">{{.Count}}</td><td class="n {{if .Failed}}fail{{end}}">{{.Failed}}</td><td class="n">{{f1 .PerSec}}</td><td class="n">{{ms .Duration.Avg}}</td><td class="n">{{ms .Duration.Med}}</td><td class="n"><span class="sw {{heat .Duration.P95}}"></span>{{ms .Duration.P95}}</td><td class="n"><span class="sw {{heat .Duration.P99}}"></span>{{ms .Duration.P99}}</td><td class="n">{{ms .Duration.Max}}</td></tr>{{end}}
 </tbody></table></div>
 <p class="muted" style="font-size:12px">Swatches show the heat scale: cold steel &lt; 100 ms · ember 100–300 · cherry 300–600 · orange 600 ms–1 s · yellow 1–2 s · white &gt; 2 s.</p>
+
+{{if .R.Agents}}<h2>Agents</h2>
+<div class="scroll"><table><thead><tr><th>Agent</th><th class="n">Segment</th><th class="n">Max VUs</th><th class="n">Requests</th><th>State</th></tr></thead><tbody>
+{{$n := len .R.Agents}}{{range .R.Agents}}<tr><td class="mono">{{.Name}}</td><td class="n">{{inc .Segment}} of {{$n}}</td><td class="n">{{.VUs}}</td><td class="n">{{.Requests}}</td><td class="{{if eq .State "failed"}}fail{{end}}">{{if eq .State "failed"}}✗ failed{{if .Error}}: {{.Error}}{{end}}{{else}}✓ {{.State}}{{end}}</td></tr>{{end}}
+</tbody></table></div>
+<p class="muted" style="font-size:12px">Distributed test: each agent ran its segment of the plan; percentiles and thresholds above are computed from all agents' samples merged.</p>{{end}}
 
 {{if .R.Errors}}<h2>Errors</h2>
 <div class="scroll"><table><thead><tr><th>Message</th><th class="n">Count</th></tr></thead><tbody>

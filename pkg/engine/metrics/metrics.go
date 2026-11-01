@@ -193,8 +193,16 @@ type Aggregator struct {
 	total   map[key]*series
 	tick    map[string]*series // per metric, all tags merged, reset each flush
 	spare   []Sample
-	start   time.Time
-	last    time.Time
+	// delta holds what each series gained since the last TakeDelta, when
+	// TrackDeltas is on (agents ship it to a controller).
+	delta map[key]*series
+	// MinWindow is the shortest time an interval's per-second rates are
+	// computed over. Controllers set it to the tick interval: samples merged
+	// from agents arrive up to a tick late, so a short final interval would
+	// otherwise show a spike.
+	MinWindow time.Duration
+	start     time.Time
+	last      time.Time
 }
 
 func NewAggregator() *Aggregator {
@@ -227,6 +235,14 @@ func (a *Aggregator) add(s Sample) {
 		a.total[k] = ser
 	}
 	ser.add(s.Value)
+	if a.delta != nil && t != Gauge {
+		d := a.delta[k]
+		if d == nil {
+			d = newSeries(t)
+			a.delta[k] = d
+		}
+		d.add(s.Value)
+	}
 	ts := a.tick[s.Metric]
 	if ts == nil {
 		ts = newSeries(t)
@@ -248,7 +264,7 @@ func (a *Aggregator) Flush() Interval {
 	}
 	now := time.Now()
 	iv := Interval{Start: a.last, End: now, Elapsed: now.Sub(a.start), metrics: map[string]Stat{}}
-	secs := now.Sub(a.last).Seconds()
+	secs := max(now.Sub(a.last), a.MinWindow).Seconds()
 	for name, s := range a.tick {
 		st := statOf(s)
 		if s.typ == Counter && secs > 0 {

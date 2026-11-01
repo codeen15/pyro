@@ -34,6 +34,11 @@ type Config struct {
 	History *history.Store
 	// PluginIndex is the plugin catalogue URL ($PYRO_PLUGIN_INDEX), if any.
 	PluginIndex string
+	// Agents are load agents (host:port) for distributed load tests, with
+	// the token they require.
+	Agents        []string
+	AgentToken    string
+	AgentInsecure bool
 	// Token, when non-empty, is required on every /api request.
 	Token string
 	// UI is the built single-page app; nil disables UI serving.
@@ -129,6 +134,7 @@ func (s *Server) Handler() http.Handler {
 		r.Put("/loadtests/{name}", s.putLoadTest)
 		r.Delete("/loadtests/{name}", s.deleteLoadTest)
 		r.Post("/loadtests/{name}/start", s.startLoadTest)
+		r.Get("/agents", s.listAgents)
 		r.Get("/loadruns", s.listLoadRuns)
 		r.Get("/loadruns/{id}", s.getLoadRun)
 		r.Get("/loadruns/{id}/report", s.loadRunReport)

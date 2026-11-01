@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Check, Download, ExternalLink, Minus, Square, Table2, TriangleAlert, X } from "lucide-react";
-import { api, type ErrorCount, type LiveSnapshot, type LoadRunView, type LoadTick, type RequestStat, type ThresholdResult } from "../api";
+import { Check, Download, ExternalLink, Minus, Network, Play, Square, Table2, TriangleAlert, X } from "lucide-react";
+import { api, type AgentStatus, type ErrorCount, type LiveSnapshot, type LoadRunView, type LoadTick, type RequestStat, type ThresholdResult } from "../api";
 import { subscribe } from "../events";
 import { formatMs, heatOf } from "../heat";
 import { useApp } from "../store";
@@ -25,6 +25,7 @@ interface State {
   thresholds: ThresholdResult[];
   totals?: Record<string, { value: number; perSecond?: number; p95?: number }>;
   maxVUs?: number;
+  agents?: AgentStatus[];
 }
 
 export function LoadRunPage({ id }: { id: string }) {
@@ -52,6 +53,7 @@ export function LoadRunPage({ id }: { id: string }) {
           thresholds: r.thresholds ?? [],
           totals: r.metrics,
           maxVUs: r.maxVUs,
+          agents: r.agents,
         };
       }
       return {
@@ -114,6 +116,7 @@ export function LoadRunPage({ id }: { id: string }) {
 
   const running = st.status === "running";
   const last = st.ticks[st.ticks.length - 1];
+  const agents = running ? last?.agents : (st.agents ?? last?.agents);
   const totalReqs = st.requests.reduce((n, r) => n + r.count, 0);
   const totalFailed = st.requests.reduce((n, r) => n + r.failed, 0);
   const p95 = running ? last?.latency.p95 ?? 0 : st.totals?.http_req_duration?.p95 ?? 0;
@@ -297,6 +300,8 @@ export function LoadRunPage({ id }: { id: string }) {
         </>
       )}
 
+      {agents && agents.length > 0 && <AgentTable agents={agents} running={running} />}
+
       {st.errors.length > 0 && (
         <>
           <h2 className="sub-head">
@@ -315,6 +320,57 @@ export function LoadRunPage({ id }: { id: string }) {
         </>
       )}
     </section>
+  );
+}
+
+const AGENT_STATE: Record<AgentStatus["state"], { label: string; icon: typeof Check }> = {
+  running: { label: "Running", icon: Play },
+  done: { label: "Done", icon: Check },
+  failed: { label: "Failed", icon: X },
+};
+
+/** Each agent's share of a distributed test. */
+function AgentTable({ agents, running }: { agents: AgentStatus[]; running: boolean }) {
+  return (
+    <>
+      <h2 className="sub-head">
+        <Network size={13} /> Agents
+      </h2>
+      <div className="scroll-x">
+        <table className="data-table agent-table">
+          <thead>
+            <tr>
+              <th>Agent</th>
+              <th className="num">Segment</th>
+              <th className="num">{running ? "VUs" : "Max VUs"}</th>
+              <th className="num">Requests</th>
+              {running && <th className="num">req/s</th>}
+              <th>State</th>
+            </tr>
+          </thead>
+          <tbody>
+            {agents.map((a) => {
+              const s = AGENT_STATE[a.state] ?? AGENT_STATE.done;
+              return (
+                <tr key={a.segment}>
+                  <td className="mono">{a.name}</td>
+                  <td className="num">
+                    {a.segment + 1} of {agents.length}
+                  </td>
+                  <td className="num">{a.vus.toLocaleString()}</td>
+                  <td className="num">{a.requests.toLocaleString()}</td>
+                  {running && <td className="num">{(a.rps ?? 0).toFixed(1)}</td>}
+                  <td className={`agent-state is-${a.state}`}>
+                    <s.icon size={13} aria-hidden /> {s.label}
+                    {a.error && <span className="muted small"> · {a.error}</span>}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </>
   );
 }
 

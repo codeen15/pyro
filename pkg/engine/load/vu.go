@@ -22,9 +22,9 @@ import (
 
 // Target is a resolved request reference.
 type Target struct {
-	Path    string
-	Request *model.Request
-	Chain   []*model.Collection
+	Path    string              `json:"path"`
+	Request *model.Request      `json:"request"`
+	Chain   []*model.Collection `json:"chain,omitempty"`
 }
 
 var errDataExhausted = errors.New("data file exhausted")
