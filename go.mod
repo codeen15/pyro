@@ -3,8 +3,10 @@ module github.com/pyrohq/pyro
 go 1.27.3
 
 require (
+	github.com/HdrHistogram/hdrhistogram-go v1.4.0
 	github.com/coder/websocket v1.8.15
 	github.com/dop251/goja v0.0.0-20261031103838-cf2ff0ec0b31
+	github.com/expr-lang/expr v1.17.8
 	github.com/go-chi/chi/v5 v5.5.0
 	github.com/ohler55/ojg v1.28.9
 	github.com/spf13/cobra v1.10.2
@@ -19,6 +21,7 @@ require (
 	github.com/google/pprof v0.0.0-20261016150608-1facf8f91b50 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
+	github.com/kr/text v0.2.0 // indirect
 	github.com/mattn/go-isatty v0.0.24 // indirect
 	github.com/ncruces/go-strftime v1.1.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect

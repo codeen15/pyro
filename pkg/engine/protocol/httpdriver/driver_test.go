@@ -173,3 +173,23 @@ func TestURLErrors(t *testing.T) {
 		t.Errorf("refused err = %v", err)
 	}
 }
+
+func TestForVUHasOwnCookies(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if c, err := r.Cookie("sid"); err == nil {
+			w.Write([]byte(c.Value))
+			return
+		}
+		http.SetCookie(w, &http.Cookie{Name: "sid", Value: r.URL.Query().Get("v"), Path: "/"})
+	}))
+	defer ts.Close()
+	base := New(Options{})
+	a, b := base.ForVU(), base.ForVU()
+	a.Execute(context.Background(), &model.Request{URL: ts.URL + "?v=A"})
+	b.Execute(context.Background(), &model.Request{URL: ts.URL + "?v=B"})
+	ra, _ := a.Execute(context.Background(), &model.Request{URL: ts.URL})
+	rb, _ := b.Execute(context.Background(), &model.Request{URL: ts.URL})
+	if string(ra.Body) != "A" || string(rb.Body) != "B" {
+		t.Fatalf("cookies leaked between VUs: %q %q", ra.Body, rb.Body)
+	}
+}

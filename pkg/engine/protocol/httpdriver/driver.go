@@ -18,6 +18,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/pyrohq/pyro/pkg/engine/model"
@@ -32,6 +33,9 @@ type Options struct {
 	InsecureTLS     bool
 	// FileRoot resolves relative paths in multipart/file bodies.
 	FileRoot string
+	// MaxIdleConnsPerHost keeps connections open for reuse; default 100
+	// (net/http's default of 2 throttles load tests).
+	MaxIdleConnsPerHost int
 }
 
 // Driver sends HTTP requests. It is safe for concurrent use; the cookie jar
@@ -52,10 +56,15 @@ func New(opts Options) *Driver {
 	if opts.MaxBodyBytes == 0 {
 		opts.MaxBodyBytes = 10 << 20
 	}
+	if opts.MaxIdleConnsPerHost == 0 {
+		opts.MaxIdleConnsPerHost = 100
+	}
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: opts.InsecureTLS} //nolint:gosec // user opt-in
 	// Pyro reports what the server sent; don't transparently decompress.
 	transport.DisableCompression = true
+	transport.MaxIdleConns = 0 // no global cap; per-host cap below
+	transport.MaxIdleConnsPerHost = opts.MaxIdleConnsPerHost
 	jar, _ := cookiejar.New(nil)
 
 	d := &Driver{opts: opts, Jar: jar}
@@ -77,6 +86,15 @@ func New(opts Options) *Driver {
 
 func (d *Driver) Kind() model.Kind { return model.KindHTTP }
 
+// ForVU returns a driver that shares this one's connection pool but has its
+// own cookie jar, so each virtual user behaves like a separate client.
+func (d *Driver) ForVU() *Driver {
+	jar, _ := cookiejar.New(nil)
+	c := *d.client
+	c.Jar = jar
+	return &Driver{opts: d.opts, client: &c, Jar: jar}
+}
+
 // Execute sends req, which must already have variables resolved and auth applied.
 func (d *Driver) Execute(ctx context.Context, req *model.Request) (*protocol.Response, error) {
 	ctx, cancel := context.WithTimeout(ctx, d.opts.Timeout)
@@ -87,27 +105,50 @@ func (d *Driver) Execute(ctx context.Context, req *model.Request) (*protocol.Res
 		return nil, err
 	}
 
+	// Dial callbacks can run on the transport's dial goroutine, even after
+	// this request was handed a different (pooled) connection, so the
+	// trace state is mutex-guarded and dial timings are frozen at GotConn.
 	var (
+		mu                                   sync.Mutex
 		t                                    protocol.Timings
 		start, dnsStart, connStart, tlsStart time.Time
 		wroteAt, firstByte                   time.Time
 		remote                               string
+		gotConn                              bool
 	)
-	trace := &httptrace.ClientTrace{
-		DNSStart:          func(httptrace.DNSStartInfo) { dnsStart = time.Now() },
-		DNSDone:           func(httptrace.DNSDoneInfo) { t.DNS = time.Since(dnsStart) },
-		ConnectStart:      func(string, string) { connStart = time.Now() },
-		ConnectDone:       func(string, string, error) { t.Connect = time.Since(connStart) },
-		TLSHandshakeStart: func() { tlsStart = time.Now() },
-		TLSHandshakeDone:  func(tls.ConnectionState, error) { t.TLS = time.Since(tlsStart) },
-		GotConn: func(info httptrace.GotConnInfo) {
-			t.Reused = info.Reused
-			if info.Conn != nil {
-				remote = info.Conn.RemoteAddr().String()
+	locked := func(f func()) {
+		mu.Lock()
+		defer mu.Unlock()
+		f()
+	}
+	dial := func(f func()) {
+		locked(func() {
+			if !gotConn {
+				f()
 			}
+		})
+	}
+	trace := &httptrace.ClientTrace{
+		DNSStart:          func(httptrace.DNSStartInfo) { dial(func() { dnsStart = time.Now() }) },
+		DNSDone:           func(httptrace.DNSDoneInfo) { dial(func() { t.DNS = time.Since(dnsStart) }) },
+		ConnectStart:      func(string, string) { dial(func() { connStart = time.Now() }) },
+		ConnectDone:       func(string, string, error) { dial(func() { t.Connect = time.Since(connStart) }) },
+		TLSHandshakeStart: func() { dial(func() { tlsStart = time.Now() }) },
+		TLSHandshakeDone:  func(tls.ConnectionState, error) { dial(func() { t.TLS = time.Since(tlsStart) }) },
+		GotConn: func(info httptrace.GotConnInfo) {
+			locked(func() {
+				gotConn = true
+				t.Reused = info.Reused
+				if info.Reused {
+					t.DNS, t.Connect, t.TLS = 0, 0, 0
+				}
+				if info.Conn != nil {
+					remote = info.Conn.RemoteAddr().String()
+				}
+			})
 		},
-		WroteRequest:         func(httptrace.WroteRequestInfo) { wroteAt = time.Now() },
-		GotFirstResponseByte: func() { firstByte = time.Now() },
+		WroteRequest:         func(httptrace.WroteRequestInfo) { locked(func() { wroteAt = time.Now() }) },
+		GotFirstResponseByte: func() { locked(func() { firstByte = time.Now() }) },
 	}
 	hreq = hreq.WithContext(httptrace.WithClientTrace(ctx, trace))
 
@@ -120,6 +161,8 @@ func (d *Driver) Execute(ctx context.Context, req *model.Request) (*protocol.Res
 
 	body, size, truncated, err := readLimited(res.Body, d.opts.MaxBodyBytes)
 	end := time.Now()
+	mu.Lock()
+	defer mu.Unlock()
 	if err != nil {
 		return nil, fmt.Errorf("reading response body: %w", describe(err))
 	}
