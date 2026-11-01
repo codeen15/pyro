@@ -1,0 +1,11 @@
+/bin/
+web/node_modules/
+web/dist/*
+!web/dist/.gitkeep
+*.tsbuildinfo
+.DS_Store
+
+# Local, per-user tool settings
+*.local.json
+# impeccable downloads its platform binary on first run
+.claude/skills/impeccable/scripts/bin/

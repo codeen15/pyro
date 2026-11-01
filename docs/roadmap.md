@@ -1,0 +1,22 @@
+# Roadmap
+
+| Phase | Scope | Exit criteria | Status |
+|---|---|---|---|
+| **0. Foundations** | Monorepo, data model, workspace store, `pyro serve` with embedded UI shell, token auth, `init --sample` | `pyro serve` serves the UI and workspace API from one binary | ✅ Done |
+| **1. API client MVP** | HTTP driver (timings, cookies, TLS, proxy), variables and environments, auth inheritance, editable request editor, response viewer, history (SQLite), Postman importer without scripts, OpenAPI spec + generated TS client, product/design pass (PRODUCT.md, DESIGN.md) | A real Postman collection imports and its requests send | Next |
+| **2. Realtime + scripting** | WebSocket and Socket.IO drivers and consoles, event WebSocket, goja + `pm.*` shim, assertions and extractors, collection runner, CLI `run`, JUnit/JSON reporters | Imported `pm.test` scripts pass; `pyro run` works in CI | |
+| **3. Load engine** | Scheduler, executors, VU pool, flow DSL, data feeders, metrics pipeline, thresholds, profiles, load designer and live dashboard, CLI `load`, HTML report | 5k HTTP VUs and 2k concurrent WebSockets on a laptop with stable metrics; percentiles within tolerance of k6 | |
+| **4. Plugins** | wazero host, ABI v1, manifest and capabilities, Go/Rust SDKs, registry and `pyro plugin`, raw-TCP example, Plugin Manager UI | A third-party protocol plugin works in manual and load modes | |
+| **5. Scale & polish** | Distributed agents (gRPC), Prometheus/InfluxDB sinks, run comparison, OpenAPI/HAR/cURL import, Postman export, optional Tauri wrapper | A multi-node test produces correctly merged results | |
+
+## Risks and mitigations
+| Risk | Mitigation |
+|---|---|
+| `pm.*` compatibility is a deep rabbit hole | Support the most-used APIs first and report the rest in the import report. Measure coverage against real collections. |
+| Script cost under load | One goja runtime per VU, pooled. Push declarative assertions and extractors. Benchmark in Phase 2 before the load engine depends on it. |
+| Coordinated omission skews latency | Arrival-rate executors; measure from the intended start time. |
+| The load generator becomes the bottleneck | Expose Pyro's own CPU and memory and warn when they saturate. Offer distributed agents in Phase 5. |
+| Plugin security | Capability-gated host functions, approval on install, signed index entries, memory and fuel limits. |
+| UI performance with high-frequency metrics | 1s aggregation ticks, uPlot for charts, virtualized tables. |
+| Socket.IO protocol edge cases | Conformance tests against the official Node server, versions 4.x, in CI. |
+| Scope creep from Postman feature parity | Non-goals in the [PRD](PRD.md). New protocols ship as plugins. |
