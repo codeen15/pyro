@@ -35,6 +35,9 @@ import (
 
 func main() {
 	if err := rootCmd().Execute(); err != nil {
+		if !errors.Is(err, errRunFailed) {
+			fmt.Fprintln(os.Stderr, "Error:", err)
+		}
 		os.Exit(1)
 	}
 }
@@ -44,9 +47,9 @@ func rootCmd() *cobra.Command {
 		Use:           "pyro",
 		Short:         "API client and load-testing tool",
 		SilenceUsage:  true,
-		SilenceErrors: false,
+		SilenceErrors: true,
 	}
-	root.AddCommand(serveCmd(), initCmd(), importCmd(), versionCmd())
+	root.AddCommand(serveCmd(), initCmd(), importCmd(), runCmd(), versionCmd())
 	return root
 }
 

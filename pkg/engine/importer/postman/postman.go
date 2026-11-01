@@ -224,7 +224,9 @@ func parseCollection(data []byte) (*importer.Bundle, error) {
 		Scripts:     c.scriptsFrom("", pc.Event),
 	}
 	c.b.Collection = coll
-	c.items("", pc.Item)
+	if coll.Order = c.items("", pc.Item); len(coll.Order) < 2 {
+		coll.Order = nil
+	}
 	c.b.Report.Slug = c.b.Slug
 
 	if c.scripts > 0 {
@@ -234,10 +236,13 @@ func parseCollection(data []byte) (*importer.Bundle, error) {
 	return c.b, nil
 }
 
-func (c *converter) items(dir string, items []pmItem) {
+// items converts one level of the tree and returns the slugs in source order.
+func (c *converter) items(dir string, items []pmItem) []string {
 	taken := map[string]bool{}
+	var order []string
 	for _, it := range items {
 		slug := importer.Unique(importer.Slugify(it.Name), taken)
+		order = append(order, slug)
 		p := path.Join(dir, slug)
 		if it.Request == nil {
 			// A folder (Postman marks folders by having "item", possibly empty).
@@ -248,10 +253,12 @@ func (c *converter) items(dir string, items []pmItem) {
 				Auth:        c.auth(p, it.Auth),
 				Scripts:     c.scriptsFrom(p, it.Event),
 			}
-			if f.Description != "" || f.Auth != nil || f.Scripts != nil || f.Name != slug {
+			if f.Order = c.items(p, it.Item); len(f.Order) < 2 {
+				f.Order = nil
+			}
+			if f.Description != "" || f.Auth != nil || f.Scripts != nil || f.Name != slug || f.Order != nil {
 				c.b.Folders[p] = f
 			}
-			c.items(p, it.Item)
 			continue
 		}
 		if r := c.request(p, it); r != nil {
@@ -259,6 +266,7 @@ func (c *converter) items(dir string, items []pmItem) {
 			c.b.Report.Requests++
 		}
 	}
+	return order
 }
 
 func (c *converter) request(p string, it pmItem) *model.Request {

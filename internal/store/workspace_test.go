@@ -2,6 +2,7 @@ package store
 
 import (
 	"errors"
+	"path"
 	"reflect"
 	"testing"
 
@@ -208,5 +209,35 @@ func TestImportNeverOverwrites(t *testing.T) {
 		if c.Path == "payments-2" && c.Children[0].Name != "Orders" {
 			t.Fatalf("folder display name = %q", c.Children[0].Name)
 		}
+	}
+}
+
+func TestOrderAndRequests(t *testing.T) {
+	ws := newWorkspace(t)
+	for _, p := range []string{"payments/zeta", "payments/alpha", "payments/b/two", "payments/b/one"} {
+		ws.WriteRequest(p, &model.Request{Kind: model.KindHTTP, Name: path.Base(p)})
+	}
+	c, _ := ws.ReadCollection("payments")
+	c.Order = []string{"zeta", "b"}
+	ws.WriteCollection("payments", c)
+	writeYAML(ws.Root+"/collections/payments/b/folder.yaml", model.Collection{Order: []string{"two", "one"}})
+
+	refs, err := ws.Requests("payments")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, r := range refs {
+		got = append(got, r.Path)
+	}
+	want := []string{"payments/zeta", "payments/b/two", "payments/b/one", "payments/alpha"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("order = %v, want %v", got, want)
+	}
+	if refs, _ := ws.Requests("payments/b/one"); len(refs) != 1 || len(refs[0].Chain) != 2 {
+		t.Fatalf("single request: %+v", refs)
+	}
+	if _, err := ws.Requests("payments/nope"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("missing: %v", err)
 	}
 }

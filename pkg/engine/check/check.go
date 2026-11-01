@@ -169,7 +169,7 @@ func compare(op, actual string, present bool, want string) error {
 		}
 		ok := map[string]bool{"lt": a < w, "lte": a <= w, "gt": a > w, "gte": a >= w}[op]
 		if !ok {
-			return fmt.Errorf("got %s, want %s %s", short(actual), op, want)
+			return fmt.Errorf("got %s, want %s %s", actual, op, want)
 		}
 	default:
 		return fmt.Errorf("unknown operator %q", op)

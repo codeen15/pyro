@@ -166,3 +166,13 @@ func TestRejects(t *testing.T) {
 		}
 	}
 }
+
+func TestSourceOrderKept(t *testing.T) {
+	b := loadFixture(t, "shop.v21.json")
+	if got := strings.Join(b.Collection.Order, ","); got != "auth,products,checkout" {
+		t.Errorf("collection order = %s", got)
+	}
+	if got := strings.Join(b.Folders["products"].Order, ","); got != "get-product,upload-image,search-graphql,get-product-2" {
+		t.Errorf("products order = %s", got)
+	}
+}

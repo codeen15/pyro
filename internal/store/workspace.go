@@ -115,6 +115,7 @@ func (w *Workspace) Tree() ([]*Node, error) {
 		if n.Children, err = w.walk(filepath.Join(base, e.Name()), e.Name()); err != nil {
 			return nil, err
 		}
+		applyOrder(n.Children, c.Order)
 		nodes = append(nodes, n)
 	}
 	sortNodes(nodes)
@@ -142,6 +143,7 @@ func (w *Workspace) walk(dir, rel string) ([]*Node, error) {
 			if n.Children, err = w.walk(filepath.Join(dir, name), n.Path); err != nil {
 				return nil, err
 			}
+			applyOrder(n.Children, f.Order)
 			nodes = append(nodes, n)
 		case strings.HasSuffix(name, RequestExt):
 			p := path.Join(rel, strings.TrimSuffix(name, RequestExt))
@@ -158,6 +160,25 @@ func (w *Workspace) walk(dir, rel string) ([]*Node, error) {
 	}
 	sortNodes(nodes)
 	return nodes, nil
+}
+
+// applyOrder moves listed children to the front in the given order; the rest
+// keep their default sort.
+func applyOrder(nodes []*Node, order []string) {
+	if len(order) == 0 {
+		return
+	}
+	rank := make(map[string]int, len(order))
+	for i, name := range order {
+		rank[name] = i
+	}
+	pos := func(n *Node) int {
+		if r, ok := rank[path.Base(n.Path)]; ok {
+			return r
+		}
+		return len(order)
+	}
+	sort.SliceStable(nodes, func(i, j int) bool { return pos(nodes[i]) < pos(nodes[j]) })
 }
 
 func sortNodes(nodes []*Node) {

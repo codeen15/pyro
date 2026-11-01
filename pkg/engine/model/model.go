@@ -27,6 +27,9 @@ type Collection struct {
 	Variables   []Variable `yaml:"variables,omitempty" json:"variables,omitempty"`
 	Auth        *Auth      `yaml:"auth,omitempty" json:"auth,omitempty"`
 	Scripts     *Scripts   `yaml:"scripts,omitempty" json:"scripts,omitempty"`
+	// Order lists child file/folder names (without .req.yaml) in run order.
+	// Children not listed follow, folders first, sorted by name.
+	Order []string `yaml:"order,omitempty" json:"order,omitempty"`
 }
 
 // Request is one saved request, stored as <name>.req.yaml.
