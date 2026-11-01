@@ -6,9 +6,24 @@ distributed across agents) with WASM plugins, in a single binary that serves a w
 
 Design docs: [`docs/`](docs/) (start with [architecture](docs/architecture.md) and [roadmap](docs/roadmap.md)).
 
-## Build
+## Install
 
-Requires Go 1.23+ and Node 20+.
+Download the archive for your system from
+[Releases](https://github.com/codeen15/pyro/releases) (Linux, macOS and Windows; amd64 and
+arm64), check it against `SHA256SUMS`, unpack it and put `pyro` on your `PATH`:
+
+```sh
+tar xzf pyro_<version>_linux_amd64.tar.gz
+sudo mv pyro_<version>_linux_amd64/pyro /usr/local/bin/
+pyro serve --open
+```
+
+Pyro is one self-contained binary (no runtime, no CGO). The release also carries the example
+plugins (`plugin-tcp_*.pyro-plugin`, `plugin-hmac_*.pyro-plugin`).
+
+## Build from source
+
+Requires Go (the version in `go.mod`) and Node 20+.
 
 ```sh
 make build          # builds the UI, embeds it, writes bin/pyro
@@ -39,7 +54,12 @@ token; API calls without it are rejected.
 make dev-api   # terminal 1: engine on :7878 without token
 make dev-ui    # terminal 2: Vite on :5173 with hot reload, proxies /api
 make test      # go vet + go test + UI typecheck
+make build && (cd web && npx playwright install chromium && npm run e2e)   # browser tests
+make dist      # release archives in dist/
 ```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). Security reports: [SECURITY.md](SECURITY.md).
+Licensed under [Apache-2.0](LICENSE).
 
 ## Layout
 
@@ -53,6 +73,8 @@ make test      # go vet + go test + UI typecheck
 | `internal/server` | REST API under `/api/v1`, embedded SPA |
 | `web` | React + TypeScript UI (Vite), embedded via `web/embed.go` |
 | `plugins` | Go plugin SDK and example plugins (raw TCP, HMAC auth) |
+| `scripts/dist` | Release builder (`make dist`) |
+| `web/e2e` | Playwright end-to-end tests against the real binary |
 
 ## Workspace format
 

@@ -2,7 +2,7 @@
 
 Pyro is an API client (REST, WebSocket, Socket.IO, Postman import) and load-testing
 tool (stress, spike, soak, concurrency) with WASM plugins. A single Go binary runs the
-engine and serves a React web UI on localhost. **Current phase: 5 (scale & polish) done; all planned phases complete**
+engine and serves a React web UI on localhost. **Current phase: 6 (release readiness)**
 (see `docs/roadmap.md`). Product context: `PRODUCT.md`; visual system: `DESIGN.md`.
 
 ## Layout
@@ -20,6 +20,8 @@ engine and serves a React web UI on localhost. **Current phase: 5 (scale & polis
 - `web/`: React + TS + Vite UI; `web/embed.go` embeds `web/dist`
 - `plugins/sdk/go`: Go plugin SDK (separate module); `plugins/examples/{tcp,hmac}`: example plugins (separate modules)
 - `docs/`: design docs (index below)
+- `scripts/dist`: release builder (`make dist`); `.github/workflows`: CI and tag-triggered draft releases
+- `web/e2e`: Playwright tests against the real binary (`e2e/server.mjs` starts a mock API and `pyro serve`)
 
 ## Commands
 ```sh
@@ -29,6 +31,8 @@ make dev-api      # engine on :7878, no token
 make dev-ui       # Vite on :5173, proxies /api
 ./bin/pyro serve --open
 ./bin/pyro init <dir> --sample
+make dist         # release archives + SHA256SUMS in dist/
+cd web && npm run e2e   # browser tests (needs bin/pyro and npx playwright install chromium)
 ```
 `go test ./...` works without building the UI (`web/dist/.gitkeep` keeps the embed valid).
 
@@ -44,6 +48,8 @@ make dev-ui       # Vite on :5173, proxies /api
 - Distributed load tests: agents send metric deltas (`metrics.SeriesDelta`), never summaries, so the controller's
   percentiles stay exact. Agent tests run in-process (`httptest` agents); `pkg/engine/load` tests use an in-memory worker.
 - No CGO: dependencies must be pure Go. Builds use `CGO_ENABLED=0`.
+- Security boundaries (see SECURITY.md): body files stay inside the workspace (`httpdriver.ResolveFile`); the server
+  rejects non-loopback Host headers unless `AnyHost`; plugin index URLs must be https except on loopback.
 - Plugin tests build the example plugins with `GOOS=wasip1` (needs only the Go toolchain); the plugin package under
   `-race` takes ~100 s because wazero compiles slowly with race instrumentation.
 - UI: follow `DESIGN.md` (Pyrometry: heat colours only on measured data, flame accent for chrome). Tokens live in
@@ -62,4 +68,6 @@ make dev-ui       # Vite on :5173, proxies /api
 - `docs/postman-import.md`: Postman mapping, `pm.*` support, import report
 - `docs/import-export.md`: OpenAPI/Swagger, HAR and cURL import; import into a collection; Postman export
 - `docs/roadmap.md`: phases, exit criteria, risks
+- `docs/releasing.md`: tagging, the release workflow, archive contents
+- `SECURITY.md`: threat model by boundary; `CONTRIBUTING.md`: checks before a PR
 - `docs/adr/`: architecture decision records
