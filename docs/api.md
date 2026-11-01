@@ -57,7 +57,7 @@ TypeScript client in `web/src/api.ts`.
 | GET | `/api/v1/loadtests` | `[{name, title?, peakVUs?, error?}]` (`error` = the plan doesn't validate) |
 | GET / PUT / DELETE | `/api/v1/loadtests/{name}` | GET returns `{name, title, yaml, plan, peakVUs, error?}`. PUT `{yaml}` validates (400 with every problem) and saves the raw text, so comments survive. |
 | POST | `/api/v1/loadtests/{name}/start` | Body `{environment?, confirmHosts?, distributed?}` (`distributed` runs on the agents given to `pyro serve --agent`; `400` if none). `409 {needsConfirmation, hosts}` when it would target hosts that aren't loopback or in `loadAllowHosts`; `409 {running}` when another test runs; `202 {id}` when started. |
-| GET | `/api/v1/agents` | Configured agents: `[{address, info?: {name, version, protocol, cpus, os, arch, busy, maxVUs, plugins}, error?}]` |
+| GET | `/api/v1/agents` | Agents: those given to `--agent` (`mode: dial`) and those connected to `--agent-listen` (`mode: connected`): `[{mode, address, info?: {name, version, protocol, cpus, os, arch, busy, maxVUs, plugins}, error?}]` |
 | GET | `/api/v1/loadruns?test=` | Saved runs newest first (a running one first): `{id, test, name, startedAt, status, duration, requests, p95, errorRate, maxVUs}` |
 | GET | `/api/v1/loadruns/{id}` | Running: `{status: "running", ticks, live: {tick, requests, errors}, plan}`. Finished: `{status, result}` |
 | GET | `/api/v1/loadruns/{id}/report` | Self-contained HTML report (`?download=1` sets Content-Disposition) |

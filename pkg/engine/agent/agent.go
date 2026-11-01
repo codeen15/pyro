@@ -10,6 +10,9 @@
 //	controller → agent: job {job}, begin, stop
 //	agent → controller: ready, report {report}, done {status}, error {error}
 //
+// Agents can also connect out to a controller (Hub, pyro agent --connect):
+// they open the WebSocket, send hello {info}, then the same exchange runs.
+//
 // Closing the connection aborts a running job.
 package agent
 
@@ -41,4 +44,5 @@ type message struct {
 	Report *load.Report `json:"report,omitempty"`
 	Status string       `json:"status,omitempty"`
 	Error  string       `json:"error,omitempty"`
+	Info   *Info        `json:"info,omitempty"` // hello (dial-out agents)
 }

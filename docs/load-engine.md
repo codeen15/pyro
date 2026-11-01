@@ -195,6 +195,16 @@ pyro agent --token s3cret                       # on each load machine (port 797
 pyro load checkout-stress --agent 10.0.0.5:7979 --agent 10.0.0.6:7979 --agent-token s3cret
 pyro serve --agent 10.0.0.5:7979,10.0.0.6:7979 --agent-token s3cret   # UI: "Run on: N agents"
 ```
+Agents behind NAT or firewalls can connect out instead ([ADR 0007](adr/0007-agents-connect-out.md)):
+```sh
+pyro agent --connect controller.example.com:7980 --token s3cret      # on each load machine
+pyro load checkout-stress --agent-listen :7980 --wait-agents 3 --agent-token s3cret
+pyro serve --agent-listen :7980 --agent-token s3cret                 # UI lists connected agents
+```
+The agent listener is separate from the UI, which stays on loopback. Connected agents wait
+for a test, reconnect after each one, and retry with backoff if the controller is away.
+Both kinds of agents can share a test.
+
 `PYRO_AGENT_TOKEN` can replace `--token`/`--agent-token`. Agents with `--tls-cert/--tls-key`
 are addressed as `https://host:port` (`--agent-insecure` skips verification).
 
@@ -215,6 +225,8 @@ How it works ([ADR 0006](adr/0006-agents-over-websocket.md)):
   Live charts trail the agents by up to one tick.
 - **Plugins.** Plugin request and auth types must be installed and approved on every agent;
   the controller checks before starting.
+- **Requests per second.** A cap (`maxRPS`, `--max-rps`, `loadMaxRPS`) is split evenly
+  between agents.
 - **Failures.** Before starting, the controller checks every agent (token, protocol
   version, busy). If an agent disconnects or stops reporting for 30 s during the test, the
   others are stopped and the test fails with `agent <name> failed: …`. Stopping or

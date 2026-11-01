@@ -98,29 +98,33 @@ func (c *Client) Prepare(ctx context.Context, job load.Job) error {
 		}
 		return err
 	}
-	conn.SetReadLimit(64 << 20)
-	if err := wsjson.Write(ctx, conn, message{Type: "job", Job: &job}); err != nil {
+	if err := prepareConn(ctx, conn, job); err != nil {
 		conn.CloseNow()
 		return err
-	}
-	var m message
-	if err := wsjson.Read(ctx, conn, &m); err != nil {
-		conn.CloseNow()
-		return err
-	}
-	switch m.Type {
-	case "ready":
-	case "error":
-		conn.CloseNow()
-		return errors.New(m.Error)
-	default:
-		conn.CloseNow()
-		return fmt.Errorf("unexpected %q from the agent", m.Type)
 	}
 	c.mu.Lock()
 	c.conn = conn
 	c.mu.Unlock()
 	return nil
+}
+
+// prepareConn sends a job over an agent connection and waits for "ready".
+func prepareConn(ctx context.Context, conn *websocket.Conn, job load.Job) error {
+	conn.SetReadLimit(64 << 20)
+	if err := wsjson.Write(ctx, conn, message{Type: "job", Job: &job}); err != nil {
+		return err
+	}
+	var m message
+	if err := wsjson.Read(ctx, conn, &m); err != nil {
+		return err
+	}
+	switch m.Type {
+	case "ready":
+		return nil
+	case "error":
+		return errors.New(m.Error)
+	}
+	return fmt.Errorf("unexpected %q from the agent", m.Type)
 }
 
 func (c *Client) Run(ctx context.Context, report func(load.Report)) error {
@@ -131,6 +135,11 @@ func (c *Client) Run(ctx context.Context, report func(load.Report)) error {
 		return errors.New("not prepared")
 	}
 	defer c.Close()
+	return runConn(ctx, conn, report)
+}
+
+// runConn starts a prepared job and relays its reports until "done".
+func runConn(ctx context.Context, conn *websocket.Conn, report func(load.Report)) error {
 	if err := wsjson.Write(ctx, conn, message{Type: "begin"}); err != nil {
 		return err
 	}
@@ -168,6 +177,10 @@ func (c *Client) Stop() {
 	c.mu.Lock()
 	conn := c.conn
 	c.mu.Unlock()
+	stopConn(conn)
+}
+
+func stopConn(conn *websocket.Conn) {
 	if conn != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()

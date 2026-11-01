@@ -24,7 +24,9 @@ import (
 func agentCmd() *cobra.Command {
 	var (
 		host, token, name, certFile, keyFile string
+		connect                              string
 		port, maxVUs                         int
+		insecure                             bool
 	)
 	cmd := &cobra.Command{
 		Use:   "agent",
@@ -34,8 +36,9 @@ func agentCmd() *cobra.Command {
 			"Controllers must present the agent token. Without --token (or PYRO_AGENT_TOKEN)\n" +
 			"a random token is generated and printed. Plugins used by the test must be\n" +
 			"installed and approved on the agent too.",
-		Example: "  pyro agent --token s3cret\n  pyro agent --port 7979 --tls-cert cert.pem --tls-key key.pem",
-		Args:    cobra.NoArgs,
+		Example: "  pyro agent --token s3cret\n  pyro agent --port 7979 --tls-cert cert.pem --tls-key key.pem\n" +
+			"  pyro agent --connect https://controller.example.com:7980 --token s3cret   # behind NAT: dial out",
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if token == "" {
 				token = os.Getenv("PYRO_AGENT_TOKEN")
@@ -55,6 +58,15 @@ func agentCmd() *cobra.Command {
 			}}
 			if srv.Plugins = openPlugins(); srv.Plugins != nil {
 				defer srv.Plugins.Close()
+			}
+			if connect != "" {
+				if generated {
+					return errors.New("--connect needs the controller's agent token: pass --token or set PYRO_AGENT_TOKEN")
+				}
+				fmt.Printf("Pyro agent %s (%s)\n  connecting to %s\n\n", version.Version, name, connect)
+				ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+				defer stop()
+				return srv.Connect(ctx, connect, insecure)
 			}
 			ln, err := net.Listen("tcp", net.JoinHostPort(host, fmt.Sprint(port)))
 			if err != nil {
@@ -102,6 +114,8 @@ func agentCmd() *cobra.Command {
 	f.IntVar(&maxVUs, "max-vus", load.DefaultMaxVUs, "refuse segments that need more VUs than this")
 	f.StringVar(&certFile, "tls-cert", "", "serve TLS with this certificate (controllers use https://host:port)")
 	f.StringVar(&keyFile, "tls-key", "", "TLS private key")
+	f.StringVar(&connect, "connect", "", "dial out to a controller's agent listener (host:port or URL) instead of listening")
+	f.BoolVar(&insecure, "insecure", false, "with --connect: skip TLS certificate verification")
 	return cmd
 }
 
@@ -146,4 +160,24 @@ func connectAgents(addrs []string, token string, insecure bool) ([]load.Worker, 
 		slog.Warn("agent version differs from this controller", "agent", infos[0].Name, "version", v, "controller", version.Version)
 	}
 	return workers, infos, nil
+}
+
+// startAgentListener serves an agent hub on addr (for agents that connect
+// out), separate from the UI so the UI can stay on loopback.
+func startAgentListener(addr, token string) (*agent.Hub, func(), error) {
+	if token == "" {
+		token = os.Getenv("PYRO_AGENT_TOKEN")
+	}
+	if token == "" {
+		return nil, nil, errors.New("--agent-listen needs an agent token: pass --agent-token or set PYRO_AGENT_TOKEN")
+	}
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return nil, nil, err
+	}
+	hub := agent.NewHub(token)
+	hs := &http.Server{Handler: hub.Handler(), ReadHeaderTimeout: 10 * time.Second}
+	go hs.Serve(ln)
+	fmt.Printf("  agents     connect with: pyro agent --connect <this-host>:%d --token <agent token>\n", ln.Addr().(*net.TCPAddr).Port)
+	return hub, func() { hs.Close() }, nil
 }

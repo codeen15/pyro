@@ -108,6 +108,7 @@ func serveCmd() *cobra.Command {
 		agents, outs  []string
 		agentToken    string
 		agentInsecure bool
+		agentListen   string
 	)
 	cmd := &cobra.Command{
 		Use:   "serve",
@@ -165,6 +166,14 @@ func serveCmd() *cobra.Command {
 			if len(agents) > 0 {
 				fmt.Printf("  agents     %s\n", strings.Join(agents, ", "))
 			}
+			if agentListen != "" {
+				hub, stopHub, err := startAgentListener(agentListen, agentToken)
+				if err != nil {
+					return err
+				}
+				defer stopHub()
+				api.SetAgentHub(hub)
+			}
 			fmt.Println("\nPress Ctrl+C to stop.")
 			if open {
 				if err := openBrowser(url); err != nil {
@@ -195,6 +204,7 @@ func serveCmd() *cobra.Command {
 	cmd.Flags().StringSliceVar(&agents, "agent", nil, "load agents for distributed tests (host:port; repeat or comma-separate)")
 	cmd.Flags().StringVar(&agentToken, "agent-token", "", "token for the agents (default: $PYRO_AGENT_TOKEN)")
 	cmd.Flags().BoolVar(&agentInsecure, "agent-insecure", false, "skip TLS certificate verification for https agents")
+	cmd.Flags().StringVar(&agentListen, "agent-listen", "", "accept agents that connect out (pyro agent --connect) on this address, e.g. :7980")
 	return cmd
 }
 

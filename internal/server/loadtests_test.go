@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -188,4 +189,38 @@ func TestLoadTestHostConfirmationAndStop(t *testing.T) {
 		time.Sleep(50 * time.Millisecond)
 	}
 	t.Fatalf("not stopped: %s", body)
+}
+
+func TestDialOutAgentsViaAPI(t *testing.T) {
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok")) }))
+	defer target.Close()
+	hub := agent.NewHub("tok")
+	hs := httptest.NewServer(hub.Handler())
+	defer hs.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go (&agent.Server{Token: "tok", Name: "behind-nat", TickInterval: 100 * time.Millisecond}).Connect(ctx, hs.URL, false)
+	wctx, wcancel := context.WithTimeout(ctx, 5*time.Second)
+	defer wcancel()
+	if err := hub.Wait(wctx, 1); err != nil {
+		t.Fatal(err)
+	}
+
+	ws, _ := store.Init(t.TempDir(), "test")
+	ws.CreateCollection("demo", model.Collection{Name: "Demo"})
+	eng := engine.New(httpdriver.New(httpdriver.Options{}))
+	srv := New(Config{Workspace: ws, Engine: eng, Token: testToken})
+	srv.SetAgentHub(hub)
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	_, body := do(t, ts, "GET", "/api/v1/agents", "", true)
+	if !strings.Contains(body, `"mode":"connected"`) || !strings.Contains(body, `"behind-nat"`) {
+		t.Fatalf("agents: %s", body)
+	}
+	do(t, ts, "PUT", "/api/v1/requests/demo/ping", `{"name":"Ping","url":"`+target.URL+`"}`, true)
+	do(t, ts, "PUT", "/api/v1/loadtests/d", loadPlanJSON("name: D\nscenarios:\n  s: { executor: per-vu-iterations, vus: 2, iterations: 3, flow: [ { request: demo/ping } ] }\nthresholds:\n  http_reqs: [\"count==6\"]\n"), true)
+	if st := runLoad(t, ts, "d", `{"distributed":true}`); st["status"] != "passed" {
+		t.Fatalf("distributed via connected agent: %+v", st)
+	}
 }

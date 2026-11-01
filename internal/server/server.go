@@ -21,6 +21,7 @@ import (
 	"github.com/codeen15/pyro/internal/store"
 	"github.com/codeen15/pyro/internal/version"
 	"github.com/codeen15/pyro/pkg/engine"
+	"github.com/codeen15/pyro/pkg/engine/agent"
 	"github.com/codeen15/pyro/pkg/engine/model"
 )
 
@@ -40,6 +41,8 @@ type Config struct {
 	Agents        []string
 	AgentToken    string
 	AgentInsecure bool
+	// AgentHub holds agents that connected out to this controller.
+	AgentHub *agent.Hub
 	// Outputs stream every load test's live metrics (output.Open specs).
 	Outputs []string
 	// AnyHost accepts requests for any Host header. Leave it false when
@@ -405,3 +408,7 @@ func spaHandler(ui fs.FS) http.Handler {
 		_, _ = w.Write(index)
 	})
 }
+
+// SetAgentHub attaches agents that connect out (set after New, once the
+// agent listener is up).
+func (s *Server) SetAgentHub(h *agent.Hub) { s.cfg.AgentHub = h }

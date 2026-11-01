@@ -11,3 +11,4 @@ rather than editing an accepted one; mark superseded records as such.
 | [0004](0004-yaml-file-per-request.md) | One YAML file per request, single `.req.yaml` extension | Accepted |
 | [0005](0005-json-abi-and-go-sdk.md) | JSON plugin ABI and a standard-Go SDK (refines 0002) | Accepted |
 | [0006](0006-agents-over-websocket.md) | Distributed agents: controller dials agents over WebSocket + JSON | Accepted |
+| [0007](0007-agents-connect-out.md) | Agents may also connect out to the controller (amends 0006) | Accepted |

@@ -189,3 +189,53 @@ scenarios:
 		t.Errorf("err = %v", err)
 	}
 }
+
+func TestDialOutAgents(t *testing.T) {
+	tg, hits := target(t)
+	hub := NewHub("tok")
+	hs := httptest.NewServer(hub.Handler())
+	defer hs.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	for _, name := range []string{"nat-1", "nat-2"} {
+		s := &Server{Token: "tok", Name: name, TickInterval: 50 * time.Millisecond}
+		go s.Connect(ctx, hs.URL, false)
+	}
+	wctx, wcancel := context.WithTimeout(ctx, 5*time.Second)
+	defer wcancel()
+	if err := hub.Wait(wctx, 2); err != nil {
+		t.Fatalf("agents didn't connect: %v", err)
+	}
+	p := plan(t, `
+name: dial-out
+scenarios:
+  s: { executor: per-vu-iterations, vus: 4, iterations: 5, flow: [ { request: ok } ] }
+thresholds:
+  http_reqs: ["count==20"]
+`)
+	for round := 1; round <= 2; round++ { // agents reconnect after each job
+		if err := hub.Wait(wctx, 2); err != nil {
+			t.Fatalf("round %d: agents didn't come back: %v", round, err)
+		}
+		workers := hub.Claim(0)
+		if len(workers) != 2 {
+			t.Fatalf("round %d: claimed %d", round, len(workers))
+		}
+		hits.Store(0)
+		test, err := load.Start(p, load.Options{Resolve: resolver(tg.URL), TickInterval: 100 * time.Millisecond, Workers: workers})
+		if err != nil {
+			t.Fatal(err)
+		}
+		res := test.Wait()
+		if res.Status != load.StatusPassed || hits.Load() != 20 || len(res.Agents) != 2 || res.Agents[0].Name != "nat-1" {
+			t.Fatalf("round %d: %s (%s), %d hits, agents %+v", round, res.Status, res.Reason, hits.Load(), res.Agents)
+		}
+	}
+
+	// A wrong token stops the agent instead of retrying forever.
+	bad := &Server{Token: "nope", Name: "bad"}
+	if err := bad.Connect(ctx, hs.URL, false); err == nil || !strings.Contains(err.Error(), "rejected") {
+		t.Fatalf("wrong token: %v", err)
+	}
+}

@@ -147,12 +147,15 @@ func (s *Server) startLoadTest(w http.ResponseWriter, r *http.Request) {
 		opts.Plugins = s.cfg.Engine.Plugins
 	}
 	if body.Distributed {
-		if len(s.cfg.Agents) == 0 {
-			writeError(w, http.StatusBadRequest, "no agents are configured: start pyro serve with --agent")
-			return
-		}
 		for _, a := range s.cfg.Agents {
 			opts.Workers = append(opts.Workers, agent.NewClient(a, s.cfg.AgentToken, s.cfg.AgentInsecure))
+		}
+		if s.cfg.AgentHub != nil {
+			opts.Workers = append(opts.Workers, s.cfg.AgentHub.Claim(0)...)
+		}
+		if len(opts.Workers) == 0 {
+			writeError(w, http.StatusBadRequest, "no agents: start pyro serve with --agent, or --agent-listen and connect agents to it")
+			return
 		}
 	}
 	if envName != "" {
@@ -362,6 +365,9 @@ func isValidation(err error) bool {
 }
 
 type agentView struct {
+	// Mode is "dial" (pyro serve --agent) or "connected" (the agent
+	// connected to --agent-listen).
+	Mode    string      `json:"mode"`
 	Address string      `json:"address"`
 	Info    *agent.Info `json:"info,omitempty"`
 	Error   string      `json:"error,omitempty"`
@@ -377,7 +383,7 @@ func (s *Server) listAgents(w http.ResponseWriter, r *http.Request) {
 			defer wg.Done()
 			ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 			defer cancel()
-			out[i].Address = a
+			out[i].Address, out[i].Mode = a, "dial"
 			in, err := agent.NewClient(a, s.cfg.AgentToken, s.cfg.AgentInsecure).Info(ctx)
 			if err != nil {
 				out[i].Error = err.Error()
@@ -387,5 +393,10 @@ func (s *Server) listAgents(w http.ResponseWriter, r *http.Request) {
 		}()
 	}
 	wg.Wait()
+	if s.cfg.AgentHub != nil {
+		for _, in := range s.cfg.AgentHub.Connected() {
+			out = append(out, agentView{Mode: "connected", Address: in.Name, Info: &in})
+		}
+	}
 	writeJSON(w, http.StatusOK, out)
 }

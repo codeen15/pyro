@@ -118,7 +118,7 @@ func (s *Server) job(w http.ResponseWriter, r *http.Request) {
 		s.mu.Unlock()
 	}()
 
-	if err := s.runJob(ctx, c, r.RemoteAddr); err != nil {
+	if err := s.runJob(ctx, c, r.RemoteAddr, time.Minute); err != nil {
 		s.logf("job from %s: %v", r.RemoteAddr, err)
 		wsjson.Write(ctx, c, message{Type: "error", Error: err.Error()})
 		c.Close(websocket.StatusNormalClosure, "")
@@ -127,9 +127,14 @@ func (s *Server) job(w http.ResponseWriter, r *http.Request) {
 	c.Close(websocket.StatusNormalClosure, "")
 }
 
-func (s *Server) runJob(ctx context.Context, c *websocket.Conn, from string) error {
+// runJob reads a job from c (waiting up to wait; 0 waits until the
+// connection ends), runs it and reports back.
+func (s *Server) runJob(ctx context.Context, c *websocket.Conn, from string, wait time.Duration) error {
 	var msg message
-	rctx, cancel := context.WithTimeout(ctx, time.Minute)
+	rctx, cancel := ctx, context.CancelFunc(func() {})
+	if wait > 0 {
+		rctx, cancel = context.WithTimeout(ctx, wait)
+	}
 	err := wsjson.Read(rctx, c, &msg)
 	cancel()
 	if err != nil {

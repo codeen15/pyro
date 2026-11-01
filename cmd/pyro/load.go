@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"os"
 	"os/signal"
@@ -28,6 +29,9 @@ func loadCmd() *cobra.Command {
 		maxRPS                           float64
 		yes, insecure, quiet             bool
 		agentInsecure                    bool
+		agentListen                      string
+		waitAgents                       int
+		waitTimeout                      time.Duration
 	)
 	cmd := &cobra.Command{
 		Use:   "load <load-test | file.load.yaml>",
@@ -86,6 +90,26 @@ func loadCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if agentListen != "" {
+				hub, stopHub, err := startAgentListener(agentListen, agentToken)
+				if err != nil {
+					return err
+				}
+				defer stopHub()
+				n := max(waitAgents, 1)
+				fmt.Printf("Waiting for %d agent(s) to connect (up to %s)\n", n, waitTimeout)
+				wctx, cancel := context.WithTimeout(context.Background(), waitTimeout)
+				err = hub.Wait(wctx, n)
+				cancel()
+				if err != nil {
+					return fmt.Errorf("only %d of %d agents connected within %s", len(hub.Connected()), n, waitTimeout)
+				}
+				for _, w := range hub.Claim(n) {
+					opts.Workers = append(opts.Workers, w)
+					fmt.Printf("  agent %s (connected)\n", w.Name())
+				}
+			}
+
 			live := newLiveLine(quiet)
 			var started atomic.Pointer[load.Test]
 			opts.OnTick = func(t load.Tick) {
@@ -99,8 +123,8 @@ func loadCmd() *cobra.Command {
 				}
 			}
 			where := ""
-			if len(agents) > 0 {
-				where = fmt.Sprintf(" on %d agents", len(agents))
+			if len(opts.Workers) > 0 {
+				where = fmt.Sprintf(" on %d agents", len(opts.Workers))
 			}
 			fmt.Printf("Load test %q: %d scenario(s), up to %d VUs%s\n", plan.Name, len(plan.Scenarios), load.PeakVUs(plan), where)
 			test, err := load.Start(plan, opts)
@@ -166,6 +190,9 @@ func loadCmd() *cobra.Command {
 	f.StringSliceVar(&agents, "agent", nil, "run distributed on these agents (host:port; repeat or comma-separate)")
 	f.StringVar(&agentToken, "agent-token", "", "token for the agents (default: $PYRO_AGENT_TOKEN)")
 	f.BoolVar(&agentInsecure, "agent-insecure", false, "skip TLS certificate verification for https agents")
+	f.StringVar(&agentListen, "agent-listen", "", "accept agents that connect out (pyro agent --connect) on this address, e.g. :7980")
+	f.IntVar(&waitAgents, "wait-agents", 1, "with --agent-listen: how many agents to wait for")
+	f.DurationVar(&waitTimeout, "wait-timeout", 2*time.Minute, "with --agent-listen: how long to wait for them")
 	return cmd
 }
 

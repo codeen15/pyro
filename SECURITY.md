@@ -48,6 +48,10 @@ generate a lot of traffic. Its defences, by boundary:
   controllers.
 - Traffic is plain HTTP unless the agent is started with `--tls-cert`/`--tls-key`; use TLS
   on untrusted networks.
+- Agents that connect out (`--connect`) present the controller's agent token; the
+  controller's agent listener (`--agent-listen`) accepts only that token and is separate
+  from the UI's listener. Put it behind TLS (e.g. a reverse proxy, then `--connect https://…`)
+  across untrusted networks.
 
 ## Out of scope
 Denial of service by someone who already holds a session or agent token; load tests you
