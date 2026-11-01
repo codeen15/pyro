@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -21,9 +22,14 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/pyrohq/pyro/internal/history"
 	"github.com/pyrohq/pyro/internal/server"
 	"github.com/pyrohq/pyro/internal/store"
 	"github.com/pyrohq/pyro/internal/version"
+	"github.com/pyrohq/pyro/pkg/engine"
+	"github.com/pyrohq/pyro/pkg/engine/importer"
+	"github.com/pyrohq/pyro/pkg/engine/importer/postman"
+	"github.com/pyrohq/pyro/pkg/engine/protocol/httpdriver"
 	"github.com/pyrohq/pyro/web"
 )
 
@@ -40,7 +46,7 @@ func rootCmd() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: false,
 	}
-	root.AddCommand(serveCmd(), initCmd(), versionCmd())
+	root.AddCommand(serveCmd(), initCmd(), importCmd(), versionCmd())
 	return root
 }
 
@@ -114,8 +120,17 @@ func serveCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			hist, err := openHistory()
+			if err != nil {
+				slog.Warn("request history disabled", "err", err)
+			} else {
+				defer hist.Close()
+			}
+			eng := engine.New(httpdriver.New(httpdriver.Options{FileRoot: ws.Root}))
 			srv := &http.Server{
-				Handler:           server.New(server.Config{Workspace: ws, Token: token, UI: web.Dist()}).Handler(),
+				Handler: server.New(server.Config{
+					Workspace: ws, Engine: eng, History: hist, Token: token, UI: web.Dist(),
+				}).Handler(),
 				ReadHeaderTimeout: 10 * time.Second,
 			}
 
@@ -177,6 +192,79 @@ func openWorkspace(dir string) (*store.Workspace, error) {
 		return nil, err
 	}
 	return ws, seedSample(ws)
+}
+
+// openHistory opens ~/.pyro/pyro.db, shared by all workspaces.
+func openHistory() (*history.Store, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil, err
+	}
+	dir := filepath.Join(home, ".pyro")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return nil, err
+	}
+	return history.Open(filepath.Join(dir, "pyro.db"))
+}
+
+func importCmd() *cobra.Command {
+	var wsDir, reportFile string
+	cmd := &cobra.Command{
+		Use:   "import <file.json>...",
+		Short: "Import Postman collections or environments into a workspace",
+		Args:  cobra.MinimumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ws, err := openWorkspace(wsDir)
+			if err != nil {
+				return err
+			}
+			var reports []*importer.Report
+			for _, file := range args {
+				data, err := os.ReadFile(file)
+				if err != nil {
+					return err
+				}
+				bundle, err := postman.Parse(data)
+				if err != nil {
+					return fmt.Errorf("%s: %w", file, err)
+				}
+				rep, err := ws.Import(bundle)
+				if err != nil {
+					return fmt.Errorf("%s: %w", file, err)
+				}
+				reports = append(reports, rep)
+				printReport(file, rep)
+			}
+			if reportFile != "" {
+				data, _ := json.MarshalIndent(reports, "", "  ")
+				return os.WriteFile(reportFile, data, 0o644)
+			}
+			return nil
+		},
+	}
+	cmd.Flags().StringVarP(&wsDir, "workspace", "w", "", "workspace directory (same default as serve)")
+	cmd.Flags().StringVar(&reportFile, "report", "", "write the import report(s) as JSON to this file")
+	return cmd
+}
+
+func printReport(file string, r *importer.Report) {
+	fmt.Printf("%s (%s)\n", file, r.Format)
+	if r.Slug != "" {
+		fmt.Printf("  collection   %q -> collections/%s (%d requests, %d folders)\n", r.Collection, r.Slug, r.Requests, r.Folders)
+	}
+	for _, e := range r.Environments {
+		fmt.Printf("  environment  environments/%s.env.yaml\n", e)
+	}
+	if len(r.Warnings) > 0 {
+		fmt.Printf("  %d warning(s):\n", len(r.Warnings))
+		for _, w := range r.Warnings {
+			where := w.Path
+			if where == "" {
+				where = "(collection)"
+			}
+			fmt.Printf("    %-28s %s: %s\n", where, w.Code, w.Detail)
+		}
+	}
 }
 
 func randomToken() string {

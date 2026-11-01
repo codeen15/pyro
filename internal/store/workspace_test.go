@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/pyrohq/pyro/pkg/engine/importer"
 	"github.com/pyrohq/pyro/pkg/engine/model"
 )
 
@@ -177,5 +178,35 @@ func TestChain(t *testing.T) {
 	}
 	if _, err := ws.Chain("payments/../x"); !errors.Is(err, ErrInvalidPath) {
 		t.Fatalf("traversal: %v", err)
+	}
+}
+
+func TestImportNeverOverwrites(t *testing.T) {
+	ws := newWorkspace(t)
+	ws.WriteEnvironment("Staging", &model.Environment{Name: "Staging"})
+	b := &importer.Bundle{
+		Collection: &model.Collection{Name: "Payments"},
+		Slug:       "payments", // clashes with the collection from newWorkspace
+		Folders:    map[string]*model.Collection{"orders": {Name: "Orders"}},
+		Requests: []importer.Request{
+			{Path: "orders/create", Request: &model.Request{Kind: model.KindHTTP, Name: "Create"}},
+		},
+		Environments: []*model.Environment{{Name: "Staging"}, {Name: "a/b"}},
+	}
+	rep, err := ws.Import(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.Slug != "payments-2" || !reflect.DeepEqual(rep.Environments, []string{"Staging-2", "a-b"}) {
+		t.Fatalf("report = %+v", rep)
+	}
+	if _, err := ws.ReadRequest("payments-2/orders/create"); err != nil {
+		t.Fatal(err)
+	}
+	tree, _ := ws.Tree()
+	for _, c := range tree {
+		if c.Path == "payments-2" && c.Children[0].Name != "Orders" {
+			t.Fatalf("folder display name = %q", c.Children[0].Name)
+		}
 	}
 }

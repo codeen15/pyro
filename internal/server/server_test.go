@@ -5,12 +5,16 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 	"testing/fstest"
 
+	"github.com/pyrohq/pyro/internal/history"
 	"github.com/pyrohq/pyro/internal/store"
+	"github.com/pyrohq/pyro/pkg/engine"
 	"github.com/pyrohq/pyro/pkg/engine/model"
+	"github.com/pyrohq/pyro/pkg/engine/protocol/httpdriver"
 )
 
 const testToken = "secret"
@@ -28,7 +32,13 @@ func newTestServer(t *testing.T) *httptest.Server {
 		"index.html":    {Data: []byte("<html>pyro</html>")},
 		"assets/app.js": {Data: []byte("console.log(1)")},
 	}
-	ts := httptest.NewServer(New(Config{Workspace: ws, Token: testToken, UI: ui}).Handler())
+	hist, err := history.Open(filepath.Join(t.TempDir(), "pyro.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { hist.Close() })
+	eng := engine.New(httpdriver.New(httpdriver.Options{}))
+	ts := httptest.NewServer(New(Config{Workspace: ws, Engine: eng, History: hist, Token: testToken, UI: ui}).Handler())
 	t.Cleanup(ts.Close)
 	return ts
 }

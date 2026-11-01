@@ -135,6 +135,10 @@ func (w *Workspace) walk(dir, rel string) ([]*Node, error) {
 		switch {
 		case e.IsDir():
 			n := &Node{Type: "folder", Name: name, Path: path.Join(rel, name)}
+			var f model.Collection
+			if err := readYAML(filepath.Join(dir, name, FolderFile), &f); err == nil && f.Name != "" {
+				n.Name = f.Name
+			}
 			if n.Children, err = w.walk(filepath.Join(dir, name), n.Path); err != nil {
 				return nil, err
 			}
@@ -324,6 +328,20 @@ func (w *Workspace) WriteEnvironment(name string, env *model.Environment) error 
 		return err
 	}
 	return writeYAML(file, env)
+}
+
+func (w *Workspace) DeleteEnvironment(name string) error {
+	file, err := w.envFile(name)
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(file); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return ErrNotFound
+		}
+		return err
+	}
+	return nil
 }
 
 func (w *Workspace) envFile(name string) (string, error) {

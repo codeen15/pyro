@@ -16,8 +16,10 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
+	"github.com/pyrohq/pyro/internal/history"
 	"github.com/pyrohq/pyro/internal/store"
 	"github.com/pyrohq/pyro/internal/version"
+	"github.com/pyrohq/pyro/pkg/engine"
 	"github.com/pyrohq/pyro/pkg/engine/model"
 )
 
@@ -27,6 +29,9 @@ const TokenHeader = "X-Pyro-Token"
 
 type Config struct {
 	Workspace *store.Workspace
+	Engine    *engine.Engine
+	// History is optional; when nil, sends aren't recorded.
+	History *history.Store
 	// Token, when non-empty, is required on every /api request.
 	Token string
 	// UI is the built single-page app; nil disables UI serving.
@@ -58,6 +63,7 @@ func (s *Server) Handler() http.Handler {
 
 		r.Post("/collections", s.createCollection)
 		r.Get("/collections/{slug}", s.getCollection)
+		r.Put("/collections/{slug}", s.putCollection)
 
 		r.Get("/requests/*", s.getRequest)
 		r.Put("/requests/*", s.putRequest)
@@ -66,6 +72,14 @@ func (s *Server) Handler() http.Handler {
 		r.Get("/environments", s.listEnvironments)
 		r.Get("/environments/{name}", s.getEnvironment)
 		r.Put("/environments/{name}", s.putEnvironment)
+		r.Delete("/environments/{name}", s.deleteEnvironment)
+
+		r.Post("/send", s.send)
+		r.Get("/history", s.listHistory)
+		r.Get("/history/{id}", s.getHistory)
+		r.Delete("/history", s.clearHistory)
+
+		r.Post("/import", s.importFile)
 	})
 
 	if s.cfg.UI != nil {
@@ -215,7 +229,7 @@ func (s *Server) putEnvironment(w http.ResponseWriter, r *http.Request) {
 // and reported as a 500 without leaking internals.
 func (s *Server) fail(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, store.ErrNotFound):
+	case errors.Is(err, store.ErrNotFound), errors.Is(err, history.ErrNotFound):
 		writeError(w, http.StatusNotFound, err.Error())
 	case errors.Is(err, store.ErrInvalidPath):
 		writeError(w, http.StatusBadRequest, err.Error())
