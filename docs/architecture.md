@@ -41,18 +41,18 @@
 | API server | `internal/server` | ✅ Phase 2 | REST under `/api/v1` (CRUD, send, history, import, sessions, runs, session variables), event WebSocket, token auth, embedded SPA. |
 | History | `internal/history` | ✅ Phase 1 | Sent requests in SQLite (`~/.pyro/pyro.db`), per workspace. |
 | Send pipeline | `pkg/engine` (`engine.Send`, `engine.Connect`) | ✅ Phase 2 | Pre scripts → resolve → auth → execute → post scripts → assertions → extractors; `Connect` opens sessions with the same resolution and auth. |
-| CLI | `cmd/pyro` | ✅ `serve`, `init`, `import`, `run`, `version` | `load`, `plugin`, `agent` come later. |
+| CLI | `cmd/pyro` | ✅ `serve`, `init`, `import`, `run`, `load`, `version` | `plugin`, `agent` come later. |
 | Web UI | `web/` | ✅ Phase 1 | React SPA embedded with `go:embed`. Visual system in `DESIGN.md`. |
 | Protocol drivers | `pkg/engine/protocol/{httpdriver,wsdriver,sioclient}` | ✅ Phase 1–2 | Execute requests; WebSocket and Socket.IO sessions (`protocol.Session`). |
 | Variables, auth | `pkg/engine/vars`, `pkg/engine/auth` | ✅ Phase 1 | `{{var}}` resolution across scopes; auth inheritance and signing. |
 | Script runtime | `pkg/engine/script` | ✅ Phase 2 | goja with a `pm.*` shim over vendored chai 4.5.0; `pyro.*` API comes with the load engine. |
 | Assertions, extractors | `pkg/engine/check` | ✅ Phase 2 | Declarative checks; capture response values into variables. |
 | Collection runner | `pkg/engine/runner` | ✅ Phase 2 | Iterations, data files, setNextRequest, bail. |
-| Load engine | `pkg/engine/load` | Phase 3 | Scheduler, executors, VU pool, flow DSL, thresholds. See [load-engine.md](load-engine.md). |
-| Metrics | `pkg/engine/metrics` | Phase 3 | Samples → HDR histograms → sinks. |
+| Load engine | `pkg/engine/load` | ✅ Phase 3 | Plans, executors, VUs, flow steps, data feeders, thresholds. See [load-engine.md](load-engine.md). |
+| Metrics | `pkg/engine/metrics` | ✅ Phase 3 | Per-VU buffers → HDR histograms (cumulative per series, per-interval per metric). |
 | Plugin host | `pkg/engine/plugin` | Phase 4 | wazero runtime, ABI v1, registry. See [plugins.md](plugins.md). |
 | Importers | `pkg/engine/importer/postman` | ✅ Phase 1 | See [postman-import.md](postman-import.md). |
-| Reporters | `pkg/engine/report` | ✅ JUnit, JSON (Phase 2); HTML, CSV (Phase 3) | Run reports for CI. |
+| Reporters | `pkg/engine/report` | ✅ JUnit, JSON (runs); HTML, JSON (load) | Reports for CI; CSV planned. |
 
 ## Request pipeline
 Every mode runs the same steps:

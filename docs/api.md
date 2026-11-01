@@ -18,7 +18,7 @@ TypeScript client in `web/src/api.ts`.
 
 ## Endpoints
 
-### Implemented (Phases 0–2)
+### Implemented (Phases 0–3)
 | Method | Path | Description |
 |---|---|---|
 | GET | `/api/v1/health` | `{status, version}` |
@@ -45,14 +45,19 @@ TypeScript client in `web/src/api.ts`.
 | POST | `/api/v1/runs` | Body `{path, environment?, iterations?, data?, delayMs?, bail?}`. Starts a background collection run; `202` with the run view |
 | GET | `/api/v1/runs/{id}` | `{id, path, status, done, total, results[], summary?}` |
 | DELETE | `/api/v1/runs/{id}` | Cancel |
+| GET | `/api/v1/loadtests` | `[{name, title?, peakVUs?, error?}]` (`error` = the plan doesn't validate) |
+| GET / PUT / DELETE | `/api/v1/loadtests/{name}` | GET returns `{name, title, yaml, plan, peakVUs, error?}`. PUT `{yaml}` validates (400 with every problem) and saves the raw text, so comments survive. |
+| POST | `/api/v1/loadtests/{name}/start` | Body `{environment?, confirmHosts?}`. `409 {needsConfirmation, hosts}` when it would target hosts that aren't loopback or in `loadAllowHosts`; `409 {running}` when another test runs; `202 {id}` when started. |
+| GET | `/api/v1/loadruns?test=` | Saved runs newest first (a running one first): `{id, test, name, startedAt, status, duration, requests, p95, errorRate, maxVUs}` |
+| GET | `/api/v1/loadruns/{id}` | Running: `{status: "running", ticks, live: {tick, requests, errors}, plan}`. Finished: `{status, result}` |
+| GET | `/api/v1/loadruns/{id}/report` | Self-contained HTML report (`?download=1` sets Content-Disposition) |
+| POST | `/api/v1/loadruns/{id}/stop` | Graceful stop; `?abort=1` cancels in-flight requests |
+| DELETE | `/api/v1/loadruns/{id}` | Delete a saved run |
 | GET / DELETE | `/api/v1/session/variables` | Values set by scripts and extractors during this `pyro serve` (runtime, globals, per environment, per collection). Never written to files. DELETE resets them. |
 
 ### Planned
 | Method | Path | Phase | Description |
 |---|---|---|---|
-| GET/PUT | `/api/v1/loadtests/{name}` | 3 | Load plan CRUD. |
-| POST | `/api/v1/loadtests/{name}/start` · `/api/v1/loadruns/{id}/stop` | 3 | Control a load test. |
-| GET | `/api/v1/results/{id}` | 3 | Summary, time series, thresholds. |
 | GET/POST/DELETE | `/api/v1/plugins…` | 4 | List, install, configure, remove. |
 
 ## Event WebSocket (implemented)
@@ -73,7 +78,7 @@ Server → client:
 |---|---|
 | `session:<id>` | `message` (`{seq, at, direction, kind, data, event?, ackId?, rttMs?, size}`), `closed` (`{error}`) |
 | `run:<id>` | `result` (`{done, total, item}`, bodies trimmed to 64 KB), `finished` (the run view) |
-| `load:<id>` (Phase 3) | `started`, `metrics` (1s tick), `threshold`, `log`, `finished` |
+| `load:<id>` | `tick` (`{tick, requests, errors}` once a second), `finished` (`{id, test, status, result}`) |
 | `workspace` (planned) | `changed` (files edited on disk, through a file watcher) |
 
 Events published before a client subscribes are not replayed. Clients subscribe first,

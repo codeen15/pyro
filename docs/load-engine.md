@@ -1,4 +1,4 @@
-# Load Engine (Phase 3)
+# Load Engine (implemented in Phase 3)
 
 The load engine runs workspace requests with many concurrent virtual users (VUs),
 which is the JMeter side of Pyro. It reuses the request pipeline described in
@@ -19,8 +19,16 @@ which is the JMeter side of Pyro. It reuses the request pipeline described in
 | `constant-arrival-rate` | open | Fixed RPS whatever the latency (`rate`, `timeUnit`, `preAllocatedVUs`, `maxVUs`). |
 | `ramping-arrival-rate` | open | Breakpoint and spike tests at a target rate. |
 
-Open-model executors start iterations on a schedule. Latency is measured from the
-**intended** start time, which avoids coordinated omission.
+Open-model executors start iterations on a schedule whatever the latency, so a slow
+system doesn't slow the load down (no coordinated omission). When every allocated VU is
+busy and `maxVUs` is reached, the iteration is **dropped** and counted in
+`dropped_iterations`, which the dashboard and summary show. Defaults: `timeUnit: 1s`,
+`preAllocatedVUs: 10`, `maxVUs` = `preAllocatedVUs`.
+
+All executors accept `startTime` (offset from the test start), `gracefulStop` (default
+30s: how long in-flight iterations may finish when the scenario ends) and, for
+`ramping-vus`, `gracefulRampDown` (default 30s). `per-vu-iterations` takes `maxDuration`
+(default 10m).
 
 ## Profiles
 Templates in the UI that fill in a plan: **Smoke** (1–2 VUs, short), **Load** (expected peak),
@@ -66,10 +74,10 @@ thresholds:
 ## Flow steps
 | Step | Meaning |
 |---|---|
-| `request: <path>` | Run a workspace request. Options: `once`, `hold` (streams), `send` (messages to send on a stream), `name` (metric tag override). |
+| `request: <path>` | Run a workspace request (scripts, assertions and extractors included). Options: `once`, `hold` (streams), `send` (messages to send on a stream), `name` (metric tag override). |
 | `think: {min,max}` / `think: 2s` | Pause, uniformly random between min and max. |
 | `loop: {count \| while, steps}` | Repeat steps a fixed number of times, or while an expression is true. |
-| `if: {expr, then, else}` | Branch on an expression over variables, e.g. `status == 200 && cartSize > 0`. |
+| `if: {expr, then, else}` | Branch on an expression over variables, e.g. `status == 200 && cartSize > 0`. Expressions see every variable (numeric strings compare as numbers) plus `status` and `duration` (ms) of the last response and `iteration`. |
 | `weighted: [{weight, steps}]` | Choose one branch at random by weight, like JMeter's throughput controller. |
 | `group: <name>` + `steps` | Named transaction. Its duration is recorded as `group_duration{group:<name>}`. |
 | `once: true` | Run this step only on the VU's first iteration. |
@@ -87,32 +95,44 @@ HDR histograms keyed by metric name and tags (`scenario`, `request`, `group`, `s
 | Metric | Type | Notes |
 |---|---|---|
 | `http_reqs` | counter | |
-| `http_req_duration` | trend | Total time, plus `_blocked`, `_dns`, `_connecting`, `_tls`, `_sending`, `_waiting` (TTFB) and `_receiving`. |
-| `http_req_failed` | rate | Transport error, or a failed `status` assertion. |
+| `http_req_duration` | trend | Total time. Phases: `http_req_blocked` (DNS lookup), `_connecting`, `_tls`, `_sending`, `_waiting` (TTFB), `_receiving`. |
+| `http_req_failed` | rate | Transport error, or HTTP status ≥ 400. |
+| `ws_sessions` / `ws_errors` | counter | Opened sessions; connect, send or connection-lost failures. |
 | `ws_connecting` / `ws_session_duration` | trend | |
 | `ws_msgs_sent` / `ws_msgs_received` | counter | |
+| `dropped_iterations` | counter | Arrival-rate iterations that found no free VU. |
 | `sio_event_rtt` | trend | Socket.IO ack round trip. |
 | `checks` | rate | Assertion pass rate. |
 | `iterations` / `iteration_duration` | counter / trend | |
 | `group_duration` | trend | Per `group`. |
 | `vus` / `vus_max` | gauge | |
 | `data_sent` / `data_received` | counter | Bytes. |
-| `pyro_cpu` / `pyro_mem` | gauge | The load generator's own health; the dashboard warns when it saturates. |
-| custom | any | `pyro.metrics.counter/trend/rate/gauge` from scripts or plugins. |
+| `pyro_cpu` / `pyro_mem` (planned) | gauge | The load generator's own health. |
+| custom (planned) | any | `pyro.metrics.*` from scripts or plugins. |
 
-Sinks: the live UI (event WebSocket), SQLite summary plus downsampled series, an NDJSON raw
-file (`--out raw.ndjson`), and plugin reporters (Prometheus remote-write, InfluxDB).
+Outputs: the live dashboard (event WebSocket, one tick per second), saved runs in SQLite
+(summary plus every tick), `pyro load --json` / `--html`. Planned: an NDJSON raw-sample
+file and plugin sinks (Prometheus remote-write, InfluxDB).
+
+Accuracy: against a target that sleeps exactly 50 ms, 5000 VUs measured p95 52 ms and p99
+53 ms (the extra is the target's own timer and scheduling).
 
 ## Thresholds
 - Syntax: `metric{tag:value}: ["<agg><op><value>", …]`, where `agg` is one of `avg`, `min`, `max`, `med`, `p(N)`, `rate` or `count`.
-- Evaluated live every aggregation tick and again at the end.
-- `abortOnFail: true` stops the test early, after an optional `delayAbortEval`.
-- `pyro load` exits non-zero when any threshold fails, which is what CI checks.
+- Evaluated live every tick (for the dashboard and `abortOnFail`) and again at the end.
+- **The verdict uses the final values**: a p95 that spiked during warm-up and recovered
+  passes. A threshold that failed at some point is marked "failed earlier" for review.
+- A counter with no samples counts as 0 (so `ws_errors: ["count<1"]` passes when there were
+  none); a trend or rate with no samples shows "no data" and doesn't fail.
+- `abortOnFail: true` stops the test early (status `aborted`), after an optional `delayAbortEval`.
+- `pyro load` exits non-zero unless the status is `passed`, which is what CI checks.
 
 ## Safety
 - Pyro asks for confirmation before load testing any host that is not loopback or in the workspace allow-list (`pyro.yaml: loadAllowHosts`). `--yes` skips the prompt in CI.
-- Global caps: maximum VUs and maximum RPS per run (configurable).
-- Stop is graceful: VUs stop taking new iterations, in-flight requests finish within `gracefulStop`, and then they are cancelled.
+- The UI asks the same way, inline, listing the hosts.
+- VU cap: a plan needing more than 50,000 VUs (or `--max-vus`) is refused. A global RPS cap is planned.
+- One load test at a time per `pyro serve`.
+- Stop is graceful: VUs stop taking new iterations, in-flight requests finish within `gracefulStop`, and then they are cancelled. A second stop (Ctrl+C twice, or "Abort now") cancels immediately.
 
 ## Distributed mode (Phase 5)
 `pyro agent --controller host:port` registers a node over gRPC. The controller splits

@@ -2,17 +2,18 @@
 
 Pyro is an API client (REST, WebSocket, Socket.IO, Postman import) and load-testing
 tool (stress, spike, soak, concurrency) with WASM plugins. A single Go binary runs the
-engine and serves a React web UI on localhost. **Current phase: 2 done → Phase 3 (load engine) next**
+engine and serves a React web UI on localhost. **Current phase: 3 done → Phase 4 (plugins) next**
 (see `docs/roadmap.md`). Product context: `PRODUCT.md`; visual system: `DESIGN.md`.
 
 ## Layout
-- `cmd/pyro`: CLI (cobra): `serve`, `init`, `import`, `run`, `version`
+- `cmd/pyro`: CLI (cobra): `serve`, `init`, `import`, `run`, `load`, `version`
 - `pkg/engine/...`: the engine, a library with no dependency on server/CLI/UI. `model/` is the shared data model;
   `engine.go` is the send pipeline, `session.go` opens WS/SIO sessions; `vars/`, `auth/`, `check/` (assertions,
-  extractors), `script/` (goja + pm.* shim, vendored chai), `runner/`, `report/`, `importer/postman/`,
+  extractors), `script/` (goja + pm.* shim, vendored chai), `runner/`, `report/` (JUnit, JSON, load HTML),
+  `load/` (plans, executors, VUs, thresholds), `metrics/` (HDR histograms), `importer/postman/`,
   `protocol/{httpdriver,wsdriver,sioclient}/`.
 - `internal/store`: workspace persistence (YAML files, path safety, atomic writes, `Import`)
-- `internal/history`: request history in SQLite (`~/.pyro/pyro.db`)
+- `internal/history`: request history and saved load runs in SQLite (`~/.pyro/pyro.db`)
 - `internal/server`: REST API `/api/v1` (chi), token auth, embedded SPA
 - `internal/version`: build metadata (set via ldflags)
 - `web/`: React + TS + Vite UI; `web/embed.go` embeds `web/dist`
@@ -41,6 +42,9 @@ make dev-ui       # Vite on :5173, proxies /api
 - No CGO: dependencies must be pure Go. Builds use `CGO_ENABLED=0`.
 - UI: follow `DESIGN.md` (Pyrometry: heat colours only on measured data, flame accent for chrome). Tokens live in
   `web/src/styles.css`; heat thresholds in `web/src/heat.ts`. The impeccable design hook checks UI edits.
+- Charts: `web/src/components/LineChart.tsx` (and the Go report) follow the dataviz rules: no dual axes, text never
+  in data colours (heat shows as a swatch beside neutral text), hover readout + table view, colours `--viz-*`
+  validated with the dataviz palette script against `--iron-0`.
 
 ## Docs
 - `docs/PRD.md`: goals, users, non-goals

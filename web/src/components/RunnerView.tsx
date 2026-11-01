@@ -225,7 +225,14 @@ function ResultRow({ item, open, onToggle }: { item: RunItem; open: boolean; onT
         {item.note && <span className="muted small"> {item.note}</span>}
       </td>
       <td>{r?.response ? r.response.status : r?.skipped ? <span className="muted">skipped</span> : r?.error ? <span className="hist-err">error</span> : ""}</td>
-      <td className={`num mono ${ms !== undefined ? `heat-text-${heatOf(ms)}` : ""}`}>{ms !== undefined ? formatMs(ms) : ""}</td>
+      <td className="num mono">
+        {ms !== undefined && (
+          <>
+            <span className={`swatch heat-${heatOf(ms)}`} aria-hidden />
+            {formatMs(ms)}
+          </>
+        )}
+      </td>
       <td className="num">{tests.length > 0 ? <span className={failedTests ? "tests-fail" : "tests-pass"}>{tests.length - failedTests}/{tests.length}</span> : ""}</td>
     </tr>
   );

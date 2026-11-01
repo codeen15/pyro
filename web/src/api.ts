@@ -235,6 +235,122 @@ export interface ImportReport {
   warnings: { path?: string; code: string; detail: string }[];
 }
 
+// --- Load tests ---------------------------------------------------------------
+
+export interface LoadTestView {
+  name: string;
+  title?: string;
+  yaml?: string;
+  peakVUs?: number;
+  error?: string;
+}
+
+export interface Latency {
+  avg: number;
+  p50: number;
+  p90: number;
+  p95: number;
+  p99: number;
+  max: number;
+}
+
+export interface ThresholdResult {
+  metric: string;
+  condition: string;
+  actual: number;
+  passed: boolean;
+  noData?: boolean;
+  abortOnFail?: boolean;
+  breached?: boolean;
+}
+
+export interface LoadTick {
+  elapsed: number;
+  vus: number;
+  vusMax: number;
+  rps: number;
+  iterationsPerSecond: number;
+  errorRate: number;
+  requests: number;
+  dropped?: number;
+  receivedPerSecond: number;
+  wsMessagesPerSecond?: number;
+  latency: Latency;
+  thresholds?: ThresholdResult[];
+}
+
+export interface Stat {
+  type: string;
+  count: number;
+  value: number;
+  perSecond?: number;
+  avg?: number;
+  min?: number;
+  med?: number;
+  max?: number;
+  p90?: number;
+  p95?: number;
+  p99?: number;
+}
+
+export interface RequestStat {
+  scenario: string;
+  request: string;
+  method: string;
+  count: number;
+  failed: number;
+  perSecond: number;
+  duration: Stat;
+}
+
+export interface ErrorCount {
+  message: string;
+  count: number;
+}
+
+export interface LoadResult {
+  name: string;
+  status: "passed" | "failed" | "aborted" | "stopped";
+  reason?: string;
+  startedAt: string;
+  duration: number;
+  ticks: LoadTick[] | null;
+  metrics: Record<string, Stat>;
+  requests: RequestStat[] | null;
+  thresholds: ThresholdResult[] | null;
+  errors: ErrorCount[] | null;
+  maxVUs: number;
+}
+
+export interface LiveSnapshot {
+  tick: LoadTick;
+  requests: RequestStat[] | null;
+  errors: ErrorCount[] | null;
+}
+
+export interface LoadRunView {
+  id: string;
+  test: string;
+  status: "running" | LoadResult["status"];
+  ticks?: LoadTick[] | null;
+  live?: LiveSnapshot;
+  result?: LoadResult;
+  plan?: { name?: string };
+}
+
+export interface LoadRunRow {
+  id: string;
+  test: string;
+  name: string;
+  startedAt: string;
+  status: LoadRunView["status"];
+  duration: number;
+  requests: number;
+  p95: number;
+  errorRate: number;
+  maxVUs: number;
+}
+
 const TOKEN_KEY = "pyro.token";
 
 // `pyro serve` prints a URL with ?token=…; keep it for this tab and strip it
@@ -269,6 +385,8 @@ export class ApiError extends Error {
   constructor(
     public status: number,
     message: string,
+    /** The parsed JSON error body, when there was one. */
+    public body?: Record<string, unknown>,
   ) {
     super(message);
   }
@@ -285,12 +403,14 @@ async function call<T>(method: string, path: string, body?: unknown, raw = false
   });
   if (!res.ok) {
     let msg = res.statusText;
+    let body: Record<string, unknown> | undefined;
     try {
-      msg = (await res.json()).error ?? msg;
+      body = await res.json();
+      msg = (body?.error as string) ?? msg;
     } catch {
       /* non-JSON error body */
     }
-    throw new ApiError(res.status, msg);
+    throw new ApiError(res.status, msg, body);
   }
   return res.status === 204 ? (undefined as T) : res.json();
 }
@@ -319,6 +439,22 @@ export const api = {
     call<RunView>("POST", "/runs", body),
   run: (id: string) => call<RunView>("GET", `/runs/${id}`),
   cancelRun: (id: string) => call<void>("DELETE", `/runs/${id}`),
+  loadTests: () => call<LoadTestView[]>("GET", "/loadtests"),
+  loadTest: (name: string) => call<LoadTestView>("GET", `/loadtests/${encodeURIComponent(name)}`),
+  saveLoadTest: (name: string, yaml: string) => call<LoadTestView>("PUT", `/loadtests/${encodeURIComponent(name)}`, { yaml }),
+  deleteLoadTest: (name: string) => call<void>("DELETE", `/loadtests/${encodeURIComponent(name)}`),
+  startLoadTest: (name: string, body: { environment?: string; confirmHosts?: boolean }) =>
+    call<{ id: string; test: string }>("POST", `/loadtests/${encodeURIComponent(name)}/start`, body),
+  loadRuns: (test?: string) => call<LoadRunRow[]>("GET", `/loadruns${test ? `?test=${encodeURIComponent(test)}` : ""}`),
+  loadRun: (id: string) => call<LoadRunView>("GET", `/loadruns/${id}`),
+  stopLoadRun: (id: string, abort = false) => call<void>("POST", `/loadruns/${id}/stop${abort ? "?abort=1" : ""}`),
+  deleteLoadRun: (id: string) => call<void>("DELETE", `/loadruns/${id}`),
+  /** Fetches the HTML report (the token can't ride on a plain link). */
+  loadReport: async (id: string) => {
+    const res = await fetch(`/api/v1/loadruns/${id}/report`, { headers: token ? { "X-Pyro-Token": token } : {} });
+    if (!res.ok) throw new ApiError(res.status, (await res.json().catch(() => ({}))).error ?? res.statusText);
+    return res.text();
+  },
 };
 
 /** Decodes a base64 response body into bytes. */

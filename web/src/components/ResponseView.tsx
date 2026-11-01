@@ -278,7 +278,10 @@ function TimingView({ t, remote }: { t: Timings; remote?: string }) {
           ))}
           <tr className="total-row">
             <td>Total</td>
-            <td className={`num heat-text-${totalHeat}`}>{formatMs(t.total)}</td>
+            <td className="num">
+              <span className={`swatch heat-${totalHeat}`} aria-hidden />
+              {formatMs(t.total)}
+            </td>
           </tr>
         </tbody>
       </table>

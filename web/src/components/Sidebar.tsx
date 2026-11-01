@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronRight, Folder, FolderOpen, Layers, Play, Plug, Plus, Radio, RefreshCw, Trash2 } from "lucide-react";
+import { Activity, ChevronRight, Folder, FolderOpen, Gauge, Layers, Play, Plug, Plus, Radio, RefreshCw, Trash2, TriangleAlert } from "lucide-react";
 import { api, type TreeNode, type WorkspaceInfo } from "../api";
 import { formatMs, heatOf } from "../heat";
 import { useApp } from "../store";
@@ -17,8 +17,11 @@ export function Sidebar({ ws }: { ws: WorkspaceInfo | undefined }) {
         <button role="tab" aria-selected={tab === "history"} onClick={() => setTab("history")}>
           History
         </button>
+        <button role="tab" aria-selected={tab === "load"} onClick={() => setTab("load")}>
+          Load
+        </button>
       </div>
-      {tab === "collections" ? <Collections ws={ws} /> : <History />}
+      {tab === "collections" ? <Collections ws={ws} /> : tab === "history" ? <History /> : <LoadTests />}
     </nav>
   );
 }
@@ -194,11 +197,62 @@ function History() {
                 ) : (
                   <>
                     <span className={`hist-status s${String(h.status)[0]}`}>{h.status}</span>
-                    <span className={`heat-text-${heatOf(h.durationMs)}`}>{formatMs(h.durationMs)}</span>
+                    <span>
+                      <span className={`swatch heat-${heatOf(h.durationMs)}`} aria-hidden />
+                      {formatMs(h.durationMs)}
+                    </span>
                   </>
                 )}
                 <time dateTime={h.at}>{relativeTime(h.at)}</time>
               </span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function LoadTests() {
+  const select = useApp((s) => s.select);
+  const selected = useApp((s) => s.selected);
+  const tests = useQuery({ queryKey: ["loadtests"], queryFn: api.loadTests });
+  const runs = useQuery({ queryKey: ["loadruns", ""], queryFn: () => api.loadRuns(), refetchInterval: 5000 });
+  const running = runs.data?.find((r) => r.status === "running");
+
+  return (
+    <div className="rail-scroll">
+      <div className="rail-head">
+        <span className="muted small">{tests.data ? `${tests.data.length} load test${tests.data.length === 1 ? "" : "s"}` : ""}</span>
+        <button className="icon-btn" onClick={() => select("load:new")} aria-label="New load test" title="New load test">
+          <Plus size={14} />
+        </button>
+      </div>
+      {running && (
+        <button className={`hist-row running-row ${selected === `loadrun:${running.id}` ? "is-active" : ""}`} onClick={() => select(`loadrun:${running.id}`)}>
+          <span className="hist-top">
+            <Activity size={13} className="live-icon" />
+            <span className="row-label">{running.name || running.test}</span>
+          </span>
+          <span className="hist-meta">running now · open dashboard</span>
+        </button>
+      )}
+      {tests.isPending && <TreeSkeleton />}
+      {tests.data?.length === 0 && (
+        <div className="rail-empty">
+          <p>No load tests yet.</p>
+          <p className="muted">
+            Press + to create one from a profile. It's saved as <code>loadtests/&lt;name&gt;.load.yaml</code>.
+          </p>
+        </div>
+      )}
+      <ul className="tree">
+        {tests.data?.map((t) => (
+          <li key={t.name}>
+            <button className={`row ${selected === `load:${t.name}` ? "is-active" : ""}`} style={{ paddingLeft: 12 }} onClick={() => select(`load:${t.name}`)}>
+              <Gauge size={14} className="row-icon" />
+              <span className="row-label">{t.title || t.name}</span>
+              {t.error && <TriangleAlert size={13} className="row-warn" aria-label="Invalid plan" />}
             </button>
           </li>
         ))}

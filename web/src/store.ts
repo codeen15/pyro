@@ -26,7 +26,7 @@ interface AppState {
   /** Latest send result per request path ("" for history replays). */
   results: Record<string, SendResult>;
   sending: Record<string, boolean>;
-  sidebarTab: "collections" | "history";
+  sidebarTab: "collections" | "history" | "load";
 
   select: (path: string | null) => void;
   setEnvironment: (name: string | null) => void;

@@ -8,6 +8,8 @@ import { RequestEditor } from "./components/RequestEditor";
 import { ResponseView, HeatLegend } from "./components/ResponseView";
 import { SessionConsole } from "./components/SessionConsole";
 import { RunnerView } from "./components/RunnerView";
+import { LoadTestPage, NewLoadTest } from "./components/LoadTest";
+import { LoadRunPage } from "./components/LoadRun";
 
 export function App() {
   const health = useQuery({ queryKey: ["health"], queryFn: api.health, refetchInterval: 10_000 });
@@ -30,6 +32,12 @@ export function App() {
           <Blocker title="Couldn't load the workspace">{ws.error.message}</Blocker>
         ) : report ? (
           <ImportResult report={report} onClose={() => setReport(null)} />
+        ) : selected === "load:new" ? (
+          <NewLoadTest />
+        ) : selected?.startsWith("load:") ? (
+          <LoadTestPage key={selected} name={selected.slice(5)} />
+        ) : selected?.startsWith("loadrun:") ? (
+          <LoadRunPage key={selected} id={selected.slice(8)} />
         ) : selected?.startsWith("run:") ? (
           <RunnerView key={selected} path={selected.slice(4)} />
         ) : selected?.startsWith("history:") ? (
