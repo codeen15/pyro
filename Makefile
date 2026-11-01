@@ -2,7 +2,7 @@ VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
 LDFLAGS := -s -w -X github.com/codeen15/pyro/internal/version.Version=$(VERSION) -X github.com/codeen15/pyro/internal/version.Commit=$(COMMIT)
 
-.PHONY: all build ui ui-deps test vet dev-api dev-ui plugins clean
+.PHONY: all build ui ui-deps test vet dev-api dev-ui plugins dist clean
 
 all: build
 
@@ -41,5 +41,10 @@ plugins: build
 	done
 
 clean:
-	rm -rf bin
+	rm -rf bin dist
 	find web/dist -mindepth 1 ! -name .gitkeep -delete
+
+# Release archives for every OS/arch, example plugins and SHA256SUMS in dist/.
+# VERSION defaults to git describe; CI passes the tag.
+dist: ui
+	go run ./scripts/dist -version $(VERSION)

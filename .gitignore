@@ -12,3 +12,4 @@ web/dist/*
 # impeccable session state and review captures are machine-local
 .impeccable/questions/
 .impeccable/review/
+/dist/
