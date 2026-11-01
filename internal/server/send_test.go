@@ -204,3 +204,37 @@ func TestGlobalsAndCurrentValues(t *testing.T) {
 		t.Fatalf("get globals: %s", g)
 	}
 }
+
+func TestCookieManager(t *testing.T) {
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/login" {
+			http.SetCookie(w, &http.Cookie{Name: "sid", Value: "abc", Path: "/", HttpOnly: true})
+			return
+		}
+		fmt.Fprint(w, r.Header.Get("Cookie"))
+	}))
+	defer target.Close()
+	ts := newTestServer(t)
+	do(t, ts, "POST", "/api/v1/send", `{"request":{"name":"l","url":"`+target.URL+`/login"}}`, true)
+	_, body := do(t, ts, "GET", "/api/v1/cookies", "", true)
+	if !strings.Contains(body, `"name":"sid"`) || !strings.Contains(body, `"httpOnly":true`) || !strings.Contains(body, `"domain":"127.0.0.1"`) {
+		t.Fatalf("list: %s", body)
+	}
+	do(t, ts, "PUT", "/api/v1/cookies", `{"domain":"127.0.0.1","name":"theme","value":"dark","path":"/"}`, true)
+	_, body = do(t, ts, "POST", "/api/v1/send", `{"request":{"name":"m","url":"`+target.URL+`/me"}}`, true)
+	if !strings.Contains(body, base64("sid=abc; theme=dark")) {
+		t.Fatalf("cookies sent: %s", body)
+	}
+	do(t, ts, "DELETE", "/api/v1/cookies?domain=127.0.0.1&path=/&name=sid", "", true)
+	_, body = do(t, ts, "GET", "/api/v1/cookies", "", true)
+	if strings.Contains(body, `"sid"`) || !strings.Contains(body, "theme") {
+		t.Fatalf("after delete: %s", body)
+	}
+	if res, _ := do(t, ts, "PUT", "/api/v1/cookies", `{"name":"x"}`, true); res.StatusCode != 400 {
+		t.Fatalf("missing domain: %d", res.StatusCode)
+	}
+	do(t, ts, "DELETE", "/api/v1/cookies", "", true)
+	if _, body = do(t, ts, "GET", "/api/v1/cookies", "", true); strings.TrimSpace(body) != "[]" {
+		t.Fatalf("clear all: %s", body)
+	}
+}

@@ -238,6 +238,19 @@ export interface ImportReport {
   warnings: { path?: string; code: string; detail: string }[];
 }
 
+export interface StoredCookie {
+  name: string;
+  value: string;
+  domain: string;
+  path: string;
+  hostOnly?: boolean;
+  secure?: boolean;
+  httpOnly?: boolean;
+  sameSite?: string;
+  expires?: string;
+  created: string;
+}
+
 export interface OAuthToken {
   accessToken: string;
   tokenType?: string;
@@ -575,6 +588,10 @@ export const api = {
     call<OAuthStatus>("POST", "/oauth2/token", body),
   oauthAuthorize: (body: { path?: string; request?: PyroRequest; environment?: string }) =>
     call<{ url: string; redirectUri: string }>("POST", "/oauth2/authorize", body),
+  cookies: () => call<StoredCookie[]>("GET", "/cookies"),
+  putCookie: (c: Partial<StoredCookie> & { domain: string; name: string }) => call<StoredCookie[]>("PUT", "/cookies", c),
+  deleteCookies: (f: { domain?: string; path?: string; name?: string } = {}) =>
+    call<{ deleted: number }>("DELETE", `/cookies?${new URLSearchParams(Object.entries(f).filter(([, v]) => v) as [string, string][])}`),
   globals: () => call<Environment>("GET", "/globals"),
   saveGlobals: (env: Environment) => call<Environment>("PUT", "/globals", env),
   sessionVariables: () => call<SessionVariables>("GET", "/session/variables"),

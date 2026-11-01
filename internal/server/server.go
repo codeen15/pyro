@@ -162,6 +162,9 @@ func (s *Server) Handler() http.Handler {
 
 		r.Post("/oauth2/token", s.oauthToken)
 		r.Post("/oauth2/authorize", s.oauthAuthorize)
+		r.Get("/cookies", s.listCookies)
+		r.Put("/cookies", s.putCookie)
+		r.Delete("/cookies", s.deleteCookies)
 		r.Get("/globals", s.getGlobals)
 		r.Put("/globals", s.putGlobals)
 		r.Get("/session/variables", s.getSessionVars)

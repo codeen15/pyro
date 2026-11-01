@@ -2645,3 +2645,31 @@ fieldset legend {
 .token-panel p {
   margin: 0;
 }
+
+/* Cookies */
+.cookie-add {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 2fr) minmax(0, 1fr) auto;
+  gap: 6px;
+  max-width: 980px;
+  margin: 14px 0 6px;
+}
+.cookie-domain .sub-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.cookie-table td:nth-child(2) {
+  min-width: 220px;
+}
+.empty-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 20px;
+}
+@media (max-width: 720px) {
+  .cookie-add {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}

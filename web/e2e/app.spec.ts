@@ -71,6 +71,8 @@ test("fits a phone screen", async ({ page }) => {
   await noHorizontalScroll(page);
   await page.getByRole("button", { name: "Edit environments and globals" }).click();
   await noHorizontalScroll(page);
+  await page.getByRole("button", { name: "Manage cookies" }).click();
+  await noHorizontalScroll(page);
 });
 
 test("edit globals and environments with current values", async ({ page }) => {
@@ -121,4 +123,21 @@ test("OAuth 2.0: client credentials and authorization code with PKCE", async ({ 
   await expect(page.locator(".token-panel")).toContainText("expires in");
   await page.getByRole("button", { name: "Send" }).click();
   await expect(page.locator(".response")).toContainText("Bearer authorization_code-token");
+});
+
+test("cookies set by responses can be viewed, edited and deleted", async ({ page }) => {
+  await page.getByRole("button", { name: "Log in" }).click();
+  await page.getByRole("button", { name: "Send" }).click();
+  await expect(page.locator(".response")).toContainText("200");
+  await page.getByRole("button", { name: "Manage cookies" }).click();
+  await expect(page.getByRole("heading", { name: "Cookies", exact: true })).toBeVisible();
+  const value = page.getByLabel("Value of sid");
+  await expect(value).toHaveValue("abc123");
+  await expect(page.locator(".cookie-table")).toContainText("HttpOnly");
+  await value.fill("edited");
+  await value.press("Enter");
+  await page.reload();
+  await expect(page.getByLabel("Value of sid")).toHaveValue("edited");
+  await page.getByRole("button", { name: "Delete cookie sid" }).click();
+  await expect(page.getByText("No cookies yet")).toBeVisible();
 });

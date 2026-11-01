@@ -43,6 +43,9 @@ TypeScript client in `web/src/api.ts`.
 | POST | `/api/v1/oauth2/token` | Body `{path?, request?, environment?, fetch?, clear?}`: the OAuth 2.0 token for the request's effective auth: `{oauth, grant, token?, expired?, interactive, inherited, redirectUri, unresolved?}` (`oauth: false` when its auth isn't OAuth 2.0). `fetch` gets a new one (non-interactive grants), `clear` forgets it |
 | POST | `/api/v1/oauth2/authorize` | Same body; starts an authorization-code sign-in and returns `{url, redirectUri}` to open in a browser |
 | GET | `/oauth2/callback` | The provider's redirect target (no session token; the random `state` ties it to a sign-in Pyro started) |
+| GET | `/api/v1/cookies` | The interactive cookie jar: `[{name, value, domain, path, hostOnly?, secure?, httpOnly?, sameSite?, expires?, created}]` |
+| PUT | `/api/v1/cookies` | Add or replace a cookie (`domain` and `name` required, `path` defaults to `/`) |
+| DELETE | `/api/v1/cookies?domain=&path=&name=` | One cookie, a domain's cookies (domain only) or all (no parameters) |
 | GET, PUT | `/api/v1/globals` | `globals.yaml` as an environment `{name: "globals", variables}` |
 | POST | `/api/v1/sessions` | Body `{path?, request?, environment?}`. Opens a WebSocket or Socket.IO session. Returns `{sent, unresolved?, error?, session?}`; on failure `error` is set and there is no `session`. |
 | GET | `/api/v1/sessions/{id}` | `{id, kind, info, openedAt, closed, error?, messages[]}` (last 2000 messages) |

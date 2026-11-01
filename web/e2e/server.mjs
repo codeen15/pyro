@@ -44,6 +44,11 @@ createServer((req, res) => {
       res.end(JSON.stringify({ access_token: `${grant}-token`, token_type: "Bearer", expires_in: 3600, scope: form.get("scope") ?? "" }));
       return;
     }
+    if (url.pathname === "/login") {
+      res.setHeader("Set-Cookie", "sid=abc123; Path=/; HttpOnly");
+      res.end(JSON.stringify({ ok: true }));
+      return;
+    }
     if (url.pathname === "/whoami") {
       res.end(JSON.stringify({ authorization: req.headers.authorization ?? null }));
       return;
@@ -73,6 +78,8 @@ write(
   "collections/shop/create-order.req.yaml",
   `kind: http\nname: Create order\nmethod: POST\nurl: "{{base}}/orders"\nbody: { type: json, content: '{"sku":"A-1"}' }\nassertions:\n  - { type: status, value: "201" }\nextract:\n  - { var: orderId, from: jsonpath, path: "$.id" }\n`,
 );
+write("collections/account/collection.yaml", "name: Account\n");
+write("collections/account/login.req.yaml", `kind: http\nname: Log in\nmethod: POST\nurl: "http://127.0.0.1:${TARGET}/login"\n`);
 write("collections/shop/whoami.req.yaml", `kind: http\nname: Who am I\nmethod: GET\nurl: "{{base}}/whoami"\n`);
 write(
   "loadtests/smoke.load.yaml",

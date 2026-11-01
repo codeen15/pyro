@@ -12,7 +12,6 @@ import (
 	"mime/multipart"
 	"net"
 	"net/http"
-	"net/http/cookiejar"
 	"net/http/httptrace"
 	"net/url"
 	"os"
@@ -50,7 +49,7 @@ type Options struct {
 type Driver struct {
 	opts   Options
 	client *http.Client
-	Jar    http.CookieJar
+	Jar    *Jar
 }
 
 func New(opts Options) *Driver {
@@ -72,7 +71,7 @@ func New(opts Options) *Driver {
 	transport.DisableCompression = true
 	transport.MaxIdleConns = 0 // no global cap; per-host cap below
 	transport.MaxIdleConnsPerHost = opts.MaxIdleConnsPerHost
-	jar, _ := cookiejar.New(nil)
+	jar := NewJar()
 
 	d := &Driver{opts: opts, Jar: jar}
 	d.client = &http.Client{
@@ -96,7 +95,7 @@ func (d *Driver) Kind() model.Kind { return model.KindHTTP }
 // ForVU returns a driver that shares this one's connection pool but has its
 // own cookie jar, so each virtual user behaves like a separate client.
 func (d *Driver) ForVU() *Driver {
-	jar, _ := cookiejar.New(nil)
+	jar := NewJar()
 	c := *d.client
 	c.Jar = jar
 	return &Driver{opts: d.opts, client: &c, Jar: jar}
