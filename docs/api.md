@@ -40,6 +40,7 @@ TypeScript client in `web/src/api.ts`.
 | POST | `/api/v1/import?filename=&into=` | The file as the body (≤ 50 MB): Postman collection or environment, OpenAPI/Swagger, HAR or cURL text; the format is detected. `filename` names cURL/HAR collections; `into` adds the requests to an existing collection or folder. `201` with the import report (`into: true` when added); `422` if the format isn't recognised. |
 | GET | `/api/v1/collections/{slug}/export` | `{filename, content, report}`: the collection as Postman v2.1 JSON (`content`) and what didn't convert |
 | GET | `/api/v1/environments/{name}/export` | `{filename, content}`: the environment as Postman environment JSON |
+| GET, PUT | `/api/v1/globals` | `globals.yaml` as an environment `{name: "globals", variables}` |
 | POST | `/api/v1/sessions` | Body `{path?, request?, environment?}`. Opens a WebSocket or Socket.IO session. Returns `{sent, unresolved?, error?, session?}`; on failure `error` is set and there is no `session`. |
 | GET | `/api/v1/sessions/{id}` | `{id, kind, info, openedAt, closed, error?, messages[]}` (last 2000 messages) |
 | POST | `/api/v1/sessions/{id}/send` | Body `{data, binary?, event?, ack?}` (variables resolved). Returns `{message, unresolved?}` |
@@ -65,6 +66,7 @@ TypeScript client in `web/src/api.ts`.
 | GET | `/api/v1/plugins/index?q=` | Search the configured index (`404` when none) |
 | POST | `/api/v1/plugins/index/install` | Body `{name, version?}`: download (sha256-verified) and install |
 | GET / DELETE | `/api/v1/session/variables` | Values set by scripts and extractors during this `pyro serve` (runtime, globals, per environment, per collection). Never written to files. DELETE resets them. |
+| PATCH | `/api/v1/session/variables` | Body `{scope: globals\|environment\|collection\|runtime, name?, key, value?, reset?}`: set one current value (`value: null` unsets it for the session) or `reset` it to the file's initial value |
 
 ### Planned
 | Method | Path | Phase | Description |

@@ -239,5 +239,6 @@ func (s *Server) prepare(w http.ResponseWriter, path string, req *model.Request,
 		env.Name = envName
 	}
 	in.Vars = engine.NewVars(env, in.Chain)
+	in.Vars.Globals = s.ws.GlobalVars()
 	return in, strings.SplitN(path, "/", 2)[0], true
 }

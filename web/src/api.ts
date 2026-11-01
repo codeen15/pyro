@@ -238,6 +238,14 @@ export interface ImportReport {
   warnings: { path?: string; code: string; detail: string }[];
 }
 
+/** Session ("current") values layered over the files; null means unset this session. */
+export interface SessionVariables {
+  runtime: Record<string, string | null>;
+  globals: Record<string, string | null>;
+  environments: Record<string, Record<string, string | null>>;
+  collections: Record<string, Record<string, string | null>>;
+}
+
 export interface ExportView {
   filename: string;
   content: unknown;
@@ -539,6 +547,14 @@ export const api = {
   deleteRequest: (path: string) => call<void>("DELETE", `/requests/${enc(path)}`),
   environments: () => call<string[]>("GET", "/environments"),
   environment: (name: string) => call<Environment>("GET", `/environments/${encodeURIComponent(name)}`),
+  saveEnvironment: (name: string, env: Environment) => call<Environment>("PUT", `/environments/${encodeURIComponent(name)}`, env),
+  deleteEnvironment: (name: string) => call<void>("DELETE", `/environments/${encodeURIComponent(name)}`),
+  exportEnvironment: (name: string) => call<ExportView>("GET", `/environments/${encodeURIComponent(name)}/export`),
+  globals: () => call<Environment>("GET", "/globals"),
+  saveGlobals: (env: Environment) => call<Environment>("PUT", "/globals", env),
+  sessionVariables: () => call<SessionVariables>("GET", "/session/variables"),
+  setCurrentValue: (body: { scope: "globals" | "environment" | "collection"; name?: string; key: string; value?: string | null; reset?: boolean }) =>
+    call<void>("PATCH", "/session/variables", body),
   send: (body: { path?: string; request?: PyroRequest; environment?: string }) => call<SendResult>("POST", "/send", body),
   history: (limit = 100) => call<HistoryEntry[]>("GET", `/history?limit=${limit}`),
   historyEntry: (id: number) => call<SendResult>("GET", `/history/${id}`),

@@ -168,3 +168,39 @@ func TestSessionVariablesCarryAcrossSends(t *testing.T) {
 }
 
 func base64(s string) string { return b64.StdEncoding.EncodeToString([]byte(s)) }
+
+func TestGlobalsAndCurrentValues(t *testing.T) {
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, r.Header.Get("X-Key"))
+	}))
+	defer target.Close()
+	ts := newTestServer(t)
+	if res, body := do(t, ts, "PUT", "/api/v1/globals", `{"variables":[{"key":"gbase","value":"`+target.URL+`"},{"key":"key","value":"from-file"}]}`, true); res.StatusCode != 200 {
+		t.Fatalf("put globals: %d %s", res.StatusCode, body)
+	}
+	do(t, ts, "PUT", "/api/v1/requests/demo/k", `{"name":"K","url":"{{gbase}}/k","headers":[{"key":"X-Key","value":"{{key}}"}]}`, true)
+	send := func() string {
+		_, body := do(t, ts, "POST", "/api/v1/send", `{"path":"demo/k"}`, true)
+		return body
+	}
+	if b := send(); !strings.Contains(b, base64("from-file")) {
+		t.Fatalf("globals not applied: %s", b)
+	}
+	if res, _ := do(t, ts, "PATCH", "/api/v1/session/variables", `{"scope":"globals","key":"key","value":"current"}`, true); res.StatusCode != 204 {
+		t.Fatalf("patch: %d", res.StatusCode)
+	}
+	if b := send(); !strings.Contains(b, base64("current")) {
+		t.Fatalf("current value not applied: %s", b)
+	}
+	do(t, ts, "PATCH", "/api/v1/session/variables", `{"scope":"globals","key":"key","reset":true}`, true)
+	if b := send(); !strings.Contains(b, base64("from-file")) {
+		t.Fatalf("reset: %s", b)
+	}
+	if res, _ := do(t, ts, "PATCH", "/api/v1/session/variables", `{"scope":"environment","key":"x"}`, true); res.StatusCode != 400 {
+		t.Fatalf("environment without name: %d", res.StatusCode)
+	}
+	_, g := do(t, ts, "GET", "/api/v1/globals", "", true)
+	if !strings.Contains(g, `"name":"globals"`) || !strings.Contains(g, "from-file") {
+		t.Fatalf("get globals: %s", g)
+	}
+}

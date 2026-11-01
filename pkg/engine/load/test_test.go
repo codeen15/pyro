@@ -305,9 +305,19 @@ scenarios:
 	if _, err := Start(p, Options{Resolve: resolver("http://x"), MaxVUs: 500}); err == nil || !strings.Contains(err.Error(), "limit is 500") {
 		t.Fatalf("cap err = %v", err)
 	}
-	hosts := Hosts(p, resolver("https://api.example.com:8443"), nil)
+	hosts := Hosts(p, resolver("https://api.example.com:8443"), nil, nil)
 	if len(hosts) != 1 || hosts[0] != "api.example.com" {
 		t.Fatalf("hosts = %v", hosts)
+	}
+	// Globals resolve too; an unresolvable host is listed, not skipped.
+	bare := func(string) (Target, error) {
+		return Target{Request: &model.Request{Kind: model.KindHTTP, URL: "{{gbase}}/ok"}}, nil
+	}
+	if h := Hosts(p, bare, nil, map[string]string{"gbase": "https://prod.example.com"}); len(h) != 1 || h[0] != "prod.example.com" {
+		t.Errorf("with globals: %v", h)
+	}
+	if h := Hosts(p, bare, nil, nil); len(h) != 1 || h[0] != "{{gbase}}/ok" {
+		t.Errorf("unresolved: %v", h)
 	}
 }
 

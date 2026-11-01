@@ -44,7 +44,7 @@ func runCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			opts := runner.Options{Iterations: iterations, Delay: delay, Bail: bail}
+			opts := runner.Options{Iterations: iterations, Delay: delay, Bail: bail, Globals: ws.GlobalVars()}
 			if envName != "" {
 				if opts.Environment, err = ws.ReadEnvironment(envName); err != nil {
 					return fmt.Errorf("environment %q: %w", envName, err)

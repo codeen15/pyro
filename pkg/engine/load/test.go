@@ -24,6 +24,8 @@ const DefaultMaxVUs = 50000
 
 type Options struct {
 	Environment *model.Environment
+	// Globals are workspace-wide variables.
+	Globals map[string]string
 	// Resolve loads a request by workspace path.
 	Resolve func(path string) (Target, error)
 	// LoadData loads a data file named in the plan.
@@ -512,21 +514,28 @@ func PeakVUs(p *Plan) int {
 }
 
 // Hosts lists the distinct hosts a plan's requests target (after resolving
-// variables with the environment), for the safety confirmation.
-func Hosts(p *Plan, resolve func(string) (Target, error), env *model.Environment) []string {
+// variables with the environment and globals), for the safety confirmation.
+// A URL whose host can't be resolved is listed as it is, so it still needs
+// confirming rather than slipping through.
+func Hosts(p *Plan, resolve func(string) (Target, error), env *model.Environment, globals map[string]string) []string {
 	seen := map[string]bool{}
 	var walk func([]Step)
 	walk = func(steps []Step) {
 		for _, st := range steps {
 			if st.Request != "" {
 				if target, err := resolve(st.Request); err == nil {
-					r := engine.NewVars(env, target.Chain).Resolver()
-					raw, _ := r.Resolve(target.Request.URL)
+					v := engine.NewVars(env, target.Chain)
+					for k, val := range globals {
+						v.Globals[k] = val
+					}
+					raw, _ := v.Resolver().Resolve(target.Request.URL)
 					if !strings.Contains(raw, "://") {
 						raw = "http://" + raw
 					}
-					if u, err := url.Parse(raw); err == nil && u.Hostname() != "" {
+					if u, err := url.Parse(raw); err == nil && u.Hostname() != "" && !strings.Contains(u.Host, "{{") {
 						seen[u.Hostname()] = true
+					} else {
+						seen[target.Request.URL] = true
 					}
 				}
 			}

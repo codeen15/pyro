@@ -52,7 +52,7 @@ func loadCmd() *cobra.Command {
 				envName = plan.Environment
 			}
 			opts := load.Options{
-				Resolve: ws.Target, LoadData: ws.LoadData, MaxVUs: maxVUs, FileRoot: ws.Root, AllowFilesOutsideRoot: ws.Meta.AllowFilesOutsideWorkspace, InsecureTLS: insecure,
+				Resolve: ws.Target, LoadData: ws.LoadData, MaxVUs: maxVUs, FileRoot: ws.Root, AllowFilesOutsideRoot: ws.Meta.AllowFilesOutsideWorkspace, Globals: ws.GlobalVars(), InsecureTLS: insecure,
 			}
 			if opts.Plugins = openPlugins(); opts.Plugins != nil {
 				defer opts.Plugins.Close()
@@ -63,7 +63,7 @@ func loadCmd() *cobra.Command {
 				}
 				opts.Environment.Name = envName
 			}
-			if hosts := ws.UnconfirmedHosts(load.Hosts(plan, ws.Target, opts.Environment)); len(hosts) > 0 && !yes {
+			if hosts := ws.UnconfirmedHosts(load.Hosts(plan, ws.Target, opts.Environment, opts.Globals)); len(hosts) > 0 && !yes {
 				if err := confirmHosts(hosts); err != nil {
 					return err
 				}

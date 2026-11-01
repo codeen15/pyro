@@ -24,12 +24,14 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/codeen15/pyro/pkg/engine/model"
+	"github.com/codeen15/pyro/pkg/engine/vars"
 )
 
 const (
 	WorkspaceFile  = "pyro.yaml"
 	CollectionFile = "collection.yaml"
 	FolderFile     = "folder.yaml"
+	GlobalsFile    = "globals.yaml"
 	RequestExt     = ".req.yaml"
 	EnvExt         = ".env.yaml"
 
@@ -363,6 +365,33 @@ func (w *Workspace) DeleteEnvironment(name string) error {
 		return err
 	}
 	return nil
+}
+
+// ReadGlobals loads globals.yaml (workspace-wide variables). A missing
+// file means no globals.
+func (w *Workspace) ReadGlobals() (*model.Environment, error) {
+	g := &model.Environment{Name: "globals"}
+	if err := readYAML(filepath.Join(w.Root, GlobalsFile), g); err != nil && !errors.Is(err, ErrNotFound) {
+		return nil, err
+	}
+	g.Name = "globals"
+	return g, nil
+}
+
+func (w *Workspace) WriteGlobals(g *model.Environment) error {
+	out := *g
+	out.Name = "globals"
+	return writeYAML(filepath.Join(w.Root, GlobalsFile), &out)
+}
+
+// GlobalVars returns the enabled globals as a map (empty on any problem;
+// a broken globals.yaml shouldn't stop requests).
+func (w *Workspace) GlobalVars() map[string]string {
+	g, err := w.ReadGlobals()
+	if err != nil {
+		return map[string]string{}
+	}
+	return vars.Map(g.Variables)
 }
 
 func (w *Workspace) envFile(name string) (string, error) {

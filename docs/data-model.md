@@ -14,6 +14,7 @@ my-workspace/
         login.req.yaml
       orders/create-order.req.yaml
       realtime/notifications.req.yaml         # WebSocket / Socket.IO use .req.yaml too
+  globals.yaml                                # workspace-wide variables (optional)
   environments/
     dev.env.yaml
     prod.env.yaml
@@ -141,14 +142,22 @@ variables:
   - { key: legacy, value: "x", disabled: true }
 ```
 
-## Variable scopes (Phase 1)
+## Variable scopes
 `{{name}}` resolves from the narrowest scope outward:
 
 1. **Runtime / VU variables:** set by extractors, scripts (`pm.variables.set`) or data-file rows.
 2. **Data row:** the current iteration's CSV/JSON row.
 3. **Environment:** the selected `*.env.yaml`.
-4. **Collection:** `collection.yaml` `variables`.
-5. **Globals:** workspace-level (planned).
+4. **Folders, then collection:** `folder.yaml` / `collection.yaml` `variables`.
+5. **Globals:** `globals.yaml` at the workspace root (same format as an environment),
+   used everywhere: sends, collection runs, load tests and agents.
+
+**Initial and current values.** The files hold *initial* values, shared through git.
+While `pyro serve` runs, scripts and extractors (`pm.environment.set`, `pm.globals.set`, …)
+and edits in the Variables page change *current* values, which apply to later sends but
+are never written to the files. The Variables page (the sliders button next to the
+environment menu) shows both and can reset a current value or save it as the initial one.
+`GET/PATCH /api/v1/session/variables` expose them.
 
 Dynamic variables such as `{{$guid}}`, `{{$timestamp}}` and `{{$randomInt}}` follow
 Postman's names. A variable that can't be resolved is left as is and flagged in the response view.

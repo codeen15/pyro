@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { CircleCheck, FileInput, TriangleAlert, X } from "lucide-react";
+import { CircleCheck, FileInput, SlidersHorizontal, TriangleAlert, X } from "lucide-react";
 import { api, ApiError, type ImportReport } from "./api";
 import { useApp } from "./store";
 import { Sidebar, KindBadge } from "./components/Sidebar";
@@ -13,6 +13,7 @@ import { LoadRunPage } from "./components/LoadRun";
 import { CompareRunsPage } from "./components/CompareRuns";
 import { InstallPlugin, PluginPage } from "./components/Plugins";
 import { ImportPage } from "./components/ImportPage";
+import { VariablesPage } from "./components/Variables";
 
 export function App() {
   const health = useQuery({ queryKey: ["health"], queryFn: api.health, refetchInterval: 10_000 });
@@ -36,6 +37,8 @@ export function App() {
           <Blocker title="Couldn't load the workspace">{ws.error.message}</Blocker>
         ) : report ? (
           <ImportResult report={report.data} mode={report.mode} onClose={() => setReport(null)} />
+        ) : selected?.startsWith("vars:") ? (
+          <VariablesPage target={selected.slice(5)} />
         ) : selected === "import" ? (
           <ImportPage />
         ) : selected === "plugins:install" ? (
@@ -95,6 +98,17 @@ function TopBar({ workspace }: { workspace?: string }) {
             ))}
           </select>
         </label>
+        <button
+          className="btn shell-btn icon-only"
+          onClick={() => {
+            setReport(null);
+            select(envValue ? `vars:env:${envValue}` : "vars:globals");
+          }}
+          title="Environments and globals"
+          aria-label="Edit environments and globals"
+        >
+          <SlidersHorizontal size={14} />
+        </button>
         <button
           className="btn shell-btn"
           onClick={() => {

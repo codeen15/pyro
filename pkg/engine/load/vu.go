@@ -55,7 +55,7 @@ func (t *Test) newVU(scenario string, sc *Scenario, feed *feeder) *vu {
 	v := &vu{
 		id: id, scenario: scenario, sc: sc, t: t,
 		eng:      &engine.Engine{HTTP: t.http.ForVU(), Scripts: &script.Pool{}, Plugins: t.opts.Plugins},
-		vars:     engine.NewVars(t.opts.Environment, nil),
+		vars:     newVUVars(t.opts.Environment, t.opts.Globals),
 		collVars: map[string]map[string]string{},
 		buf:      t.agg.NewBuffer(),
 		rnd:      rand.New(rand.NewPCG(uint64(id), uint64(time.Now().UnixNano()))),
@@ -408,4 +408,12 @@ func sleep(ctx context.Context, d time.Duration) error {
 
 func compileExpr(src string) (*vm.Program, error) {
 	return expr.Compile(src, expr.AllowUndefinedVariables(), expr.AsBool())
+}
+
+func newVUVars(env *model.Environment, globals map[string]string) *vars.Set {
+	v := engine.NewVars(env, nil)
+	for k, val := range globals {
+		v.Globals[k] = val
+	}
+	return v
 }

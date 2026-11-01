@@ -142,7 +142,7 @@ func (s *Server) startLoadTest(w http.ResponseWriter, r *http.Request) {
 	if envName == "" {
 		envName = plan.Environment
 	}
-	opts := load.Options{Resolve: s.ws.Target, LoadData: s.ws.LoadData, FileRoot: s.ws.Root, AllowFilesOutsideRoot: s.ws.Meta.AllowFilesOutsideWorkspace}
+	opts := load.Options{Resolve: s.ws.Target, LoadData: s.ws.LoadData, FileRoot: s.ws.Root, AllowFilesOutsideRoot: s.ws.Meta.AllowFilesOutsideWorkspace, Globals: s.ws.GlobalVars()}
 	if s.cfg.Engine != nil {
 		opts.Plugins = s.cfg.Engine.Plugins
 	}
@@ -164,7 +164,7 @@ func (s *Server) startLoadTest(w http.ResponseWriter, r *http.Request) {
 		env.Name = envName
 		opts.Environment = env
 	}
-	if hosts := s.ws.UnconfirmedHosts(load.Hosts(plan, s.ws.Target, opts.Environment)); len(hosts) > 0 && !body.ConfirmHosts {
+	if hosts := s.ws.UnconfirmedHosts(load.Hosts(plan, s.ws.Target, opts.Environment, opts.Globals)); len(hosts) > 0 && !body.ConfirmHosts {
 		writeJSON(w, http.StatusConflict, map[string]any{
 			"error": "confirm the hosts this test will send traffic to", "needsConfirmation": true, "hosts": hosts,
 		})

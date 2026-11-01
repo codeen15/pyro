@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"sync"
 
+	"github.com/codeen15/pyro/pkg/engine/model"
 	"github.com/codeen15/pyro/pkg/engine/vars"
 )
 
@@ -113,4 +114,76 @@ func (s *Server) clearSessionVars(w http.ResponseWriter, r *http.Request) {
 	s.session.env, s.session.coll = map[string]overlay{}, map[string]overlay{}
 	s.session.mu.Unlock()
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// patchSessionVar sets one current value, or (reset) drops it so the file's
+// initial value applies again. Scope is globals, environment (Name = the
+// environment) or collection (Name = the slug).
+func (s *Server) patchSessionVar(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Scope string  `json:"scope"`
+		Name  string  `json:"name,omitempty"`
+		Key   string  `json:"key"`
+		Value *string `json:"value,omitempty"`
+		Reset bool    `json:"reset,omitempty"`
+	}
+	if !decode(w, r, &body) {
+		return
+	}
+	if body.Key == "" {
+		writeError(w, http.StatusBadRequest, "key is required")
+		return
+	}
+	s.session.mu.Lock()
+	defer s.session.mu.Unlock()
+	var o overlay
+	switch body.Scope {
+	case "globals":
+		o = s.session.globals
+	case "runtime":
+		o = s.session.runtime
+	case "environment", "collection":
+		if body.Name == "" {
+			writeError(w, http.StatusBadRequest, "name is required for "+body.Scope)
+			return
+		}
+		m := s.session.env
+		if body.Scope == "collection" {
+			m = s.session.coll
+		}
+		if m[body.Name] == nil {
+			m[body.Name] = overlay{}
+		}
+		o = m[body.Name]
+	default:
+		writeError(w, http.StatusBadRequest, "scope must be globals, environment, collection or runtime")
+		return
+	}
+	if body.Reset {
+		delete(o, body.Key)
+	} else {
+		o[body.Key] = body.Value // nil value: unset for this session
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) getGlobals(w http.ResponseWriter, r *http.Request) {
+	g, err := s.ws.ReadGlobals()
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, g)
+}
+
+func (s *Server) putGlobals(w http.ResponseWriter, r *http.Request) {
+	var g model.Environment
+	if !decode(w, r, &g) {
+		return
+	}
+	if err := s.ws.WriteGlobals(&g); err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, g)
 }

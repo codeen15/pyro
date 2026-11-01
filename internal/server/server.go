@@ -159,7 +159,10 @@ func (s *Server) Handler() http.Handler {
 		r.Put("/plugins/{name}/config", s.configurePlugin)
 		r.Delete("/plugins/{name}", s.removePlugin)
 
+		r.Get("/globals", s.getGlobals)
+		r.Put("/globals", s.putGlobals)
 		r.Get("/session/variables", s.getSessionVars)
+		r.Patch("/session/variables", s.patchSessionVar)
 		r.Delete("/session/variables", s.clearSessionVars)
 	})
 

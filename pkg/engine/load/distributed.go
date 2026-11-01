@@ -38,6 +38,7 @@ type Job struct {
 	// Targets are the plan's requests by path, with their collection chains.
 	Targets     map[string]Target  `json:"targets"`
 	Environment *model.Environment `json:"environment,omitempty"`
+	Globals     map[string]string  `json:"globals,omitempty"`
 	// Rows are data rows by scenario. Shared data is split between workers
 	// (each row is used by one worker); per-vu and random data is not.
 	Rows map[string][]map[string]string `json:"rows,omitempty"`
@@ -135,7 +136,7 @@ func (t *Test) prepareWorkers(rows map[string][]map[string]string) error {
 		}
 		job := Job{
 			Plan: seg, Segment: i, Segments: n, FirstVU: firstVU(t.plan, i, n), Targets: t.targets,
-			Environment: t.opts.Environment, Files: files, Plugins: plugins, InsecureTLS: t.opts.InsecureTLS,
+			Environment: t.opts.Environment, Globals: t.opts.Globals, Files: files, Plugins: plugins, InsecureTLS: t.opts.InsecureTLS,
 			Rows: map[string][]map[string]string{},
 		}
 		for name, r := range rows {
@@ -385,6 +386,7 @@ func PrepareJob(job Job, opts Options, report func(Report)) (*Test, error) {
 		return nil, fmt.Errorf("the job has no scenarios")
 	}
 	opts.Environment = job.Environment
+	opts.Globals = job.Globals
 	opts.Rows = job.Rows
 	opts.FirstVU = job.FirstVU
 	opts.InsecureTLS = job.InsecureTLS

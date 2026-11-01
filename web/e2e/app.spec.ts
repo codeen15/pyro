@@ -69,4 +69,32 @@ test("fits a phone screen", async ({ page }) => {
   await page.getByRole("tab", { name: "Load" }).click();
   await page.locator(".rail .row", { hasText: "Smoke" }).first().click();
   await noHorizontalScroll(page);
+  await page.getByRole("button", { name: "Edit environments and globals" }).click();
+  await noHorizontalScroll(page);
+});
+
+test("edit globals and environments with current values", async ({ page }) => {
+  await page.getByRole("button", { name: "Edit environments and globals" }).click();
+  await expect(page.getByRole("heading", { name: "Globals" })).toBeVisible();
+  await page.getByRole("button", { name: "Add variable" }).click();
+  await page.getByLabel("Variable name").last().fill("region");
+  await page.getByLabel("Initial value of region").fill("eu");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Saved" })).toBeVisible();
+
+  // A session value overrides the file without changing it.
+  const current = page.getByLabel("Current value of region");
+  await current.fill("us");
+  await current.press("Enter");
+  await expect(page.getByRole("button", { name: "Reset region" })).toBeVisible();
+  await page.getByRole("button", { name: "Save current value of region as initial" }).click();
+  await expect(page.getByLabel("Initial value of region")).toHaveValue("us");
+  await expect(page.getByRole("button", { name: "Reset region" })).toHaveCount(0);
+
+  // New environment, used from the top bar.
+  await page.getByLabel("New environment name").fill("staging");
+  await page.getByRole("button", { name: "Create environment" }).click();
+  await expect(page.getByLabel("Environment name", { exact: true })).toHaveValue("staging");
+  await page.getByRole("button", { name: "Use this environment" }).click();
+  await expect(page.locator(".env-select select")).toHaveValue("staging");
 });
