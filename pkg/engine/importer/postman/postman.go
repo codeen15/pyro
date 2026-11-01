@@ -450,7 +450,7 @@ func firstSrc(raw json.RawMessage) string {
 	return ""
 }
 
-var supportedAuth = map[string]bool{"basic": true, "bearer": true, "apikey": true, "oauth2": true}
+var supportedAuth = map[string]bool{"basic": true, "bearer": true, "apikey": true, "oauth2": true, "digest": true}
 
 func (c *converter) auth(p string, a *pmAuth) *model.Auth {
 	if a == nil || a.Type == "" || a.Type == "inherit" {

@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/codeen15/pyro/pkg/engine/auth"
@@ -28,6 +29,14 @@ type Engine struct {
 	Plugins *plugin.Manager
 	// OAuth fetches and caches OAuth 2.0 tokens; nil allows only pasted tokens.
 	OAuth *auth.OAuth2
+
+	digestOnce sync.Once
+	digest     *auth.DigestCache
+}
+
+func (e *Engine) digests() *auth.DigestCache {
+	e.digestOnce.Do(func() { e.digest = &auth.DigestCache{} })
+	return e.digest
 }
 
 // PluginID returns the id of a plugin kind ("plugin:tcp" → "tcp").
@@ -163,11 +172,15 @@ func (e *Engine) Send(ctx context.Context, in SendInput) *Result {
 		res.Sent, res.Unresolved, res.Error = sent, unresolved, err.Error()
 		return res
 	}
+	ea := resolveAuth(auth.Effective(req.Auth, in.Chain), r, &unresolved)
 	sent.Auth = nil // applied as headers/query; keep the record unambiguous
 	sent.Scripts = nil
 	res.Sent, res.Unresolved = sent, unresolved
 
 	resp, err := e.execute(ctx, sent, res)
+	if err == nil && ea != nil && ea.Type == "digest" {
+		resp, err = e.answerDigest(ctx, sent, ea, resp, res)
+	}
 	if err != nil {
 		res.Error = err.Error()
 		res.Tests = append(res.Tests, check.Assert(req.Assertions, nil)...)
@@ -211,6 +224,18 @@ func (e *Engine) execute(ctx context.Context, sent *model.Request, res *Result) 
 // applyAuth applies built-in auth or runs a plugin auth type.
 func (e *Engine) applyAuth(ctx context.Context, sent *model.Request, a *model.Auth, res *Result) error {
 	if a == nil {
+		return nil
+	}
+	if a.Type == "digest" {
+		// Answered after the server's challenge (answerDigest); a cached
+		// challenge for this host lets the first request authenticate.
+		u, err := httpdriver.TargetURL(sent)
+		if err != nil {
+			return nil // the driver reports a bad URL
+		}
+		if h := e.digests().Authorize(methodOf(sent), u.String(), a.Params["username"], a.Params["password"]); h != "" {
+			setHeader(sent, "Authorization", h)
+		}
 		return nil
 	}
 	if a.Type == "oauth2" && auth.UsesTokenFetching(a.Params) {
@@ -388,4 +413,55 @@ func EffectiveAuth(in SendInput) (*model.Auth, []string) {
 	}
 	var missing []string
 	return resolveAuth(auth.Effective(in.Request.Auth, in.Chain), in.Vars.Resolver(), &missing), missing
+}
+
+// answerDigest re-sends a request once with digest credentials when the
+// server answered 401 with a Digest challenge (or said the cached one is
+// stale).
+func (e *Engine) answerDigest(ctx context.Context, sent *model.Request, a *model.Auth, resp *protocol.Response, res *Result) (*protocol.Response, error) {
+	if resp.Status != 401 {
+		return resp, nil
+	}
+	var c *auth.DigestChallenge
+	for _, h := range resp.Headers {
+		if strings.EqualFold(h.Key, "WWW-Authenticate") {
+			if ch, ok := auth.ParseDigest(h.Value); ok {
+				c = ch
+				break
+			}
+		}
+	}
+	if c == nil {
+		return resp, nil
+	}
+	u, err := httpdriver.TargetURL(sent)
+	if err != nil {
+		return resp, nil
+	}
+	retry := *sent
+	retry.Headers = withoutHeader(sent.Headers, "Authorization")
+	setHeader(&retry, "Authorization", e.digests().Answer(c, methodOf(sent), u.String(), a.Params["username"], a.Params["password"]))
+	res.Sent = &retry
+	return e.execute(ctx, &retry, res)
+}
+
+func methodOf(r *model.Request) string {
+	if r.Method == "" {
+		return "GET"
+	}
+	return strings.ToUpper(r.Method)
+}
+
+func setHeader(r *model.Request, k, v string) {
+	r.Headers = append(withoutHeader(r.Headers, k), model.KeyValue{Key: k, Value: v})
+}
+
+func withoutHeader(in []model.KeyValue, k string) []model.KeyValue {
+	out := make([]model.KeyValue, 0, len(in))
+	for _, h := range in {
+		if !strings.EqualFold(h.Key, k) {
+			out = append(out, h)
+		}
+	}
+	return out
 }

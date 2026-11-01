@@ -335,6 +335,10 @@ const AUTH_FIELDS: Record<string, { key: string; label: string; secret?: boolean
     { key: "key", label: "Key name" },
     { key: "value", label: "Value", secret: true },
   ],
+  digest: [
+    { key: "username", label: "Username" },
+    { key: "password", label: "Password", secret: true },
+  ],
   oauth2: [], // OAuth2Form
 };
 
@@ -357,6 +361,7 @@ export function AuthEditor({ auth, onChange, context }: { auth?: Auth; onChange:
           <option value="basic">Basic</option>
           <option value="bearer">Bearer token</option>
           <option value="apikey">API key</option>
+          <option value="digest">Digest</option>
           <option value="oauth2">OAuth 2.0</option>
           {pluginAuths.length > 0 && (
             <optgroup label="Plugins">
@@ -377,6 +382,7 @@ export function AuthEditor({ auth, onChange, context }: { auth?: Auth; onChange:
         </>
       )}
       {type === "inherit" && <p className="muted">Uses the nearest auth set on a parent folder or the collection.</p>}
+      {type === "digest" && <p className="muted small">Answers the server's digest challenge (MD5 or SHA-256, qop auth); later requests to the same host reuse it without an extra round trip.</p>}
       {type === "inherit" && context?.path && <TokenPanel context={context} inheritedOnly />}
       {type === "oauth2" && <OAuth2Form params={params} onChange={(p) => onChange({ type, params: p })} context={context} />}
       {fields?.map((f) => (

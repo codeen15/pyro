@@ -174,7 +174,7 @@ and stops that walk. Auth `type`: `none`, `basic`, `bearer`, `apikey`, `oauth2`,
 | bearer | `token` |
 | apikey | `key`, `value`, `in` (`header`/`query`) |
 | oauth2 | Postman's names: `grant_type` (`authorization_code_with_pkce`, `authorization_code`, `client_credentials`, `password_credentials`; none = use `accessToken` as is), `accessToken`, `authUrl`, `accessTokenUrl`, `refreshTokenUrl`, `clientId`, `clientSecret`, `client_authentication` (`header` default, `body`), `scope`, `audience`, `username`/`password` (password grant), `redirect_uri` (default `http://<pyro>/oauth2/callback`), `challengeAlgorithm` (`S256` default, `plain`), `addTokenTo` (`header` default, `queryParams`), `headerPrefix` (default `Bearer`) |
-| digest | `username`, `password` |
+| digest | `username`, `password`. Pyro answers the server's `401` Digest challenge (RFC 7616: MD5, SHA-256 and their `-sess` variants, `qop=auth`, `userhash`) by re-sending once; the challenge is cached per host so later requests authenticate without the extra round trip. |
 | plugin:&lt;id&gt; | the plugin's declared fields (e.g. `plugin:hmac`: `secret`, `keyId`, `header`) |
 
 ### OAuth 2.0 tokens

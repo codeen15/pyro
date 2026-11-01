@@ -212,7 +212,9 @@ func (d *Driver) Execute(ctx context.Context, req *model.Request) (*protocol.Res
 	return out, nil
 }
 
-func (d *Driver) build(ctx context.Context, req *model.Request) (*http.Request, error) {
+// TargetURL is the URL a request is sent to: http:// assumed when the
+// scheme is missing, enabled query parameters added.
+func TargetURL(req *model.Request) (*url.URL, error) {
 	u, err := url.Parse(strings.TrimSpace(req.URL))
 	if err != nil {
 		return nil, fmt.Errorf("invalid URL %q: %w", req.URL, err)
@@ -238,7 +240,14 @@ func (d *Driver) build(ctx context.Context, req *model.Request) (*http.Request, 
 		}
 		u.RawQuery = q.Encode()
 	}
+	return u, nil
+}
 
+func (d *Driver) build(ctx context.Context, req *model.Request) (*http.Request, error) {
+	u, err := TargetURL(req)
+	if err != nil {
+		return nil, err
+	}
 	method := strings.ToUpper(req.Method)
 	if method == "" {
 		method = http.MethodGet
