@@ -2,13 +2,15 @@
 
 Pyro is an API client (REST, WebSocket, Socket.IO, Postman import) and load-testing
 tool (stress, spike, soak, concurrency) with WASM plugins. A single Go binary runs the
-engine and serves a React web UI on localhost. **Current phase: 0 done → starting Phase 1**
-(see `docs/roadmap.md`).
+engine and serves a React web UI on localhost. **Current phase: 1 done → Phase 2 next**
+(see `docs/roadmap.md`). Product context: `PRODUCT.md`; visual system: `DESIGN.md`.
 
 ## Layout
-- `cmd/pyro`: CLI (cobra): `serve`, `init`, `version`
-- `pkg/engine/...`: the engine, a library with no dependency on server/CLI/UI. `model/` is the shared data model.
-- `internal/store`: workspace persistence (YAML files, path safety, atomic writes)
+- `cmd/pyro`: CLI (cobra): `serve`, `init`, `import`, `version`
+- `pkg/engine/...`: the engine, a library with no dependency on server/CLI/UI. `model/` is the shared data model;
+  `engine.go` is the send pipeline; `vars/`, `auth/`, `protocol/httpdriver/`, `importer/postman/`.
+- `internal/store`: workspace persistence (YAML files, path safety, atomic writes, `Import`)
+- `internal/history`: request history in SQLite (`~/.pyro/pyro.db`)
 - `internal/server`: REST API `/api/v1` (chi), token auth, embedded SPA
 - `internal/version`: build metadata (set via ldflags)
 - `web/`: React + TS + Vite UI; `web/embed.go` embeds `web/dist`
@@ -32,7 +34,8 @@ make dev-ui       # Vite on :5173, proxies /api
 - Store errors are `store.ErrNotFound`, `ErrInvalidPath` and `ErrExists`; the server maps them to 404/400/409.
 - Tests use in-process servers (`httptest`, `t.TempDir()` workspaces); no network.
 - No CGO: dependencies must be pure Go. Builds use `CGO_ENABLED=0`.
-- UI: design tokens in `web/src/styles.css` (`:root`, light under `prefers-color-scheme`). The impeccable design hook checks UI edits.
+- UI: follow `DESIGN.md` (Pyrometry: heat colours only on measured data, flame accent for chrome). Tokens live in
+  `web/src/styles.css`; heat thresholds in `web/src/heat.ts`. The impeccable design hook checks UI edits.
 
 ## Docs
 - `docs/PRD.md`: goals, users, non-goals

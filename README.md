@@ -20,6 +20,7 @@ example collection. To use a workspace in a project directory:
 
 ```sh
 pyro init my-api --sample
+pyro import -w my-api ~/Downloads/my-collection.postman_collection.json
 pyro serve -w my-api
 ```
 
@@ -38,9 +39,11 @@ make test      # go vet + go test + UI typecheck
 
 | Path | What |
 |---|---|
-| `cmd/pyro` | CLI (`serve`, `init`, `version`) |
+| `cmd/pyro` | CLI (`serve`, `init`, `import`, `version`) |
 | `pkg/engine/model` | Protocol-agnostic data model shared by all modes |
+| `pkg/engine` | Send pipeline, variables, auth, HTTP driver, Postman importer |
 | `internal/store` | Workspace persistence as git-friendly YAML |
+| `internal/history` | Request history (SQLite) |
 | `internal/server` | REST API under `/api/v1`, embedded SPA |
 | `web` | React + TypeScript UI (Vite), embedded via `web/embed.go` |
 

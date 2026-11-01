@@ -9,3 +9,6 @@ web/dist/*
 *.local.json
 # impeccable downloads its platform binary on first run
 .claude/skills/impeccable/scripts/bin/
+# impeccable session state and review captures are machine-local
+.impeccable/questions/
+.impeccable/review/

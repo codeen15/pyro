@@ -1,0 +1,230 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-01T12:50:11.900343+00:00",
+  "title": "Design System: Pyro",
+  "extensions": {
+    "colorMeta": {
+      "flame": {
+        "role": "primary",
+        "displayName": "Flame",
+        "canonical": "oklch(0.67 0.2 42)",
+        "tonalRamp": [
+          "oklch(0.25 0.08 42)",
+          "oklch(0.35 0.12 42)",
+          "oklch(0.45 0.16 42)",
+          "oklch(0.55 0.19 42)",
+          "oklch(0.67 0.2 42)",
+          "oklch(0.75 0.16 44)",
+          "oklch(0.85 0.1 46)",
+          "oklch(0.94 0.04 48)"
+        ]
+      },
+      "iron-0": {
+        "role": "neutral",
+        "displayName": "Cold Iron",
+        "canonical": "oklch(0.155 0.008 250)",
+        "tonalRamp": [
+          "oklch(0.155 0.008 250)",
+          "oklch(0.19 0.009 250)",
+          "oklch(0.23 0.011 250)",
+          "oklch(0.28 0.012 250)",
+          "oklch(0.38 0.014 250)",
+          "oklch(0.58 0.012 250)",
+          "oklch(0.71 0.012 250)",
+          "oklch(0.93 0.006 250)"
+        ]
+      },
+      "brick-0": {
+        "role": "neutral",
+        "displayName": "Kiln Brick",
+        "canonical": "oklch(0.2 0.028 35)",
+        "tonalRamp": [
+          "oklch(0.2 0.028 35)",
+          "oklch(0.24 0.034 35)",
+          "oklch(0.29 0.042 35)",
+          "oklch(0.33 0.045 35)",
+          "oklch(0.5 0.045 45)",
+          "oklch(0.72 0.035 50)",
+          "oklch(0.82 0.025 55)",
+          "oklch(0.9 0.02 60)"
+        ]
+      },
+      "heat-cold": {
+        "role": "data",
+        "displayName": "Cold Steel (< 100 ms)",
+        "canonical": "oklch(0.62 0.03 240)"
+      },
+      "heat-ember": {
+        "role": "data",
+        "displayName": "Ember (100–300 ms)",
+        "canonical": "oklch(0.5 0.13 32)"
+      },
+      "heat-cherry": {
+        "role": "data",
+        "displayName": "Cherry (300–600 ms)",
+        "canonical": "oklch(0.6 0.19 30)"
+      },
+      "heat-orange": {
+        "role": "data",
+        "displayName": "Orange Heat (600 ms–1 s)",
+        "canonical": "oklch(0.77 0.16 66)"
+      },
+      "heat-yellow": {
+        "role": "data",
+        "displayName": "Yellow Heat (1–2 s)",
+        "canonical": "oklch(0.89 0.14 96)"
+      },
+      "heat-white": {
+        "role": "data",
+        "displayName": "White Heat (> 2 s)",
+        "canonical": "oklch(0.97 0.035 95)"
+      }
+    },
+    "typographyMeta": {
+      "title": {
+        "displayName": "Title",
+        "purpose": "Editable request name."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "All UI text; tabular numerals on."
+      },
+      "code": {
+        "displayName": "Code",
+        "purpose": "URLs, bodies, header values, paths, measurements."
+      }
+    },
+    "shadows": [
+      {
+        "name": "heat-glow-orange",
+        "value": "0 0 0 1px oklch(0.85 0.12 70 / 0.6), 0 2px 22px 4px oklch(0.77 0.16 66 / 0.55)",
+        "purpose": "Lit heat chip at orange heat until Timing is opened."
+      },
+      {
+        "name": "heat-glow-yellow",
+        "value": "0 0 0 1px oklch(0.95 0.08 96 / 0.7), 0 2px 24px 5px oklch(0.89 0.14 96 / 0.5)",
+        "purpose": "Lit heat chip at yellow heat."
+      },
+      {
+        "name": "heat-glow-white",
+        "value": "0 0 0 1px oklch(1 0 0 / 0.8), 0 2px 28px 7px oklch(0.97 0.035 95 / 0.5)",
+        "purpose": "Lit heat chip at white heat."
+      }
+    ],
+    "motion": [
+      {
+        "name": "ease",
+        "value": "cubic-bezier(0.16, 1, 0.3, 1)",
+        "purpose": "All state transitions, 150–400 ms; disabled under reduced motion."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "narrow",
+        "value": "760px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "One per area: Send, Done.",
+      "html": "<button class=\"ds-btn-primary\">Send</button>",
+      "css": ".ds-btn-primary{display:inline-flex;align-items:center;height:30px;padding:0 16px;border:0;border-radius:4px;background:oklch(0.67 0.2 42);color:oklch(0.2 0.04 40);font:600 13.5px 'Archivo Variable',system-ui,sans-serif;cursor:pointer;transition:background-color .15s cubic-bezier(.16,1,.3,1)}.ds-btn-primary:hover{background:oklch(0.73 0.19 46)}.ds-btn-primary:focus-visible{outline:2px solid oklch(0.67 0.2 42);outline-offset:2px}"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Secondary actions such as Save and Format.",
+      "html": "<button class=\"ds-btn-ghost\">Save</button>",
+      "css": ".ds-btn-ghost{height:30px;padding:0 12px;border:1px solid oklch(0.38 0.014 250);border-radius:4px;background:transparent;color:oklch(0.93 0.006 250);font:500 13.5px 'Archivo Variable',system-ui,sans-serif;cursor:pointer}.ds-btn-ghost:hover{background:oklch(0.23 0.011 250)}.ds-btn-ghost:focus-visible{outline:2px solid oklch(0.67 0.2 42);outline-offset:2px}"
+    },
+    {
+      "name": "Field",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Stroked iron field; mono for code and data values.",
+      "html": "<input class=\"ds-input\" value=\"{{baseUrl}}/orders\">",
+      "css": ".ds-input{height:28px;padding:0 10px;background:oklch(0.19 0.009 250);border:1px solid oklch(0.3 0.012 250);border-radius:4px;color:oklch(0.93 0.006 250);font:400 12.5px 'JetBrains Mono',ui-monospace,monospace}.ds-input:hover{border-color:oklch(0.38 0.014 250)}.ds-input:focus-visible{outline:none;border-color:oklch(0.67 0.2 42);box-shadow:0 0 0 1px oklch(0.67 0.2 42)}"
+    },
+    {
+      "name": "Rail Row",
+      "kind": "nav",
+      "refersTo": "rail-row",
+      "description": "Tree row on the brick rail; selected takes brick-2.",
+      "html": "<div class=\"ds-rail\"><button class=\"ds-row\"><span class=\"ds-badge\">GET</span>List orders</button><button class=\"ds-row is-active\"><span class=\"ds-badge\">POST</span>Create order</button></div>",
+      "css": ".ds-rail{background:oklch(0.2 0.028 35);width:240px}.ds-row{display:flex;gap:8px;align-items:center;width:100%;height:28px;padding:0 12px;border:0;background:transparent;color:oklch(0.9 0.02 60);font:400 13.5px 'Archivo Variable',system-ui,sans-serif;text-align:left;cursor:pointer}.ds-row:hover{background:oklch(0.24 0.034 35)}.ds-row.is-active{background:oklch(0.29 0.042 35);color:oklch(0.97 0.015 60);font-weight:500}.ds-row:focus-visible{outline:2px solid oklch(0.67 0.2 42);outline-offset:-2px}.ds-badge{min-width:34px;font:600 10.5px 'JetBrains Mono',monospace;color:oklch(0.78 0.12 155)}"
+    },
+    {
+      "name": "Heat Chip",
+      "kind": "custom",
+      "refersTo": "heat-chip",
+      "description": "Response time on its heat colour; lit from orange heat until seen.",
+      "html": "<span class=\"ds-heat ds-cold\">42 ms</span> <span class=\"ds-heat ds-cherry\">410 ms</span> <span class=\"ds-heat ds-yellow ds-lit\">1.30 s</span>",
+      "css": ".ds-heat{display:inline-block;padding:2px 8px;border-radius:3px;font:600 12.5px 'JetBrains Mono',monospace;color:oklch(0.17 0.02 40)}.ds-cold{background:oklch(0.62 0.03 240);color:oklch(0.155 0.008 250)}.ds-cherry{background:oklch(0.6 0.19 30);color:oklch(0.97 0.01 60)}.ds-yellow{background:oklch(0.89 0.14 96)}.ds-lit.ds-yellow{box-shadow:0 0 0 1px oklch(0.95 0.08 96 / .7),0 2px 24px 5px oklch(0.89 0.14 96 / .5)}"
+    },
+    {
+      "name": "Heated Bar",
+      "kind": "custom",
+      "refersTo": "heat-chip",
+      "description": "Timing phases to scale, each coloured by its own duration.",
+      "html": "<div class=\"ds-bar\"><span style=\"flex-grow:.02;background:oklch(0.62 0.03 240)\"></span><span style=\"flex-grow:.03;background:oklch(0.62 0.03 240)\"></span><span style=\"flex-grow:.9;background:oklch(0.89 0.14 96);box-shadow:0 0 12px 1px oklch(0.85 0.15 80 / .45)\"></span><span style=\"flex-grow:.05;background:oklch(0.5 0.13 32)\"></span></div>",
+      "css": ".ds-bar{display:flex;gap:2px;width:420px;height:18px;padding:2px;background:oklch(0.19 0.009 250);border:1px solid oklch(0.3 0.012 250);border-radius:4px}.ds-bar span{min-width:3px;border-radius:2px}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Pyrometer's Eye",
+    "overview": "A kiln operator judges metal by its glow: dull red, cherry, orange, yellow, white. Pyro reads latency the same way. Every measured duration sits on one incandescence scale, so how slow something ran is visible before the number is read. Everything else stays out of the way: cold iron content, warm kiln-brick shell, dense rows, standard controls.",
+    "keyCharacteristics": [
+      "One heat ramp, used only on measured data, always with a visible legend.",
+      "Cold iron content ground, warm brick shell.",
+      "A single flame-orange accent for chrome: primary action, selection, focus.",
+      "Dense rows, tabular numerals, monospace only for code, URLs, paths and measurements.",
+      "State colours (ok, warn, error) appear only where they carry meaning."
+    ],
+    "rules": [
+      {
+        "name": "The Quarantine Rule",
+        "body": "Heat colours appear only on measured data: the heat chip, the heated bar, legend swatches, timing values. Never on buttons, menus, borders or decoration.",
+        "section": "colors"
+      },
+      {
+        "name": "The Legend Rule",
+        "body": "Every place that shows heat can reach its legend: the Timing tab and the welcome screen carry the full scale.",
+        "section": "colors"
+      },
+      {
+        "name": "The Lit-Until-Seen Rule",
+        "body": "A response at orange heat or hotter keeps its glow until the user opens Timing. A breach is not allowed to fade unnoticed.",
+        "section": "colors"
+      },
+      {
+        "name": "The Honest Mono Rule",
+        "body": "Monospace marks code, URLs, paths and numbers. It is never used for decoration or to make text look \"technical\".",
+        "section": "typography"
+      },
+      {
+        "name": "The Only-Heat-Glows Rule",
+        "body": "Nothing else in the interface casts light or shadow.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do put every new measurement (load percentiles, run durations) on the same heat scale with the same thresholds and a reachable legend.",
+      "Do keep the shell brick and the content iron; new panels inside main stay iron.",
+      "Do use flame for exactly one primary action per area.",
+      "Do pair every error colour with an icon or a word.",
+      "Do keep tracks minmax(0, 1fr) and let long values scroll inside their field."
+    ],
+    "donts": [
+      "Don't use heat colours on chrome, borders or decoration (The Quarantine Rule).",
+      "Don't mark a selected row with a coloured side stripe; use the brick-2 fill.",
+      "Don't add shadows for elevation; layer tones instead.",
+      "Don't use monospace for prose or labels.",
+      "Don't introduce a second accent colour."
+    ]
+  }
+}

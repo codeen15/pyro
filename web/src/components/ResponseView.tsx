@@ -1,0 +1,252 @@
+import { useEffect, useMemo, useState } from "react";
+import { CircleX, Copy, TriangleAlert } from "lucide-react";
+import { decodeBody, type PyroResponse, type SendResult, type Timings } from "../api";
+import { HEAT_STEPS, formatBytes, formatMs, heatOf, type HeatStep } from "../heat";
+
+type Tab = "body" | "headers" | "cookies" | "timing";
+const HOT: HeatStep[] = ["orange", "yellow", "white"];
+
+export function ResponseView({ result, sending }: { result?: SendResult; sending: boolean }) {
+  const [tab, setTab] = useState<Tab>("body");
+  // A hot response stays lit until the user has looked at where the time went.
+  const [acknowledged, setAcknowledged] = useState(false);
+  useEffect(() => setAcknowledged(false), [result]);
+  useEffect(() => {
+    if (tab === "timing") setAcknowledged(true);
+  }, [tab, result]);
+
+  if (sending && !result) return <ResponseSkeleton />;
+  if (!result) {
+    return (
+      <section className="response empty-response" aria-label="Response">
+        <p>
+          Send the request to see the response. <kbd>Ctrl</kbd> + <kbd>Enter</kbd>
+        </p>
+      </section>
+    );
+  }
+
+  const res = result.response;
+  return (
+    <section className={`response ${sending ? "is-stale" : ""}`} aria-label="Response" aria-busy={sending}>
+      {result.unresolved && result.unresolved.length > 0 && (
+        <div className="notice warn" role="status">
+          <TriangleAlert size={15} />
+          <span>
+            Not defined in the selected environment or collection:{" "}
+            {result.unresolved.map((v, i) => (
+              <span key={v}>
+                {i > 0 && ", "}
+                <code>{`{{${v}}}`}</code>
+              </span>
+            ))}
+            . Sent as written.
+          </span>
+        </div>
+      )}
+      {result.error && (
+        <div className="notice error" role="alert">
+          <CircleX size={15} />
+          <span>{result.error}</span>
+        </div>
+      )}
+      {res && (
+        <>
+          <StatusLine res={res} lit={!acknowledged} onTiming={() => setTab("timing")} />
+          <div className="tabs" role="tablist" aria-label="Response parts">
+            {(["body", "headers", "cookies", "timing"] as Tab[]).map((t) => (
+              <button key={t} role="tab" aria-selected={tab === t} className="tab" onClick={() => setTab(t)}>
+                {t[0].toUpperCase() + t.slice(1)}
+                {t === "headers" && <span className="count">{res.headers?.length ?? 0}</span>}
+                {t === "cookies" && (res.cookies?.length ?? 0) > 0 && <span className="count">{res.cookies!.length}</span>}
+              </button>
+            ))}
+          </div>
+          <div className="tab-panel response-panel" role="tabpanel">
+            {tab === "body" && <BodyView res={res} />}
+            {tab === "headers" && <Table rows={(res.headers ?? []).map((h) => [h.key, h.value])} empty="No headers." />}
+            {tab === "cookies" && (
+              <Table
+                head={["Name", "Value", "Domain", "Path", "Flags"]}
+                rows={(res.cookies ?? []).map((c) => [c.name, c.value, c.domain ?? "", c.path ?? "", [c.httpOnly && "HttpOnly", c.secure && "Secure"].filter(Boolean).join(" ")])}
+                empty="The server set no cookies."
+              />
+            )}
+            {tab === "timing" && <TimingView t={res.timings} remote={res.remoteAddr} />}
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
+function StatusLine({ res, lit, onTiming }: { res: PyroResponse; lit: boolean; onTiming: () => void }) {
+  const cls = res.status >= 500 ? "s5" : res.status >= 400 ? "s4" : res.status >= 300 ? "s3" : "s2";
+  const heat = heatOf(res.timings.total);
+  return (
+    <div className="status-line">
+      <span className={`status ${cls}`}>
+        {res.status} {res.statusText}
+      </span>
+      <button
+        className={`heat-chip heat-${heat} ${lit && HOT.includes(heat) ? "is-lit" : ""}`}
+        onClick={onTiming}
+        title="Show where the time went"
+      >
+        {formatMs(res.timings.total)}
+      </button>
+      <span className="meta">{formatBytes(res.size)}</span>
+      <span className="meta">{res.proto}</span>
+    </div>
+  );
+}
+
+function BodyView({ res }: { res: PyroResponse }) {
+  const [mode, setMode] = useState<"pretty" | "raw">("pretty");
+  const contentType = (res.headers ?? []).find((h) => h.key.toLowerCase() === "content-type")?.value ?? "";
+  const bytes = useMemo(() => decodeBody(res.body), [res.body]);
+  const { text, pretty, binary } = useMemo(() => {
+    const text = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
+    const binary = !contentType.startsWith("text/") && /[\x00-\x08\x0e-\x1f]/.test(text.slice(0, 2000));
+    let pretty = text;
+    if (/json/i.test(contentType) || /^\s*[[{]/.test(text)) {
+      try {
+        pretty = JSON.stringify(JSON.parse(text), null, 2);
+      } catch {
+        /* not JSON after all */
+      }
+    }
+    return { text, pretty, binary };
+  }, [bytes, contentType]);
+
+  if (bytes.length === 0) return <p className="muted pad">Empty body.</p>;
+  if (contentType.startsWith("image/")) {
+    return <img className="body-image" alt="Response image" src={`data:${contentType};base64,${res.body}`} />;
+  }
+  if (binary) return <p className="muted pad">Binary content ({contentType || "unknown type"}), {formatBytes(res.size)}. Preview not available.</p>;
+
+  return (
+    <div className="body-view">
+      <div className="body-tools">
+        <div className="seg" role="group" aria-label="Body format">
+          <button aria-pressed={mode === "pretty"} onClick={() => setMode("pretty")}>
+            Pretty
+          </button>
+          <button aria-pressed={mode === "raw"} onClick={() => setMode("raw")}>
+            Raw
+          </button>
+        </div>
+        <span className="meta">{contentType || "no content-type"}</span>
+        <button className="icon-btn" onClick={() => navigator.clipboard?.writeText(text)} title="Copy body" aria-label="Copy body">
+          <Copy size={14} />
+        </button>
+      </div>
+      {res.bodyTruncated && (
+        <p className="inline-warn">Showing the first {formatBytes(bytes.length)} of {formatBytes(res.size)}.</p>
+      )}
+      <pre className="code-view mono">{mode === "pretty" ? pretty : text}</pre>
+    </div>
+  );
+}
+
+const PHASES: { key: keyof Timings; label: string; note: string }[] = [
+  { key: "dns", label: "DNS lookup", note: "resolving the host name" },
+  { key: "connect", label: "TCP connect", note: "opening the connection" },
+  { key: "tls", label: "TLS handshake", note: "negotiating encryption" },
+  { key: "send", label: "Request sent", note: "writing the request" },
+  { key: "wait", label: "Waiting (TTFB)", note: "server processing until the first byte" },
+  { key: "download", label: "Download", note: "receiving the body" },
+];
+
+function TimingView({ t, remote }: { t: Timings; remote?: string }) {
+  const total = Math.max(t.total, 0.001);
+  const phases = PHASES.map((p) => ({ ...p, ms: t[p.key] as number })).filter((p) => p.ms > 0 || p.key === "wait");
+  const totalHeat = heatOf(t.total);
+  return (
+    <div className="timing">
+      {/* The heated bar: each phase is drawn to scale and glows by its own duration. */}
+      <div className="heat-bar" role="img" aria-label={`Total ${formatMs(t.total)}, ${phases.map((p) => `${p.label} ${formatMs(p.ms)}`).join(", ")}`}>
+        {phases.map((p) => (
+          <span key={p.key} className={`heat-seg heat-${heatOf(p.ms)}`} style={{ flexGrow: Math.max(p.ms / total, 0.004) }} title={`${p.label}: ${formatMs(p.ms)}`} />
+        ))}
+      </div>
+      <table className="timing-table">
+        <tbody>
+          {phases.map((p) => (
+            <tr key={p.key}>
+              <td>
+                <span className={`swatch heat-${heatOf(p.ms)}`} aria-hidden />
+                {p.label}
+                <span className="muted"> · {p.note}</span>
+              </td>
+              <td className="num">{formatMs(p.ms)}</td>
+            </tr>
+          ))}
+          <tr className="total-row">
+            <td>Total</td>
+            <td className={`num heat-text-${totalHeat}`}>{formatMs(t.total)}</td>
+          </tr>
+        </tbody>
+      </table>
+      <p className="muted small">
+        {t.reused ? "Reused an open connection, so no DNS, connect or TLS time." : "New connection."}
+        {remote && <> Connected to <code>{remote}</code>.</>}
+      </p>
+      <HeatLegend current={totalHeat} />
+    </div>
+  );
+}
+
+export function HeatLegend({ current }: { current?: HeatStep }) {
+  return (
+    <ol className="heat-legend" aria-label="Heat scale">
+      {HEAT_STEPS.map((s) => (
+        <li key={s.step} className={current === s.step ? "is-current" : undefined}>
+          <span className={`swatch heat-${s.step}`} aria-hidden />
+          {s.label}
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+function Table({ head, rows, empty }: { head?: string[]; rows: string[][]; empty: string }) {
+  if (rows.length === 0) return <p className="muted pad">{empty}</p>;
+  return (
+    <table className="data-table">
+      {head && (
+        <thead>
+          <tr>
+            {head.map((h) => (
+              <th key={h}>{h}</th>
+            ))}
+          </tr>
+        </thead>
+      )}
+      <tbody>
+        {rows.map((r, i) => (
+          <tr key={i}>
+            {r.map((c, j) => (
+              <td key={j} className={j > 0 ? "mono" : "mono key"}>
+                {c}
+              </td>
+            ))}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function ResponseSkeleton() {
+  return (
+    <section className="response" aria-label="Response" aria-busy="true">
+      <div className="status-line">
+        <span className="skeleton" style={{ width: 90 }} />
+        <span className="skeleton" style={{ width: 60 }} />
+        <span className="skeleton" style={{ width: 50 }} />
+      </div>
+      <div className="skeleton block" />
+    </section>
+  );
+}

@@ -1,4 +1,4 @@
-# Postman Import (Phase 1; scripts in Phase 2)
+# Postman Import (implemented in Phase 1; scripts run from Phase 2)
 
 `pyro import <file.json> [-o collections/<slug>]`, or **Import** in the UI.
 The code will live in `pkg/engine/importer/postman`.
@@ -18,7 +18,7 @@ The code will live in `pkg/engine/importer/postman`.
 | `request.header[]` | `headers` (order and `disabled` kept) |
 | `body.mode: raw` + `options.raw.language` | `body.type`: `json` / `xml` / `text` |
 | `body.mode: urlencoded` | `body.type: form`, `fields` |
-| `body.mode: formdata` | `body.type: multipart`, `fields` (file fields become `@path` values; reported) |
+| `body.mode: formdata` | `body.type: multipart`, `fields` (file fields get `file: true` with the source path as `value`; reported) |
 | `body.mode: file` | `body.type: file` |
 | `body.mode: graphql` | `body.type: graphql`, `content` = query, `variables` |
 | `auth` (collection, folder or request) | `auth` at the same level; `type: noauth` → `none`; `inherit` → omitted |

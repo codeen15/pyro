@@ -1,228 +1,314 @@
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { ChevronRight, Folder, FolderOpen, Layers, Plug, Radio, RefreshCw, TriangleAlert } from "lucide-react";
-import { api, ApiError, type PyroRequest, type TreeNode } from "./api";
+import { useRef, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { CircleCheck, FileInput, TriangleAlert, X } from "lucide-react";
+import { api, ApiError, type ImportReport } from "./api";
+import { useApp } from "./store";
+import { Sidebar, KindBadge } from "./components/Sidebar";
+import { RequestEditor } from "./components/RequestEditor";
+import { ResponseView, HeatLegend } from "./components/ResponseView";
 
 export function App() {
-  const [selected, setSelected] = useState<string | null>(null);
   const health = useQuery({ queryKey: ["health"], queryFn: api.health, refetchInterval: 10_000 });
   const ws = useQuery({ queryKey: ["workspace"], queryFn: api.workspace });
+  const selected = useApp((s) => s.selected);
+  const [report, setReport] = useState<ImportReport | null>(null);
+
+  const unauthorized = ws.error instanceof ApiError && ws.error.status === 401;
 
   return (
     <div className="shell">
-      <header className="topbar">
-        <span className="brand">
-          <FlameMark />
-          Pyro
-        </span>
-        {ws.data && <span className="ws-name">{ws.data.name}</span>}
-      </header>
-
-      <nav className="sidebar" aria-label="Collections">
-        <div className="sidebar-head">
-          <span>Collections</span>
-          <button className="icon-btn" onClick={() => ws.refetch()} aria-label="Reload workspace" title="Reload workspace">
-            <RefreshCw size={14} className={ws.isFetching ? "spin" : undefined} />
-          </button>
-        </div>
-        {ws.isPending && <p className="muted pad">Loading workspace…</p>}
-        {ws.error && <ErrorNote error={ws.error} />}
-        {ws.data && ws.data.collections.length === 0 && (
-          <p className="muted pad">No collections yet. Add a folder under <code>collections/</code> in {ws.data.root}.</p>
+      <TopBar workspace={ws.data?.name} onImported={setReport} />
+      <Sidebar ws={ws.data} />
+      <main className="main">
+        {unauthorized ? (
+          <Blocker title="This tab isn't connected to Pyro">
+            Open the link that <code>pyro serve</code> printed in your terminal. It carries a one-time session token.
+          </Blocker>
+        ) : ws.error ? (
+          <Blocker title="Couldn't load the workspace">{ws.error.message}</Blocker>
+        ) : report ? (
+          <ImportResult report={report} onClose={() => setReport(null)} />
+        ) : selected?.startsWith("history:") ? (
+          <HistoryReplay id={selected} />
+        ) : selected ? (
+          <Workspace path={selected} />
+        ) : (
+          <Welcome hasCollections={(ws.data?.collections.length ?? 0) > 0} />
         )}
-        {ws.data && (
-          <ul className="tree" role="tree">
-            {ws.data.collections.map((n) => (
-              <TreeItem key={n.path} node={n} depth={0} selected={selected} onSelect={setSelected} />
-            ))}
-          </ul>
-        )}
-      </nav>
-
-      <main className="main">{selected ? <RequestView path={selected} /> : <EmptyMain />}</main>
-
+      </main>
       <footer className="statusbar">
         <span className={`dot ${health.isSuccess ? "ok" : health.isError ? "bad" : ""}`} aria-hidden />
-        {health.isSuccess ? `Engine ${health.data.version}` : health.isError ? "Engine unreachable" : "Connecting…"}
-        {ws.data && <span className="muted path-hint">{ws.data.root}</span>}
+        {health.isSuccess ? `Engine ${health.data.version}` : health.isError ? "Engine unreachable. Is pyro serve still running?" : "Connecting…"}
+        {ws.data && <span className="path-hint mono">{ws.data.root}</span>}
       </footer>
     </div>
   );
 }
 
-function TreeItem({
-  node,
-  depth,
-  selected,
-  onSelect,
-}: {
-  node: TreeNode;
-  depth: number;
-  selected: string | null;
-  onSelect: (p: string) => void;
-}) {
-  const [open, setOpen] = useState(depth === 0);
-  const indent = { paddingLeft: 8 + depth * 14 };
+function TopBar({ workspace, onImported }: { workspace?: string; onImported: (r: ImportReport) => void }) {
+  const qc = useQueryClient();
+  const envs = useQuery({ queryKey: ["environments"], queryFn: api.environments });
+  const environment = useApp((s) => s.environment);
+  const setEnvironment = useApp((s) => s.setEnvironment);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [importing, setImporting] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
 
-  if (node.type === "request") {
-    return (
-      <li role="treeitem" aria-selected={selected === node.path}>
-        <button className={`row ${selected === node.path ? "active" : ""}`} style={indent} onClick={() => onSelect(node.path)}>
-          <KindBadge kind={node.kind} method={node.method} />
-          <span className="row-label">{node.name}</span>
+  // A remembered environment may have been deleted on disk since.
+  const envValue = environment && envs.data?.includes(environment) ? environment : "";
+
+  const onFile = async (file: File) => {
+    setImporting(true);
+    setImportError(null);
+    try {
+      const report = await api.importFile(await file.text());
+      await Promise.all([qc.invalidateQueries({ queryKey: ["workspace"] }), qc.invalidateQueries({ queryKey: ["environments"] })]);
+      onImported(report);
+    } catch (e) {
+      setImportError(`${file.name}: ${(e as Error).message}`);
+    } finally {
+      setImporting(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  };
+
+  return (
+    <header className="topbar">
+      <span className="brand">Pyro</span>
+      {workspace && <span className="ws-name">{workspace}</span>}
+      <div className="topbar-right">
+        {importError && (
+          <span className="topbar-error" role="alert">
+            <TriangleAlert size={14} /> {importError}
+            <button className="icon-btn" onClick={() => setImportError(null)} aria-label="Dismiss">
+              <X size={13} />
+            </button>
+          </span>
+        )}
+        <label className="env-select">
+          <span>Environment</span>
+          <select value={envValue} onChange={(e) => setEnvironment(e.target.value || null)}>
+            <option value="">No environment</option>
+            {envs.data?.map((n) => (
+              <option key={n} value={n}>
+                {n}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button className="btn shell-btn" onClick={() => fileRef.current?.click()} disabled={importing}>
+          <FileInput size={14} />
+          {importing ? "Importing…" : "Import"}
         </button>
-      </li>
+        <input
+          ref={fileRef}
+          type="file"
+          accept=".json,application/json"
+          hidden
+          onChange={(e) => e.target.files?.[0] && onFile(e.target.files[0])}
+        />
+      </div>
+    </header>
+  );
+}
+
+function Workspace({ path }: { path: string }) {
+  const q = useQuery({ queryKey: ["request", path], queryFn: () => api.request(path), retry: false });
+  const result = useApp((s) => s.results[path]);
+  const sending = useApp((s) => !!s.sending[path]);
+  const select = useApp((s) => s.select);
+  const split = useSplit();
+
+  if (q.isPending) return <div className="pad"><span className="skeleton line" style={{ width: "40%" }} /></div>;
+  if (q.error) {
+    const gone = q.error instanceof ApiError && q.error.status === 404;
+    return (
+      <Blocker title={gone ? "This request no longer exists" : "Couldn't open the request"}>
+        {gone ? "It may have been renamed or deleted on disk." : q.error.message}{" "}
+        <button className="btn ghost small" onClick={() => select(null)}>
+          Close
+        </button>
+      </Blocker>
     );
   }
-
-  const FolderIcon = node.type === "collection" ? Layers : open ? FolderOpen : Folder;
   return (
-    <li role="treeitem" aria-expanded={open}>
-      <button className={`row ${node.type}`} style={indent} onClick={() => setOpen(!open)}>
-        <ChevronRight size={14} className={`chev ${open ? "open" : ""}`} />
-        <FolderIcon size={14} className="folder-icon" />
-        <span className="row-label">{node.name}</span>
-      </button>
-      {open && node.children && node.children.length > 0 && (
-        <ul role="group">
-          {node.children.map((c) => (
-            <TreeItem key={c.path} node={c} depth={depth + 1} selected={selected} onSelect={onSelect} />
-          ))}
-        </ul>
-      )}
-    </li>
+    <div className="work" style={{ gridTemplateRows: `${split.top}fr 6px ${100 - split.top}fr` }} ref={split.ref}>
+      <RequestEditor key={path} path={path} saved={q.data} />
+      <div className="splitter" role="separator" aria-orientation="horizontal" aria-label="Resize response panel" tabIndex={0} {...split.handlers} />
+      <ResponseView key={`r-${path}`} result={result} sending={sending} />
+    </div>
   );
 }
 
-function KindBadge({ kind, method }: { kind?: string; method?: string }) {
-  if (kind === "websocket")
-    return (
-      <span className="badge ws" title="WebSocket">
-        <Plug size={12} /> WS
-      </span>
-    );
-  if (kind === "socketio")
-    return (
-      <span className="badge sio" title="Socket.IO">
-        <Radio size={12} /> SIO
-      </span>
-    );
-  const m = (method ?? "GET").toUpperCase();
-  return <span className={`badge m-${m.toLowerCase()}`}>{m === "DELETE" ? "DEL" : m}</span>;
+/** A draggable horizontal split between the editor and the response (percent for the top pane). */
+function useSplit() {
+  const [top, setTop] = useState(() => {
+    try {
+      return Number(localStorage.getItem("pyro.split")) || 45;
+    } catch {
+      return 45;
+    }
+  });
+  const ref = useRef<HTMLDivElement>(null);
+  const commit = (v: number) => {
+    const clamped = Math.min(80, Math.max(20, v));
+    setTop(clamped);
+    try {
+      localStorage.setItem("pyro.split", String(clamped));
+    } catch {
+      /* storage unavailable */
+    }
+  };
+  return {
+    top,
+    ref,
+    handlers: {
+      onPointerDown: (e: React.PointerEvent) => {
+        const el = ref.current;
+        if (!el) return;
+        e.currentTarget.setPointerCapture(e.pointerId);
+        const rect = el.getBoundingClientRect();
+        const move = (ev: PointerEvent) => commit(((ev.clientY - rect.top) / rect.height) * 100);
+        const up = () => {
+          window.removeEventListener("pointermove", move);
+          window.removeEventListener("pointerup", up);
+        };
+        window.addEventListener("pointermove", move);
+        window.addEventListener("pointerup", up);
+      },
+      onKeyDown: (e: React.KeyboardEvent) => {
+        if (e.key === "ArrowUp") commit(top - 5);
+        if (e.key === "ArrowDown") commit(top + 5);
+      },
+    },
+  };
 }
 
-function RequestView({ path }: { path: string }) {
-  const q = useQuery({ queryKey: ["request", path], queryFn: () => api.request(path) });
-  if (q.isPending) return <p className="muted pad">Loading…</p>;
-  if (q.error) return <ErrorNote error={q.error} />;
-  const r: PyroRequest = q.data;
-  const isStream = r.kind === "websocket" || r.kind === "socketio";
-
+function HistoryReplay({ id }: { id: string }) {
+  const result = useApp((s) => s.results[id]);
+  const sent = result?.sent;
   return (
-    <article className="request">
-      <h1 className="req-title">{r.name}</h1>
-      <p className="muted req-path">{path}</p>
+    <div className="work replay">
+      <section className="editor">
+        <header className="req-head">
+          <div className="req-head-text">
+            <h1 className="req-name static">Sent request</h1>
+            <span className="req-path mono">Not saved in a collection{result && ` · ${new Date(result.startedAt).toLocaleString()}`}</span>
+          </div>
+        </header>
+        {sent && (
+          <div className="urlbar static">
+            <KindBadge method={sent.method} />
+            <code className="mono url-static">{sent.url}</code>
+          </div>
+        )}
+      </section>
+      <ResponseView result={result} sending={false} />
+    </div>
+  );
+}
 
-      <div className="urlbar">
-        <KindBadge kind={r.kind} method={r.method} />
-        <code className="url">{r.url}</code>
-      </div>
-
-      {r.description && <p className="desc">{r.description}</p>}
-
-      {!isStream && <KVSection title="Query" rows={r.query} />}
-      <KVSection title="Headers" rows={r.headers} />
-      {r.auth && (
-        <Section title="Auth">
-          <p>
-            <code>{r.auth.type}</code>
+function ImportResult({ report, onClose }: { report: ImportReport; onClose: () => void }) {
+  const select = useApp((s) => s.select);
+  const setTab = useApp((s) => s.setSidebarTab);
+  return (
+    <section className="report" aria-label="Import result">
+      <header className="report-head">
+        <CircleCheck size={20} className="ok-icon" />
+        <div>
+          <h1>Imported {report.collection ? `“${report.collection}”` : "environment"}</h1>
+          <p className="muted">
+            {report.format}
+            {report.slug && (
+              <>
+                {" "}· {report.requests} requests in {report.folders} folders, saved to <code>collections/{report.slug}</code>
+              </>
+            )}
+            {report.environments?.map((e) => (
+              <span key={e}>
+                {" "}· environment <code>{e}</code>
+              </span>
+            ))}
           </p>
-        </Section>
-      )}
-      {r.body && r.body.type !== "none" && (
-        <Section title={`Body · ${r.body.type}`}>
-          {r.body.content ? <pre className="code">{r.body.content}</pre> : <KVTable rows={r.body.fields ?? []} />}
-        </Section>
-      )}
-      {isStream && r.messages && r.messages.length > 0 && (
-        <Section title="Saved messages">
-          {r.messages.map((m, i) => (
-            <div key={i} className="message">
-              {m.event && <span className="event">{m.event}</span>}
-              <pre className="code">{m.content}</pre>
-            </div>
-          ))}
-        </Section>
-      )}
-    </article>
-  );
-}
+        </div>
+        <button className="icon-btn" onClick={onClose} aria-label="Close import result">
+          <X size={16} />
+        </button>
+      </header>
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <section className="section">
-      <h2>{title}</h2>
-      {children}
+      {report.warnings.length === 0 ? (
+        <p>Everything converted. Nothing needs your attention.</p>
+      ) : (
+        <>
+          <h2>
+            {report.warnings.length} thing{report.warnings.length > 1 ? "s" : ""} to check
+          </h2>
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Where</th>
+                <th>What happened</th>
+              </tr>
+            </thead>
+            <tbody>
+              {report.warnings.map((w, i) => (
+                <tr key={i}>
+                  <td className="mono key">
+                    {w.path && report.slug ? (
+                      <button
+                        className="link"
+                        onClick={() => {
+                          setTab("collections");
+                          select(`${report.slug}/${w.path}`);
+                          onClose();
+                        }}
+                      >
+                        {w.path}
+                      </button>
+                    ) : (
+                      "Whole collection"
+                    )}
+                  </td>
+                  <td>{w.detail}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
+      <div className="report-actions">
+        <button className="btn primary" onClick={onClose}>
+          Done
+        </button>
+      </div>
     </section>
   );
 }
 
-function KVSection({ title, rows }: { title: string; rows?: { key: string; value: string; disabled?: boolean }[] }) {
-  if (!rows || rows.length === 0) return null;
+function Welcome({ hasCollections }: { hasCollections: boolean }) {
   return (
-    <Section title={title}>
-      <KVTable rows={rows} />
-    </Section>
+    <section className="welcome">
+      <h1>{hasCollections ? "Pick a request to start" : "Bring your API in"}</h1>
+      <p className="muted">
+        {hasCollections
+          ? "Choose a request in the sidebar, or press + on a collection to add one. Send with Ctrl + Enter, save with Ctrl + S."
+          : "Import a Postman collection or environment with Import in the top bar. Pyro writes it as YAML files you can commit."}
+      </p>
+      <div className="welcome-legend">
+        <h2>Reading response times</h2>
+        <p className="muted">Times glow hotter as they get slower, from cold steel to white heat.</p>
+        <HeatLegend />
+      </div>
+    </section>
   );
 }
 
-function KVTable({ rows }: { rows: { key: string; value: string; disabled?: boolean }[] }) {
+function Blocker({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <table className="kv">
-      <tbody>
-        {rows.map((r, i) => (
-          <tr key={i} className={r.disabled ? "disabled" : undefined}>
-            <td>{r.key}</td>
-            <td>{r.value}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  );
-}
-
-function EmptyMain() {
-  return (
-    <div className="empty">
-      <FlameMark size={40} />
-      <h1>Pick a request</h1>
-      <p className="muted">Choose a request from the sidebar to see what it sends. Editing and sending come in the next build.</p>
-    </div>
-  );
-}
-
-function ErrorNote({ error }: { error: Error }) {
-  const unauthorized = error instanceof ApiError && error.status === 401;
-  return (
-    <div className="error-note" role="alert">
-      <TriangleAlert size={16} />
-      <span>
-        {unauthorized ? (
-          <>
-            This tab has no session token. Open the link that <code>pyro serve</code> printed in your terminal.
-          </>
-        ) : (
-          error.message
-        )}
-      </span>
-    </div>
-  );
-}
-
-function FlameMark({ size = 18 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden className="flame">
-      <path d="M16 3c2 5 8 8 8 15a8 8 0 0 1-16 0c0-4 2-6 4-8 0 3 1 5 3 5-1-5 0-9 1-12z" fill="currentColor" />
-    </svg>
+    <section className="blocker" role="alert">
+      <TriangleAlert size={20} />
+      <h1>{title}</h1>
+      <p>{children}</p>
+    </section>
   );
 }

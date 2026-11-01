@@ -18,7 +18,7 @@ TypeScript client in `web/src/api.ts`.
 
 ## Endpoints
 
-### Implemented (Phase 0)
+### Implemented (Phases 0–1)
 | Method | Path | Description |
 |---|---|---|
 | GET | `/api/v1/health` | `{status, version}` |
@@ -31,13 +31,17 @@ TypeScript client in `web/src/api.ts`.
 | GET | `/api/v1/environments` | Environment names |
 | GET | `/api/v1/environments/{name}` | An environment |
 | PUT | `/api/v1/environments/{name}` | Create or replace |
+| DELETE | `/api/v1/environments/{name}` | `204` |
+| PUT | `/api/v1/collections/{slug}` | Replace collection settings (variables, auth, scripts) |
+| POST | `/api/v1/send` | Body `{path?, request?, environment?, runtime?}`. `path` loads the saved request and supplies collection/folder variables and auth; `request` sends unsaved edits instead. Returns `{sent, response?, unresolved?, error?, startedAt, historyId?}`. A transport failure is still `200` with `error` set. Response bodies are base64 (`response.body`). |
+| GET | `/api/v1/history?limit=N` | Newest first: `{id, at, path?, name?, method, url, status?, durationMs, error?}` |
+| GET | `/api/v1/history/{id}` | Full stored send result (bodies capped at 256 KB) |
+| DELETE | `/api/v1/history` | Clear this workspace's history |
+| POST | `/api/v1/import` | Raw Postman collection or environment JSON as the body (≤ 50 MB). `201` with the import report; `422` if the file isn't a supported export. |
 
 ### Planned
 | Method | Path | Phase | Description |
 |---|---|---|---|
-| POST | `/api/v1/send` | 1 | Send one request (`{path? , request?, environment}`), returning the response, timings and test results. |
-| GET | `/api/v1/history` | 1 | Recent sends (SQLite). |
-| POST | `/api/v1/import` | 1 | Upload a Postman collection or environment; returns the import report. |
 | POST | `/api/v1/sessions` | 2 | Open an interactive WebSocket or Socket.IO session; returns `{id}`. |
 | POST | `/api/v1/sessions/{id}/send` · DELETE `/api/v1/sessions/{id}` | 2 | Send a message, close the session. |
 | POST | `/api/v1/runs` | 2 | Start a collection run. |

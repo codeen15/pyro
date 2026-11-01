@@ -78,7 +78,8 @@ extract:
   - { var: orderId, from: jsonpath, path: "$.id" }
 ```
 
-Body variants: `form`/`multipart` use `fields` (a key/value list), `file` uses `file`,
+Body variants: `form`/`multipart` use `fields` (a key/value list; in multipart a field with
+`file: true` sends the file at `value`, relative to the workspace root or absolute), `file` uses `file`,
 and `graphql` uses `content` (the query) plus `variables` (a JSON string).
 
 Assertion `type`: `status`, `header`, `jsonpath`, `body`, `duration`.
