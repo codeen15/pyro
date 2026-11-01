@@ -5,8 +5,8 @@
 First public release.
 
 **API client**
-- HTTP requests with variables and environments, auth (basic, bearer, API key, OAuth 2.0
-  with a pasted token) inherited from collections and folders, a response viewer with
+- HTTP requests with variables and environments, auth (basic, bearer, API key, digest,
+  OAuth 2.0) inherited from collections and folders, a response viewer with
   timings, cookies and history.
 - WebSocket and Socket.IO consoles (Engine.IO v4 / Socket.IO v5: namespaces, events, acks).
 - `pm.*`-compatible pre-request and test scripts (bundled chai), declarative assertions and
@@ -16,6 +16,13 @@ First public release.
   HAR recordings and cURL commands, into a new or an existing collection. Export
   collections and environments to Postman v2.1.
 - Workspaces are plain YAML files, one per request, made for git.
+
+- Environments and globals editor showing initial (file) and current (session) values;
+  `globals.yaml` for workspace-wide variables.
+- OAuth 2.0 token fetching: client credentials, password, authorization code with PKCE
+  (browser sign-in), refresh tokens. Digest auth (MD5, SHA-256).
+- Cookie manager; saved response examples (also imported from Postman and OpenAPI and
+  exported to Postman); a light theme.
 
 **Load testing**
 - Five executors (constant and ramping VUs, per-VU iterations, constant and ramping arrival
