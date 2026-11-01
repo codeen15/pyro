@@ -53,10 +53,14 @@ jobs:
         run: |
           npm install --no-save socket.io@4.8.1
           node server.js 3999 &
+          node server.js 3998 polling &
+          PING_MS=500 node server.js 3997 &
           sleep 2
-      - run: go test -run TestRealServer -v ./pkg/engine/protocol/sioclient/
+      - run: go test -run 'TestRealServer' -v ./pkg/engine/protocol/sioclient/
         env:
           PYRO_SIO_URL: http://127.0.0.1:3999
+          PYRO_SIO_POLLING_URL: http://127.0.0.1:3998
+          PYRO_SIO_FASTPING_URL: http://127.0.0.1:3997
 
   web:
     name: UI and end-to-end

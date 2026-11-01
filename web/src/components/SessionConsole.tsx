@@ -309,7 +309,17 @@ function SocketIOSettings({ cfg, onChange }: { cfg: SocketIOConfig; onChange: (c
         <span className="field-label">Auth (JSON)</span>
         <input className="cell mono wide" value={cfg.auth ?? ""} placeholder='{"token": "{{token}}"}' onChange={(e) => onChange({ ...cfg, auth: e.target.value || undefined })} />
       </label>
-      <p className="muted small">Sent with the CONNECT packet (Socket.IO v3/v4). WebSocket transport only; binary payloads aren't supported yet.</p>
+      <label className="field-row">
+        <span className="field-label">Transport</span>
+        <select value={cfg.transport ?? "auto"} onChange={(e) => onChange({ ...cfg, transport: e.target.value === "auto" ? undefined : (e.target.value as SocketIOConfig["transport"]) })}>
+          <option value="auto">WebSocket, falling back to long-polling</option>
+          <option value="websocket">WebSocket only</option>
+          <option value="polling">Long-polling only</option>
+        </select>
+      </label>
+      <p className="muted small">
+        Auth is sent with the CONNECT packet (Socket.IO v3/v4). Binary values appear as <code>{'{"$binary": "<base64>"}'}</code> in messages; send one the same way inside your arguments.
+      </p>
     </div>
   );
 }
@@ -345,6 +355,7 @@ function Timeline({ live, unresolved, onClear }: { live: Live | null; unresolved
             <span className="conn is-live">
               <Plug size={13} /> Connected{live.state.info.sid ? ` · sid ${live.state.info.sid}` : ""}
               {live.state.info.subprotocol ? ` · ${live.state.info.subprotocol}` : ""}
+              {live.state.info.transport ? ` · ${live.state.info.transport}` : ""}
             </span>
           )
         ) : (

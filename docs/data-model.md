@@ -129,9 +129,15 @@ socketio:
   namespace: /
   auth: '{"token":"{{token}}"}' # CONNECT packet payload (JSON)
   listen: [ "chat message" ]    # events shown in the console
+  transport: auto               # auto (WebSocket, falling back to long-polling) | websocket | polling
 messages:
   - { event: "chat message", content: '["hi"]', ack: true }   # content = JSON args array
+  - { event: "upload", content: '[{"$binary": "AAEC/w=="}, "name.bin"]' }   # binary attachment
 ```
+Socket.IO binary attachments appear in received messages as `{"$binary": "<base64>"}` at
+their place in the arguments, and the same notation sends one (wherever it appears in the
+arguments). With `transport: auto`, Pyro tries a WebSocket and falls back to HTTP
+long-polling when the server or a proxy refuses it; the console shows the transport in use.
 
 ## `*.env.yaml`
 ```yaml

@@ -1,11 +1,14 @@
-// Package sioclient is a small Socket.IO client: Engine.IO v4 over the
-// WebSocket transport carrying Socket.IO v5 packets (servers 3.x and 4.x).
-// It supports namespaces, CONNECT auth, events and acks. Binary attachments
-// and the long-polling transport are not supported yet.
+// Package sioclient is a small Socket.IO client: Engine.IO v4 (WebSocket or
+// HTTP long-polling transport) carrying Socket.IO v5 packets (servers 3.x
+// and 4.x). It supports namespaces, CONNECT auth, events, acks and binary
+// attachments. Binary values appear in message data as {"$binary": base64}
+// and are sent the same way.
 package sioclient
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -29,6 +32,7 @@ const (
 	eioPing    = '2'
 	eioPong    = '3'
 	eioMessage = '4'
+	eioNoop    = '6'
 )
 
 // Socket.IO packet types.
@@ -42,6 +46,13 @@ const (
 	sioBinaryAck    = '6'
 )
 
+// Transports.
+const (
+	TransportAuto      = "auto" // WebSocket, falling back to polling
+	TransportWebSocket = "websocket"
+	TransportPolling   = "polling"
+)
+
 type Options struct {
 	Path      string // default /socket.io/
 	Namespace string // default /
@@ -49,14 +60,12 @@ type Options struct {
 	Auth    string
 	Headers []model.KeyValue
 	Client  *http.Client
+	// Transport is auto (default), websocket or polling.
+	Transport string
 }
 
 // Dial connects and waits until the namespace is joined.
 func Dial(ctx context.Context, rawURL string, opts Options) (*Client, error) {
-	wsURL, err := engineURL(rawURL, opts.Path)
-	if err != nil {
-		return nil, err
-	}
 	ns := opts.Namespace
 	if ns == "" {
 		ns = "/"
@@ -73,59 +82,71 @@ func Dial(ctx context.Context, rawURL string, opts Options) (*Client, error) {
 			header.Add(h.Key, h.Value)
 		}
 	}
+	mode := opts.Transport
+	if mode == "" {
+		mode = TransportAuto
+	}
+	if mode != TransportAuto && mode != TransportWebSocket && mode != TransportPolling {
+		return nil, fmt.Errorf("unknown Socket.IO transport %q (auto, websocket or polling)", mode)
+	}
 
 	start := time.Now()
-	conn, res, err := websocket.Dial(ctx, wsURL, &websocket.DialOptions{HTTPHeader: header, HTTPClient: opts.Client})
-	if err != nil {
-		if res != nil {
-			return nil, fmt.Errorf("Socket.IO handshake failed: server answered %s (is the path %q right?)", res.Status, pathOr(opts.Path))
+	var (
+		tr    transport
+		open  []byte
+		info  protocol.SessionInfo
+		wsErr error
+	)
+	if mode != TransportPolling {
+		tr, open, info, wsErr = dialWS(ctx, rawURL, opts.Path, header, opts.Client)
+		if wsErr != nil && (mode == TransportWebSocket || ctx.Err() != nil) {
+			return nil, wsErr
 		}
-		return nil, fmt.Errorf("could not connect to %s: %w", wsURL, err)
 	}
-	conn.SetReadLimit(16 << 20)
-	c := &Client{
-		conn: conn, ns: ns, msgs: make(chan protocol.Message, 1024), done: make(chan struct{}),
-		pendingAcks: map[int]time.Time{}, info: protocol.SessionInfo{URL: wsURL},
+	if tr == nil {
+		var err error
+		tr, open, info, err = dialPolling(ctx, rawURL, opts.Path, header, opts.Client)
+		if err != nil {
+			if wsErr != nil {
+				return nil, fmt.Errorf("%v; polling fallback: %v", wsErr, err)
+			}
+			return nil, err
+		}
 	}
-	if res != nil {
-		c.info.Status = res.StatusCode
-	}
+	info.Transport = tr.name()
 
-	// Engine.IO OPEN.
-	_, data, err := conn.Read(ctx)
-	if err != nil || len(data) == 0 || data[0] != eioOpen {
-		conn.Close(websocket.StatusProtocolError, "")
-		return nil, fmt.Errorf("not a Socket.IO (Engine.IO v4) server: expected an open packet")
+	c := &Client{
+		tr: tr, ns: ns, msgs: make(chan protocol.Message, 1024), done: make(chan struct{}),
+		pendingAcks: map[int]time.Time{}, info: info,
 	}
-	var open struct {
-		SID          string `json:"sid"`
-		PingInterval int    `json:"pingInterval"`
-		PingTimeout  int    `json:"pingTimeout"`
+	var hello struct {
+		SID string `json:"sid"`
 	}
-	_ = json.Unmarshal(data[1:], &open)
-	c.info.SID = open.SID
+	_ = json.Unmarshal(open[1:], &hello)
+	c.info.SID = hello.SID
 
 	// Socket.IO CONNECT to the namespace.
-	connect := "0"
+	connect := string(eioMessage) + "0"
 	if ns != "/" {
 		connect += ns + ","
 	}
 	connect += opts.Auth
-	if err := c.writeEIO(ctx, eioMessage, connect); err != nil {
-		conn.Close(websocket.StatusInternalError, "")
+	if err := tr.writeText(ctx, connect); err != nil {
+		tr.close(false)
 		return nil, err
 	}
 	for {
-		_, data, err := conn.Read(ctx)
+		data, binary, err := tr.read(ctx)
 		if err != nil {
+			tr.close(false)
 			return nil, fmt.Errorf("waiting for Socket.IO connect: %w", err)
 		}
-		if len(data) == 0 {
+		if binary || len(data) == 0 {
 			continue
 		}
 		switch data[0] {
 		case eioPing:
-			_ = c.writeEIO(ctx, eioPong, string(data[1:]))
+			_ = tr.writeText(ctx, string(eioPong)+string(data[1:]))
 			continue
 		case eioMessage:
 		default:
@@ -148,7 +169,7 @@ func Dial(ctx context.Context, rawURL string, opts Options) (*Client, error) {
 			go c.readLoop()
 			return c, nil
 		case sioConnectError:
-			conn.Close(websocket.StatusNormalClosure, "")
+			tr.close(true)
 			var e struct {
 				Message string `json:"message"`
 			}
@@ -158,6 +179,62 @@ func Dial(ctx context.Context, rawURL string, opts Options) (*Client, error) {
 			return nil, fmt.Errorf("server refused namespace %s: %s", ns, p.payload)
 		}
 	}
+}
+
+func dialWS(ctx context.Context, rawURL, path string, header http.Header, client *http.Client) (transport, []byte, protocol.SessionInfo, error) {
+	var info protocol.SessionInfo
+	wsURL, err := engineURL(rawURL, path, TransportWebSocket)
+	if err != nil {
+		return nil, nil, info, err
+	}
+	info.URL = wsURL
+	conn, res, err := websocket.Dial(ctx, wsURL, &websocket.DialOptions{HTTPHeader: header, HTTPClient: client})
+	if err != nil {
+		if res != nil {
+			return nil, nil, info, fmt.Errorf("Socket.IO handshake failed: server answered %s (is the path %q right?)", res.Status, pathOr(path))
+		}
+		return nil, nil, info, fmt.Errorf("could not connect to %s: %w", wsURL, err)
+	}
+	conn.SetReadLimit(16 << 20)
+	if res != nil {
+		info.Status = res.StatusCode
+	}
+	tr := &wsTransport{conn: conn}
+	data, _, err := tr.read(ctx)
+	if err != nil || len(data) == 0 || data[0] != eioOpen {
+		tr.close(false)
+		return nil, nil, info, fmt.Errorf("not a Socket.IO (Engine.IO v4) server: expected an open packet")
+	}
+	return tr, data, info, nil
+}
+
+func dialPolling(ctx context.Context, rawURL, path string, header http.Header, client *http.Client) (transport, []byte, protocol.SessionInfo, error) {
+	var info protocol.SessionInfo
+	raw, err := engineURL(rawURL, path, TransportPolling)
+	if err != nil {
+		return nil, nil, info, err
+	}
+	u, _ := url.Parse(raw)
+	info.URL = raw
+	if client == nil {
+		client = http.DefaultClient
+	}
+	tr := newPollTransport(u, header, client)
+	open, err := tr.handshake(ctx)
+	if err != nil {
+		tr.close(false)
+		return nil, nil, info, fmt.Errorf("Socket.IO polling handshake (%s): %w", raw, err)
+	}
+	var hello struct {
+		SID string `json:"sid"`
+	}
+	if json.Unmarshal(open[1:], &hello) != nil || hello.SID == "" {
+		tr.close(false)
+		return nil, nil, info, errors.New("Socket.IO polling handshake: no session id")
+	}
+	tr.setSID(hello.SID)
+	info.Status = http.StatusOK
+	return tr, open, info, nil
 }
 
 func pathOr(p string) string {
@@ -170,7 +247,7 @@ func pathOr(p string) string {
 // engineURL converts http(s)://host/ns?query into the Engine.IO websocket
 // endpoint. The URL path is ignored (Socket.IO uses it for nothing); the
 // namespace comes from Options.
-func engineURL(raw, path string) (string, error) {
+func engineURL(raw, path, transport string) (string, error) {
 	raw = strings.TrimSpace(raw)
 	if !strings.Contains(raw, "://") {
 		raw = "http://" + raw
@@ -179,13 +256,23 @@ func engineURL(raw, path string) (string, error) {
 	if err != nil || u.Host == "" {
 		return "", fmt.Errorf("invalid Socket.IO URL %q", raw)
 	}
+	secure := false
 	switch u.Scheme {
 	case "http", "ws":
-		u.Scheme = "ws"
 	case "https", "wss":
-		u.Scheme = "wss"
+		secure = true
 	default:
 		return "", fmt.Errorf("unsupported URL scheme %q", u.Scheme)
+	}
+	switch {
+	case transport == TransportPolling && secure:
+		u.Scheme = "https"
+	case transport == TransportPolling:
+		u.Scheme = "http"
+	case secure:
+		u.Scheme = "wss"
+	default:
+		u.Scheme = "ws"
 	}
 	u.Path = pathOr(path)
 	if !strings.HasSuffix(u.Path, "/") {
@@ -193,16 +280,17 @@ func engineURL(raw, path string) (string, error) {
 	}
 	q := u.Query()
 	q.Set("EIO", "4")
-	q.Set("transport", "websocket")
+	q.Set("transport", transport)
 	u.RawQuery = q.Encode()
 	return u.String(), nil
 }
 
 type packet struct {
-	typ     byte
-	ns      string
-	ackID   *int
-	payload string
+	typ         byte
+	attachments int
+	ns          string
+	ackID       *int
+	payload     string
 }
 
 // parsePacket decodes "<type>[<n>-][<ns>,][<id>][<json>]".
@@ -214,6 +302,7 @@ func parsePacket(s string) (packet, error) {
 	s = s[1:]
 	if p.typ == sioBinaryEvent || p.typ == sioBinaryAck {
 		if i := strings.IndexByte(s, '-'); i >= 0 {
+			p.attachments, _ = strconv.Atoi(s[:i])
 			s = s[i+1:]
 		}
 	}
@@ -240,13 +329,12 @@ func parsePacket(s string) (packet, error) {
 
 // Client is a connected Socket.IO namespace. It implements protocol.Session.
 type Client struct {
-	conn *websocket.Conn
+	tr   transport
 	ns   string
 	info protocol.SessionInfo
 	msgs chan protocol.Message
 	done chan struct{}
 
-	writeMu sync.Mutex
 	mu      sync.Mutex
 	seq     int
 	nextAck int
@@ -254,6 +342,10 @@ type Client struct {
 	pendingAcks map[int]time.Time
 	err         error
 	closing     bool
+
+	// A binary packet waiting for its attachments (read loop only).
+	pending     *packet
+	attachments [][]byte
 }
 
 func (c *Client) Messages() <-chan protocol.Message { return c.msgs }
@@ -267,9 +359,7 @@ func (c *Client) Err() error {
 }
 
 func (c *Client) writeEIO(ctx context.Context, typ byte, payload string) error {
-	c.writeMu.Lock()
-	defer c.writeMu.Unlock()
-	return c.conn.Write(ctx, websocket.MessageText, []byte(string(typ)+payload))
+	return c.tr.writeText(ctx, string(typ)+payload)
 }
 
 func (c *Client) stamp(m protocol.Message) protocol.Message {
@@ -303,10 +393,14 @@ func (c *Client) readLoop() {
 	defer close(c.done)
 	ctx := context.Background()
 	for {
-		_, data, err := c.conn.Read(ctx)
+		data, binary, err := c.tr.read(ctx)
 		if err != nil {
 			c.finish(err, "")
 			return
+		}
+		if binary {
+			c.attachment(data)
+			continue
 		}
 		if len(data) == 0 {
 			continue
@@ -323,21 +417,56 @@ func (c *Client) readLoop() {
 	}
 }
 
+// attachment collects a binary frame for the pending binary packet.
+func (c *Client) attachment(data []byte) {
+	if c.pending == nil {
+		return
+	}
+	c.attachments = append(c.attachments, append([]byte(nil), data...))
+	if len(c.attachments) < c.pending.attachments {
+		return
+	}
+	p := *c.pending
+	payload, size := fillPlaceholders(p.payload, c.attachments)
+	c.pending, c.attachments = nil, nil
+	if p.typ == sioBinaryEvent {
+		p.typ = sioEvent
+	} else {
+		p.typ = sioAck
+	}
+	p.payload = payload
+	c.dispatch(p, size)
+}
+
 func (c *Client) handle(raw string) {
 	p, err := parsePacket(raw)
 	if err != nil || p.ns != c.ns {
 		return
 	}
+	if (p.typ == sioBinaryEvent || p.typ == sioBinaryAck) && p.attachments > 0 {
+		c.pending, c.attachments = &p, nil
+		return
+	}
+	switch p.typ {
+	case sioBinaryEvent:
+		p.typ = sioEvent
+	case sioBinaryAck:
+		p.typ = sioAck
+	}
+	c.dispatch(p, len(p.payload))
+}
+
+func (c *Client) dispatch(p packet, size int) {
 	switch p.typ {
 	case sioEvent:
 		event, args := splitEvent(p.payload)
-		c.deliver(protocol.Message{Direction: "received", Kind: "event", Event: event, Data: args, AckID: p.ackID, Size: len(p.payload)})
+		c.deliver(protocol.Message{Direction: "received", Kind: "event", Event: event, Data: args, AckID: p.ackID, Size: size})
 		// The server asked for an ack; answer with no arguments so it doesn't hang.
 		if p.ackID != nil {
-			_ = c.writeEIO(context.Background(), eioMessage, c.frame(sioAck, p.ackID, "[]"))
+			_ = c.writeEIO(context.Background(), eioMessage, c.frame(sioAck, 0, p.ackID, "[]"))
 		}
 	case sioAck:
-		m := protocol.Message{Direction: "received", Kind: "ack", Data: p.payload, AckID: p.ackID, Size: len(p.payload)}
+		m := protocol.Message{Direction: "received", Kind: "ack", Data: p.payload, AckID: p.ackID, Size: size}
 		if p.ackID != nil {
 			c.mu.Lock()
 			if t, ok := c.pendingAcks[*p.ackID]; ok {
@@ -349,10 +478,102 @@ func (c *Client) handle(raw string) {
 		c.deliver(m)
 	case sioDisconnect:
 		c.finish(nil, "server disconnected the namespace")
-		c.conn.Close(websocket.StatusNormalClosure, "")
-	case sioBinaryEvent, sioBinaryAck:
-		c.deliver(protocol.Message{Direction: "system", Kind: "error", Data: "received a binary Socket.IO packet; binary attachments are not supported yet"})
+		c.tr.close(true)
 	}
+}
+
+// fillPlaceholders replaces {"_placeholder":true,"num":i} with
+// {"$binary": base64(attachment i)} and returns the total attachment size.
+func fillPlaceholders(payload string, atts [][]byte) (string, int) {
+	dec := json.NewDecoder(strings.NewReader(payload))
+	dec.UseNumber()
+	var v any
+	if dec.Decode(&v) != nil {
+		return payload, len(payload)
+	}
+	size := len(payload)
+	for _, a := range atts {
+		size += len(a)
+	}
+	var walk func(any) any
+	walk = func(x any) any {
+		switch t := x.(type) {
+		case map[string]any:
+			if ph, _ := t["_placeholder"].(bool); ph {
+				if n, err := t["num"].(json.Number).Int64(); err == nil && int(n) < len(atts) {
+					return map[string]any{"$binary": base64.StdEncoding.EncodeToString(atts[n])}
+				}
+			}
+			for k, e := range t {
+				t[k] = walk(e)
+			}
+		case []any:
+			for i, e := range t {
+				t[i] = walk(e)
+			}
+		}
+		return x
+	}
+	out, err := marshalNoEscape(walk(v))
+	if err != nil {
+		return payload, size
+	}
+	return out, size
+}
+
+// extractBinary replaces {"$binary": base64} values with placeholders and
+// returns the attachments, for sending.
+func extractBinary(payload string) (string, [][]byte, error) {
+	if !strings.Contains(payload, `"$binary"`) {
+		return payload, nil, nil
+	}
+	dec := json.NewDecoder(strings.NewReader(payload))
+	dec.UseNumber()
+	var v any
+	if err := dec.Decode(&v); err != nil {
+		return payload, nil, nil
+	}
+	var atts [][]byte
+	var bad error
+	var walk func(any) any
+	walk = func(x any) any {
+		switch t := x.(type) {
+		case map[string]any:
+			if b64, ok := t["$binary"].(string); ok && len(t) == 1 {
+				b, err := base64.StdEncoding.DecodeString(b64)
+				if err != nil {
+					bad = fmt.Errorf("$binary must be base64: %w", err)
+					return x
+				}
+				atts = append(atts, b)
+				return map[string]any{"_placeholder": true, "num": len(atts) - 1}
+			}
+			for k, e := range t {
+				t[k] = walk(e)
+			}
+		case []any:
+			for i, e := range t {
+				t[i] = walk(e)
+			}
+		}
+		return x
+	}
+	w := walk(v)
+	if bad != nil {
+		return "", nil, bad
+	}
+	out, err := marshalNoEscape(w)
+	return out, atts, err
+}
+
+func marshalNoEscape(v any) (string, error) {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(v); err != nil {
+		return "", err
+	}
+	return strings.TrimRight(buf.String(), "\n"), nil
 }
 
 // splitEvent turns `["name", a, b]` into ("name", `[a,b]`).
@@ -367,9 +588,15 @@ func splitEvent(payload string) (string, string) {
 	return name, string(rest)
 }
 
-func (c *Client) frame(typ byte, ackID *int, payload string) string {
+// frame builds a Socket.IO packet: type, attachment count for binary types,
+// namespace, ack id, payload.
+func (c *Client) frame(typ byte, attachments int, ackID *int, payload string) string {
 	var b strings.Builder
 	b.WriteByte(typ)
+	if typ == sioBinaryEvent || typ == sioBinaryAck {
+		b.WriteString(strconv.Itoa(attachments))
+		b.WriteByte('-')
+	}
 	if c.ns != "/" {
 		b.WriteString(c.ns)
 		b.WriteByte(',')
@@ -383,22 +610,35 @@ func (c *Client) frame(typ byte, ackID *int, payload string) string {
 
 // Send emits an event. Data is a JSON array of arguments; any other JSON
 // value is sent as the single argument, and non-JSON text as a string.
+// Values written {"$binary": base64} go as binary attachments; with Binary
+// set, Data is base64 and is sent as one binary argument.
 func (c *Client) Send(ctx context.Context, out protocol.Outgoing) (protocol.Message, error) {
 	if out.Event == "" {
 		return protocol.Message{}, errors.New("Socket.IO messages need an event name")
 	}
-	if out.Binary {
-		return protocol.Message{}, errors.New("binary Socket.IO payloads are not supported yet")
-	}
 	args := argsArray(out.Data)
+	if out.Binary {
+		if _, err := base64.StdEncoding.DecodeString(strings.TrimSpace(out.Data)); err != nil {
+			return protocol.Message{}, fmt.Errorf("binary messages must be base64: %w", err)
+		}
+		args = `[{"$binary":"` + strings.TrimSpace(out.Data) + `"}]`
+	}
 	name, _ := json.Marshal(out.Event)
 	payload := "[" + string(name)
 	if args != "[]" {
 		payload += "," + args[1:len(args)-1]
 	}
 	payload += "]"
+	wire, atts, err := extractBinary(payload)
+	if err != nil {
+		return protocol.Message{}, err
+	}
+	size := len(wire)
+	for _, a := range atts {
+		size += len(a)
+	}
 
-	m := protocol.Message{Direction: "sent", Kind: "event", Event: out.Event, Data: args, Size: len(payload)}
+	m := protocol.Message{Direction: "sent", Kind: "event", Event: out.Event, Data: args, Size: size}
 	var ackID *int
 	if out.Ack {
 		c.mu.Lock()
@@ -408,10 +648,19 @@ func (c *Client) Send(ctx context.Context, out protocol.Outgoing) (protocol.Mess
 		c.mu.Unlock()
 		ackID, m.AckID = &id, &id
 	}
+	typ := byte(sioEvent)
+	if len(atts) > 0 {
+		typ = sioBinaryEvent
+	}
 	// Stamped before writing: a fast reply or ack must come after the emit.
 	m = c.stamp(m)
-	if err := c.writeEIO(ctx, eioMessage, c.frame(sioEvent, ackID, payload)); err != nil {
+	if err := c.writeEIO(ctx, eioMessage, c.frame(typ, len(atts), ackID, wire)); err != nil {
 		return m, fmt.Errorf("emit failed: %w", err)
+	}
+	for _, a := range atts {
+		if err := c.tr.writeBinary(ctx, a); err != nil {
+			return m, fmt.Errorf("emit failed: %w", err)
+		}
 	}
 	return m, nil
 }
@@ -466,8 +715,8 @@ func (c *Client) Close() error {
 	c.mu.Lock()
 	c.closing = true
 	c.mu.Unlock()
-	_ = c.writeEIO(context.Background(), eioMessage, c.frame(sioDisconnect, nil, ""))
-	_ = c.conn.Close(websocket.StatusNormalClosure, "")
+	_ = c.writeEIO(context.Background(), eioMessage, c.frame(sioDisconnect, 0, nil, ""))
+	c.tr.close(true)
 	<-c.done
 	return nil
 }

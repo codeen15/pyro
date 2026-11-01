@@ -161,6 +161,9 @@ type SocketIOConfig struct {
 	Namespace string   `yaml:"namespace,omitempty" json:"namespace,omitempty"`
 	AuthJSON  string   `yaml:"auth,omitempty" json:"auth,omitempty"` // CONNECT packet payload
 	Listen    []string `yaml:"listen,omitempty" json:"listen,omitempty"`
+	// Transport is auto (WebSocket, falling back to long-polling; default),
+	// websocket or polling.
+	Transport string `yaml:"transport,omitempty" json:"transport,omitempty"`
 }
 
 // Environment is stored as environments/<name>.env.yaml.

@@ -98,6 +98,7 @@ export interface SocketIOConfig {
   namespace?: string;
   auth?: string;
   listen?: string[];
+  transport?: "auto" | "websocket" | "polling";
 }
 
 export interface Environment {
@@ -182,7 +183,7 @@ export interface SessionState {
   id: string;
   path?: string;
   kind: Kind;
-  info: { url: string; status?: number; headers?: KeyValue[]; subprotocol?: string; sid?: string };
+  info: { url: string; status?: number; headers?: KeyValue[]; subprotocol?: string; sid?: string; transport?: string };
   openedAt: string;
   closed: boolean;
   error?: string;

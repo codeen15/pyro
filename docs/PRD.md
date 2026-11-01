@@ -38,7 +38,7 @@ It is extensible through installable plugins, as JMeter is.
 ## Key requirements
 | Area | Requirement |
 |---|---|
-| Protocols | HTTP/1.1 + HTTP/2, TLS/mTLS, proxies, cookies; WebSocket (text/binary, subprotocols); Socket.IO v4/v5 (namespaces, events, acks). |
+| Protocols | HTTP/1.1 + HTTP/2, TLS/mTLS, proxies, cookies; WebSocket (text/binary, subprotocols); Socket.IO v4/v5 (namespaces, events, acks, binary attachments; WebSocket or long-polling). |
 | Scripting | Pre/post JS scripts with a `pm.*` compatibility layer and a native `pyro.*` API. |
 | Assertions | Declarative status, header, JSONPath, body and duration checks; extractors into variables. |
 | Load | 5k+ HTTP VUs and 2k+ concurrent WebSocket connections on a laptop; HDR-histogram percentiles; no coordinated omission in arrival-rate mode. |

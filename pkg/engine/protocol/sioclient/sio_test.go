@@ -22,7 +22,7 @@ func TestParsePacket(t *testing.T) {
 		`312["ok"]`:              {typ: '3', ns: "/", payload: `["ok"]`},
 		`0{"sid":"a"}`:           {typ: '0', ns: "/", payload: `{"sid":"a"}`},
 		`0/admin,`:               {typ: '0', ns: "/admin"},
-		`51-["img",{"_p":true}]`: {typ: '5', ns: "/", payload: `["img",{"_p":true}]`},
+		`51-["img",{"_p":true}]`: {typ: '5', attachments: 1, ns: "/", payload: `["img",{"_p":true}]`},
 		`1/admin`:                {typ: '1', ns: "/admin"},
 	}
 	for in, want := range cases {
@@ -52,14 +52,14 @@ func TestArgsAndURL(t *testing.T) {
 			t.Errorf("argsArray(%q) = %s, want %s", in, got, want)
 		}
 	}
-	u, err := engineURL("https://chat.example.com/ignored?token=abc", "")
+	u, err := engineURL("https://chat.example.com/ignored?token=abc", "", TransportWebSocket)
 	if err != nil || u != "wss://chat.example.com/socket.io/?EIO=4&token=abc&transport=websocket" {
 		t.Errorf("url = %s, %v", u, err)
 	}
-	if u, _ := engineURL("localhost:3000", "/realtime"); u != "ws://localhost:3000/realtime/?EIO=4&transport=websocket" {
+	if u, _ := engineURL("localhost:3000", "/realtime", TransportWebSocket); u != "ws://localhost:3000/realtime/?EIO=4&transport=websocket" {
 		t.Errorf("custom path url = %s", u)
 	}
-	if _, err := engineURL("ftp://x", ""); err == nil {
+	if _, err := engineURL("ftp://x", "", TransportWebSocket); err == nil {
 		t.Error("expected scheme error")
 	}
 }
@@ -182,19 +182,46 @@ func TestEventsAcksAndNamespaces(t *testing.T) {
 }
 
 // TestRealServer checks conformance against the official Node server. Start
-// one (see testdata/server.js) and set PYRO_SIO_URL to run it.
+// it (see testdata/server.js) and set PYRO_SIO_URL, and PYRO_SIO_POLLING_URL
+// for a server that only allows long-polling.
 func TestRealServer(t *testing.T) {
 	url := os.Getenv("PYRO_SIO_URL")
 	if url == "" {
 		t.Skip("PYRO_SIO_URL not set")
 	}
+	for _, tc := range []struct {
+		url, transport, want string
+	}{
+		{url, TransportAuto, "websocket"},
+		{url, TransportPolling, "polling"},
+		{os.Getenv("PYRO_SIO_POLLING_URL"), TransportAuto, "polling"}, // WebSocket refused: falls back
+	} {
+		if tc.url == "" {
+			continue
+		}
+		t.Run(tc.transport+"→"+tc.want, func(t *testing.T) { conformance(t, tc.url, tc.transport, tc.want) })
+	}
+	if _, err := Dial(context.Background(), url, Options{Namespace: "/admin"}); err == nil || !strings.Contains(err.Error(), "admins only") {
+		t.Fatalf("admin namespace err = %v", err)
+	}
+	if p := os.Getenv("PYRO_SIO_POLLING_URL"); p != "" {
+		if _, err := Dial(context.Background(), p, Options{Transport: TransportWebSocket}); err == nil {
+			t.Fatal("websocket-only dial to a polling-only server should fail")
+		}
+	}
+}
+
+func conformance(t *testing.T, url, transport, want string) {
 	ctx := context.Background()
-	c, err := Dial(ctx, url, Options{Auth: `{"token":"pyro"}`})
+	c, err := Dial(ctx, url, Options{Auth: `{"token":"pyro"}`, Transport: transport})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer c.Close()
-	if m := next(t, c); m.Event != "welcome" || m.Data != `["pyro"]` {
+	if c.Info().Transport != want {
+		t.Errorf("transport = %s, want %s", c.Info().Transport, want)
+	}
+	if m := next(t, c); m.Event != "welcome" || m.Data != `["pyro","`+want+`"]` {
 		t.Fatalf("welcome = %+v", m)
 	}
 	c.Send(ctx, protocol.Outgoing{Event: "echo", Data: `[1, "two", {"three": 3}]`, Ack: true})
@@ -209,7 +236,54 @@ func TestRealServer(t *testing.T) {
 	if got["ack"].Data != `["ok",3]` {
 		t.Fatalf("ack = %+v", got["ack"])
 	}
-	if _, err := Dial(ctx, url, Options{Namespace: "/admin"}); err == nil || !strings.Contains(err.Error(), "admins only") {
-		t.Fatalf("admin namespace err = %v", err)
+
+	// Binary both ways: a buffer argument, echoed with its length, and a
+	// binary ack.
+	if _, err := c.Send(ctx, protocol.Outgoing{Event: "bin", Data: `[{"$binary":"AAEC/w=="}, "meta"]`, Ack: true}); err != nil {
+		t.Fatal(err)
+	}
+	got = map[string]protocol.Message{}
+	for len(got) < 2 {
+		m := next(t, c)
+		got[m.Kind] = m
+	}
+	if got["event"].Data != `[{"$binary":"AAEC/w=="},{"len":4,"meta":"meta"}]` || got["event"].Size < 4 {
+		t.Fatalf("binary echo = %+v", got["event"])
+	}
+	if got["ack"].Data != `[{"$binary":"CQgH"}]` {
+		t.Fatalf("binary ack = %+v", got["ack"])
+	}
+	// A binary value nested in an object.
+	c.Send(ctx, protocol.Outgoing{Event: "sendme"})
+	if m := next(t, c); m.Event != "file" || m.Data != `[{"data":{"$binary":"aGkgdGhlcmU="},"name":"a.bin"}]` {
+		t.Fatalf("nested binary = %+v", m)
+	}
+}
+
+// TestRealServerKeepalive idles past several pings (start the server with
+// PING_MS=500) and checks the session is still alive on each transport.
+func TestRealServerKeepalive(t *testing.T) {
+	url := os.Getenv("PYRO_SIO_FASTPING_URL")
+	if url == "" {
+		t.Skip("PYRO_SIO_FASTPING_URL not set")
+	}
+	for _, tr := range []string{TransportWebSocket, TransportPolling} {
+		t.Run(tr, func(t *testing.T) {
+			ctx := context.Background()
+			c, err := Dial(ctx, url, Options{Transport: tr})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer c.Close()
+			next(t, c) // welcome
+			time.Sleep(3 * time.Second)
+			if c.Err() != nil {
+				t.Fatalf("session died while idle: %v", c.Err())
+			}
+			c.Send(ctx, protocol.Outgoing{Event: "echo", Data: `["still here"]`})
+			if m := next(t, c); m.Data != `["still here"]` {
+				t.Fatalf("after idle: %+v", m)
+			}
+		})
 	}
 }

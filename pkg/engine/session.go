@@ -55,7 +55,7 @@ func (e *Engine) Connect(ctx context.Context, in SendInput) *ConnectResult {
 	case model.KindSocketIO:
 		opts := sioclient.Options{Headers: sent.Headers}
 		if c := sent.SocketIO; c != nil {
-			opts.Path, opts.Namespace, opts.Auth = c.Path, c.Namespace, c.AuthJSON
+			opts.Path, opts.Namespace, opts.Auth, opts.Transport = c.Path, c.Namespace, c.AuthJSON, c.Transport
 		}
 		s, err = sioclient.Dial(ctx, sent.URL, opts)
 	default:

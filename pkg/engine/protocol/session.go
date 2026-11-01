@@ -41,7 +41,9 @@ type SessionInfo struct {
 	Headers     []model.KeyValue `json:"headers,omitempty"`
 	Subprotocol string           `json:"subprotocol,omitempty"`
 	SID         string           `json:"sid,omitempty"`
-	ConnectTime time.Duration    `json:"-"`
+	// Transport is the Socket.IO transport in use: websocket or polling.
+	Transport   string        `json:"transport,omitempty"`
+	ConnectTime time.Duration `json:"-"`
 }
 
 // Session is an open WebSocket or Socket.IO connection.
