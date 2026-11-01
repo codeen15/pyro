@@ -54,6 +54,10 @@ type Request struct {
 	Assertions []Assertion `yaml:"assertions,omitempty" json:"assertions,omitempty"`
 	Extract    []Extractor `yaml:"extract,omitempty" json:"extract,omitempty"`
 
+	// Options holds settings for plugin request types (kind plugin:<id>),
+	// as declared by the plugin's manifest fields.
+	Options map[string]string `yaml:"options,omitempty" json:"options,omitempty"`
+
 	// Streaming protocols (WebSocket, Socket.IO).
 	Messages []Message       `yaml:"messages,omitempty" json:"messages,omitempty"`
 	SocketIO *SocketIOConfig `yaml:"socketio,omitempty" json:"socketio,omitempty"`

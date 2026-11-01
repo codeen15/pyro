@@ -10,6 +10,7 @@ require (
 	github.com/go-chi/chi/v5 v5.5.0
 	github.com/ohler55/ojg v1.28.9
 	github.com/spf13/cobra v1.10.2
+	github.com/tetratelabs/wazero v1.12.0
 	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.61.1
 )

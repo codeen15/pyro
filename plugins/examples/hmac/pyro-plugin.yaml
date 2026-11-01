@@ -1,0 +1,17 @@
+name: hmac
+version: 0.1.0
+abi: 1
+title: HMAC signature
+description: Signs requests with an HMAC-SHA256 of the method, URL, timestamp and body.
+author: Pyro
+license: Apache-2.0
+module: hmac.wasm
+provides:
+  - kind: auth
+    id: hmac
+    title: HMAC-SHA256
+    fields:
+      - { key: keyId, label: Key ID, type: string }
+      - { key: secret, label: Secret, type: secret }
+      - { key: header, label: Signature header, type: string, default: X-Signature }
+capabilities: {}

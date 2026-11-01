@@ -60,7 +60,7 @@ func TestLoadHTML(t *testing.T) {
 			{Metric: "http_req_duration", Condition: "p(95)<300", Actual: 420, Passed: false, Breached: true},
 			{Metric: "http_req_failed", Condition: "rate<0.05", Actual: 0.02, Passed: true, Breached: true},
 		},
-		Errors:     []load.ErrorCount{{Message: "HTTP 500 from shop/list", Count: 3}},
+		Errors: []load.ErrorCount{{Message: "HTTP 500 from shop/list", Count: 3}},
 	}
 	b, err := LoadHTML(res)
 	if err != nil {

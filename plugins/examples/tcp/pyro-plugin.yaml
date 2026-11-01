@@ -1,0 +1,22 @@
+name: tcp
+version: 0.1.0
+abi: 1
+title: Raw TCP
+description: Send bytes over a TCP (or TLS) connection and read the reply. Works in requests, collection runs and load tests.
+author: Pyro
+license: Apache-2.0
+module: tcp.wasm
+provides:
+  - kind: protocol
+    id: tcp
+    title: TCP
+    urlPlaceholder: tcp://localhost:7000
+    fields:
+      - { key: encoding, label: Payload, type: select, options: [text, hex], default: text, help: "How the body is written: as text or as hex bytes (e.g. 48 65 6c 6c 6f)." }
+      - { key: readUntil, label: Read until, type: select, options: [delimiter, close, bytes, idle], default: delimiter }
+      - { key: delimiter, label: Delimiter, type: string, default: "\\n", help: "Used with 'delimiter'. Escapes: \\n \\r \\t \\0." }
+      - { key: bytes, label: Bytes to read, type: number, default: "1024", help: "Used with 'bytes'." }
+      - { key: timeoutMs, label: Read timeout (ms), type: number, default: "5000" }
+      - { key: tls, label: TLS, type: boolean, default: "false" }
+capabilities:
+  network: ["*:*"]
