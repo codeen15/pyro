@@ -8,7 +8,8 @@ First public release.
 - HTTP requests with variables and environments, auth (basic, bearer, API key, digest,
   OAuth 2.0) inherited from collections and folders, a response viewer with
   timings, cookies and history.
-- WebSocket and Socket.IO consoles (Engine.IO v4 / Socket.IO v5: namespaces, events, acks).
+- WebSocket and Socket.IO consoles (Engine.IO v4 / Socket.IO v5: namespaces, events, acks,
+  binary attachments; WebSocket or HTTP long-polling with automatic fallback).
 - `pm.*`-compatible pre-request and test scripts (bundled chai), declarative assertions and
   extractors.
 - Collection runner in the UI and `pyro run` for CI (data files, JUnit and JSON reports).
@@ -21,7 +22,7 @@ First public release.
   `globals.yaml` for workspace-wide variables.
 - OAuth 2.0 token fetching: client credentials, password, authorization code with PKCE
   (browser sign-in), refresh tokens. Digest auth (MD5, SHA-256).
-- Cookie manager; saved response examples (also imported from Postman and OpenAPI and
+- Cookie manager (cookies survive restarts); saved response examples (also imported from Postman and OpenAPI and
   exported to Postman); a light theme.
 
 **Load testing**
@@ -30,7 +31,9 @@ First public release.
   WebSocket holds), data feeders and thresholds with abort-on-fail.
 - Profiles (smoke, load, stress, spike, soak, breakpoint), a visual designer, a live
   dashboard, saved runs, run comparison and self-contained HTML reports; `pyro load` for CI.
-- Distributed tests across `pyro agent` machines with exactly merged percentiles.
+- Distributed tests across `pyro agent` machines with exactly merged percentiles; agents can
+  listen or connect out to the controller (behind NAT).
+- A requests-per-second cap (`maxRPS`, `--max-rps`, `loadMaxRPS` in `pyro.yaml`).
 - Live outputs to InfluxDB, Prometheus remote write, NDJSON and CSV.
 - The load generator's own CPU and memory, with a warning when it saturates.
 

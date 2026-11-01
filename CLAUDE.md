@@ -2,7 +2,7 @@
 
 Pyro is an API client (REST, WebSocket, Socket.IO, Postman import) and load-testing
 tool (stress, spike, soak, concurrency) with WASM plugins. A single Go binary runs the
-engine and serves a React web UI on localhost. **Current phase: 7 (API-client completeness) done; next: push to GitHub, check CI, tag v0.1.0**
+engine and serves a React web UI on localhost. **Current phase: 8 (protocol and load depth) done; next: push to GitHub, check CI, tag v0.1.0**
 (see `docs/roadmap.md`). Product context: `PRODUCT.md`; visual system: `DESIGN.md`.
 
 ## Layout
@@ -42,7 +42,10 @@ cd web && npm run e2e   # browser tests (needs bin/pyro and npx playwright insta
 - Model types carry both `yaml` and `json` tags (lowerCamel, `omitempty` for optional fields).
 - Store errors are `store.ErrNotFound`, `ErrInvalidPath` and `ErrExists`; the server maps them to 404/400/409.
 - Tests use in-process servers (`httptest`, `t.TempDir()` workspaces); no network. Socket.IO conformance against the
-  real Node server: `pkg/engine/protocol/sioclient/testdata/server.js` + `PYRO_SIO_URL`.
+  real Node server: `pkg/engine/protocol/sioclient/testdata/server.js` + `PYRO_SIO_URL` (also `PYRO_SIO_POLLING_URL`
+  for a polling-only server and `PYRO_SIO_FASTPING_URL` for keepalive; see the CI workflow).
+- Killing background processes: use ports (`fuser -k PORT/tcp`) or `pgrep -f "pat[t]ern"`; a bare `pkill -f pattern`
+  matches the shell running it.
 - Server pushes live data over `/api/v1/events` (topics `session:<id>`, `run:<id>`, `load:<id>`); clients subscribe,
   then fetch state once and merge.
 - Distributed load tests: agents send metric deltas (`metrics.SeriesDelta`), never summaries, so the controller's
