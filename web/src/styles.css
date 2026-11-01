@@ -2673,3 +2673,33 @@ fieldset legend {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }
 }
+
+/* Examples */
+.examples {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.example-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.example-head .cell {
+  flex: 1;
+  min-width: 0;
+  max-width: 520px;
+}
+.example-body {
+  display: grid;
+  gap: 8px;
+  margin: 6px 0 8px 30px;
+}
+.example-body textarea {
+  min-height: 160px;
+}
+.save-example {
+  margin-left: auto;
+}

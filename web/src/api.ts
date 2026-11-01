@@ -61,6 +61,15 @@ export interface PyroRequest {
   extract?: Extractor[];
   messages?: SavedMessage[];
   socketio?: SocketIOConfig;
+  examples?: Example[];
+}
+
+/** A saved response. */
+export interface Example {
+  name: string;
+  status?: number;
+  headers?: KeyValue[];
+  body?: string;
 }
 
 export interface Assertion {

@@ -289,10 +289,59 @@ func (c *converter) operation(p, method string, op *yaml.Node, shared []*yaml.No
 			r.Auth = &model.Auth{Type: "none"}
 		}
 	}
+	r.Examples = c.responseExamples(op)
 	if get(op, "callbacks") != nil {
 		c.b.Report.Warn(where, "openapi.callbacks", "callbacks weren't imported")
 	}
 	return r, slugBase
+}
+
+// responseExamples turns documented JSON responses into examples: the
+// media example, else the first named example, else one generated from the
+// schema (v2: the response schema or its examples).
+func (c *converter) responseExamples(op *yaml.Node) []model.Example {
+	var out []model.Example
+	resps := get(op, "responses")
+	for _, code := range keys(resps) {
+		status, err := strconv.Atoi(code)
+		if err != nil {
+			continue // "default", "2XX"
+		}
+		rs := c.deref(get(resps, code))
+		name := strings.TrimSpace(code + " " + str(get(rs, "description")))
+		var body, ctype string
+		if c.v2 {
+			if ex := get(get(rs, "examples"), "application/json"); ex != nil {
+				body = nodeJSON(ex)
+			} else if sch := get(rs, "schema"); sch != nil {
+				body = c.exampleJSONFor(sch, false)
+			}
+			ctype = "application/json"
+		} else {
+			content := get(rs, "content")
+			for _, mt := range keys(content) {
+				if mediaRank(mt) != 0 {
+					continue
+				}
+				media := get(content, mt)
+				switch {
+				case get(media, "example") != nil:
+					body = nodeJSON(get(media, "example"))
+				case get(media, "examples") != nil && len(keys(get(media, "examples"))) > 0:
+					body = nodeJSON(get(c.deref(get(get(media, "examples"), keys(get(media, "examples"))[0])), "value"))
+				default:
+					body = c.exampleJSONFor(get(media, "schema"), false)
+				}
+				ctype = mt
+				break
+			}
+		}
+		if body == "" {
+			continue
+		}
+		out = append(out, model.Example{Name: name, Status: status, Headers: []model.KeyValue{{Key: "Content-Type", Value: ctype}}, Body: body})
+	}
+	return out
 }
 
 // paramValue picks an example value for a parameter.
@@ -543,8 +592,12 @@ func (c *converter) resolve(ref string) *yaml.Node {
 	return n
 }
 
-func (c *converter) exampleJSON(sch *yaml.Node) string {
-	v := c.example(sch, 0, map[string]bool{}, true)
+func (c *converter) exampleJSON(sch *yaml.Node) string { return c.exampleJSONFor(sch, true) }
+
+// exampleJSONFor renders a schema example for a request body (readOnly
+// properties left out) or a response (all properties).
+func (c *converter) exampleJSONFor(sch *yaml.Node, request bool) string {
+	v := c.example(sch, 0, map[string]bool{}, request)
 	if v == nil {
 		return ""
 	}

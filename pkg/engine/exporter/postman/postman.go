@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"regexp"
 	"sort"
 	"strconv"
@@ -27,7 +28,17 @@ type item struct {
 	Request     *request `json:"request,omitempty"`
 	Auth        *auth    `json:"auth,omitempty"`
 	Event       []event  `json:"event,omitempty"`
+	Response    []resp   `json:"response,omitempty"`
 	isFolder    bool
+}
+
+type resp struct {
+	Name            string   `json:"name"`
+	OriginalRequest *request `json:"originalRequest,omitempty"`
+	Status          string   `json:"status,omitempty"`
+	Code            int      `json:"code,omitempty"`
+	Header          []kv     `json:"header"`
+	Body            string   `json:"body"`
 }
 
 // MarshalJSON keeps "item": [] on empty folders (that's how Postman tells
@@ -255,7 +266,15 @@ func (x *exporter) request(p string, r *model.Request) *item {
 	}
 	pr.Body = x.body(p, r.Body)
 	pr.Auth = x.auth(p, r.Auth)
-	return &item{Name: r.Name, Request: pr, Event: x.events(r.Scripts, r.Assertions, r.Extract, p)}
+	it := &item{Name: r.Name, Request: pr, Event: x.events(r.Scripts, r.Assertions, r.Extract, p)}
+	for _, ex := range r.Examples {
+		rp := resp{Name: ex.Name, OriginalRequest: pr, Code: ex.Status, Status: http.StatusText(ex.Status), Header: []kv{}, Body: ex.Body}
+		for _, h := range ex.Headers {
+			rp.Header = append(rp.Header, kv{Key: h.Key, Value: h.Value})
+		}
+		it.Response = append(it.Response, rp)
+	}
+	return it
 }
 
 // splitURL fills Postman's structured URL from the raw one; the raw string

@@ -78,6 +78,10 @@ func TestOpenAPI3(t *testing.T) {
 	if h := kv(get.Headers, "X-Request-Id"); h == nil || h.Disabled || h.Value != "00000000-0000-0000-0000-000000000000" || kv(get.Headers, "Accept") != nil {
 		t.Errorf("headers %+v", get.Headers)
 	}
+	if ex := get.Examples; len(ex) != 2 || ex[0].Name != "200 The order" || ex[0].Status != 200 || !strings.Contains(ex[0].Body, `"sku": "A-1"`) ||
+		!strings.Contains(ex[0].Body, `"id"`) || ex[1].Status != 404 || ex[1].Body != "{\n  \"error\": \"not_found\"\n}" {
+		t.Errorf("response examples: %+v", ex)
+	}
 	if del := find(b, "orders/deleteorder"); del.Auth == nil || del.Auth.Type != "none" {
 		t.Errorf("security: [] should mean no auth, got %+v", del.Auth)
 	}

@@ -91,12 +91,15 @@ func TestCollectionV21(t *testing.T) {
 		t.Errorf("checkout = %+v %+v", checkout.Auth, checkout.Body)
 	}
 
+	if ex := find(b, "auth/login").Examples; len(ex) != 1 || ex[0].Name != "200 OK" {
+		t.Errorf("examples = %+v", ex)
+	}
+
 	codes := map[string]string{}
 	for _, w := range b.Report.Warnings {
 		codes[w.Code] += w.Path + ";"
 	}
 	for code, path := range map[string]string{
-		"examples.skipped": "auth/login;",
 		"auth.unsupported": "products/upload-image;",
 		"body.file":        "products/upload-image;",
 		"script.api":       "checkout;",

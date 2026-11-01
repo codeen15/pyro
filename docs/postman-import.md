@@ -27,7 +27,7 @@ The code will live in `pkg/engine/importer/postman`.
 | `variable[]` | `collection.yaml` `variables` |
 | `event[]` `prerequest` / `test` | `scripts.pre` / `scripts.post` |
 | `{{var}}` and `{{$guid}}`-style dynamic variables | Kept as written (same syntax) |
-| Saved examples (`response[]`) | Skipped for now (reported); planned as mock fixtures |
+| Saved examples (`response[]`) | `examples` (name, status code, headers, body) |
 | `protocolProfileBehavior` | Mapped where there is an equivalent (e.g. redirects), otherwise reported |
 | WebSocket and Socket.IO requests (where exported) | `kind: websocket` / `kind: socketio` |
 | Postman Flows, monitors, mocks | Not imported (reported) |

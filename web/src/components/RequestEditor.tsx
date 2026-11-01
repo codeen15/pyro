@@ -7,9 +7,10 @@ import { useApp } from "../store";
 import { KVEditor } from "./KVEditor";
 import { ScriptsEditor, TestsEditor } from "./TestsEditor";
 import { FieldsForm, KindSelect, usePluginTypes } from "./Plugins";
+import { ExamplesEditor } from "./Examples";
 
 const METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];
-type Tab = "params" | "headers" | "body" | "options" | "auth" | "scripts" | "tests";
+type Tab = "params" | "headers" | "body" | "options" | "auth" | "scripts" | "tests" | "examples";
 const TABS: { id: Tab; label: string }[] = [
   { id: "params", label: "Params" },
   { id: "headers", label: "Headers" },
@@ -17,6 +18,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "auth", label: "Auth" },
   { id: "scripts", label: "Scripts" },
   { id: "tests", label: "Tests" },
+  { id: "examples", label: "Examples" },
 ];
 // Plugin request types: the plugin's own fields replace params, and the
 // body is sent as text.
@@ -102,6 +104,7 @@ export function RequestEditor({ path, saved }: { path: string; saved: PyroReques
     options: Object.keys(req.options ?? {}).length,
     scripts: (req.scripts?.pre?.trim() ? 1 : 0) + (req.scripts?.post?.trim() ? 1 : 0),
     tests: (req.assertions?.length ?? 0) + (req.extract?.length ?? 0),
+    examples: req.examples?.length ?? 0,
   };
 
   return (
@@ -198,6 +201,7 @@ export function RequestEditor({ path, saved }: { path: string; saved: PyroReques
           <FieldsForm fields={provider?.fields ?? []} values={req.options} onChange={(options) => edit({ options: Object.keys(options).length ? options : undefined })} label="request type" />
         )}
         {activeTab === "auth" && <AuthEditor auth={req.auth} onChange={(auth) => edit({ auth })} context={{ path, request: req }} />}
+        {activeTab === "examples" && <ExamplesEditor examples={req.examples ?? []} onChange={(examples) => edit({ examples: examples.length ? examples : undefined })} />}
         {activeTab === "scripts" && <ScriptsEditor scripts={req.scripts} onChange={(scripts) => edit({ scripts })} />}
         {activeTab === "tests" && (
           <TestsEditor

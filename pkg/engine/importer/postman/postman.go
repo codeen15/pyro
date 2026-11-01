@@ -57,8 +57,15 @@ type pmItem struct {
 	Request     json.RawMessage `json:"request"`
 	Auth        *pmAuth         `json:"auth"`
 	Event       []pmEvent       `json:"event"`
-	Response    []any           `json:"response"`
+	Response    []pmResponse    `json:"response"`
 	Protocol    map[string]any  `json:"protocolProfileBehavior"`
+}
+
+type pmResponse struct {
+	Name   string          `json:"name"`
+	Code   int             `json:"code"`
+	Header json.RawMessage `json:"header"`
+	Body   string          `json:"body"`
 }
 
 type pmRequest struct {
@@ -298,8 +305,8 @@ func (c *converter) request(p string, it pmItem) *model.Request {
 	r.Headers = c.headers(p, pr.Header)
 	r.Body = c.body(p, pr.Body)
 
-	if len(it.Response) > 0 {
-		c.b.Report.Warn(p, "examples.skipped", fmt.Sprintf("%d saved example response(s) not imported", len(it.Response)))
+	for _, ex := range it.Response {
+		r.Examples = append(r.Examples, model.Example{Name: ex.Name, Status: ex.Code, Headers: c.headers(p, ex.Header), Body: ex.Body})
 	}
 	if v, ok := it.Protocol["followRedirects"]; ok && v == false {
 		c.b.Report.Warn(p, "behavior.redirects", "Postman setting 'follow redirects: off' is not per-request in Pyro yet")

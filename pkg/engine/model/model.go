@@ -61,6 +61,9 @@ type Request struct {
 	// as declared by the plugin's manifest fields.
 	Options map[string]string `yaml:"options,omitempty" json:"options,omitempty"`
 
+	// Examples are saved responses, for documentation and sharing.
+	Examples []Example `yaml:"examples,omitempty" json:"examples,omitempty"`
+
 	// Streaming protocols (WebSocket, Socket.IO).
 	Messages []Message       `yaml:"messages,omitempty" json:"messages,omitempty"`
 	SocketIO *SocketIOConfig `yaml:"socketio,omitempty" json:"socketio,omitempty"`
@@ -133,6 +136,14 @@ type Extractor struct {
 	Var  string `yaml:"var" json:"var"`
 	From string `yaml:"from" json:"from"`
 	Path string `yaml:"path,omitempty" json:"path,omitempty"`
+}
+
+// Example is a saved response (Postman calls these examples).
+type Example struct {
+	Name    string     `yaml:"name" json:"name"`
+	Status  int        `yaml:"status,omitempty" json:"status,omitempty"`
+	Headers []KeyValue `yaml:"headers,omitempty" json:"headers,omitempty"`
+	Body    string     `yaml:"body,omitempty" json:"body,omitempty"`
 }
 
 // Message is a saved message template for WebSocket or Socket.IO.

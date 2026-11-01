@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { CircleCheck, Cookie, FileInput, SlidersHorizontal, TriangleAlert, X } from "lucide-react";
-import { api, ApiError, type ImportReport } from "./api";
+import { api, ApiError, decodeBody, type ImportReport, type PyroResponse } from "./api";
 import { useApp } from "./store";
 import { Sidebar, KindBadge } from "./components/Sidebar";
 import { RequestEditor } from "./components/RequestEditor";
@@ -138,6 +138,8 @@ function TopBar({ workspace }: { workspace?: string }) {
   );
 }
 
+const EXAMPLE_SKIP_HEADERS = new Set(["date", "connection", "keep-alive", "content-length", "transfer-encoding", "set-cookie", "age", "expires"]);
+
 function Workspace({ path }: { path: string }) {
   const q = useQuery({ queryKey: ["request", path], queryFn: () => api.request(path), retry: false });
   const result = useApp((s) => s.results[path]);
@@ -158,6 +160,29 @@ function Workspace({ path }: { path: string }) {
       </Blocker>
     );
   }
+  const setDraft = useApp.getState().setDraft;
+  const saveExample = (res: PyroResponse) => {
+    let body = "";
+    try {
+      body = new TextDecoder("utf-8", { fatal: true }).decode(decodeBody(res.body));
+    } catch {
+      alert("This response isn't text, so it can't be saved as an example.");
+      return;
+    }
+    // Examples live in git: leave out per-response noise and session cookies,
+    // and pretty-print JSON so diffs stay readable.
+    const headers = (res.headers ?? []).filter((h) => !EXAMPLE_SKIP_HEADERS.has(h.key.toLowerCase()));
+    if (headers.some((h) => h.key.toLowerCase() === "content-type" && /json/i.test(h.value))) {
+      try {
+        body = JSON.stringify(JSON.parse(body), null, 2);
+      } catch {
+        /* keep as sent */
+      }
+    }
+    const current = draft ?? q.data;
+    const examples = [...(current.examples ?? []), { name: `${res.status} ${res.statusText}`.trim(), status: res.status || undefined, headers, body }];
+    setDraft(path, { ...current, examples });
+  };
   // Route by the draft's type so switching type in the editor takes effect.
   const kind = draft?.kind ?? q.data.kind;
   if (kind === "websocket" || kind === "socketio") {
@@ -167,7 +192,7 @@ function Workspace({ path }: { path: string }) {
     <div className="work" style={{ gridTemplateRows: `${split.top}fr 6px ${100 - split.top}fr` }} ref={split.ref}>
       <RequestEditor key={path} path={path} saved={q.data} />
       <div className="splitter" role="separator" aria-orientation="horizontal" aria-label="Resize response panel" tabIndex={0} {...split.handlers} />
-      <ResponseView key={`r-${path}`} result={result} sending={sending} />
+      <ResponseView key={`r-${path}`} result={result} sending={sending} onSaveExample={result?.response ? () => saveExample(result.response!) : undefined} />
     </div>
   );
 }

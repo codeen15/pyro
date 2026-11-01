@@ -29,6 +29,19 @@ paths:
         - { name: expand, in: query, schema: { type: string, enum: [items, customer] } }
         - { name: X-Request-Id, in: header, required: true, schema: { type: string, format: uuid } }
         - { name: Accept, in: header, schema: { type: string } }
+      responses:
+        "200":
+          description: The order
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Order' }
+        "404":
+          description: No such order
+          content:
+            application/json:
+              example: { error: not_found }
+        default:
+          description: Error
     delete:
       tags: [orders]
       operationId: deleteOrder

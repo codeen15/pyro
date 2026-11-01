@@ -47,7 +47,7 @@ external ones are reported.
 Generated examples keep the schema's property order and use `example`, `default`, `enum`,
 `const`, `allOf` (merged), the first `oneOf`/`anyOf`, and formats (`date-time`, `uuid`,
 `email`, …). `readOnly` properties are left out of request bodies; recursive schemas stop at
-the first repeat. Not imported: callbacks, webhooks, response examples.
+the first repeat. Each documented JSON response with a numeric status becomes an example (its media example, else the first named one, else generated from the schema, `readOnly` fields included). Not imported: callbacks, webhooks.
 
 ## HAR (HTTP Archive 1.2)
 Browser dev tools (Network → Save all as HAR) and proxies produce these.
@@ -95,6 +95,7 @@ on a collection's row.
   script, with the same semantics: values compare as strings, JSON values render like Pyro
   renders them, and extractors set `pm.variables`. JSONPath converts when it is a simple
   path (`$.a.b[0]['c d']`); wildcards, filters and `..` are reported and left out.
+- Examples export as Postman examples (`response[]`).
 - Left out and reported: WebSocket, Socket.IO and plugin requests (Collection v2.1 can't
   hold them), plugin auth types, and folder variables (Postman folders have none).
 - Pyro's own tests import such an export back and run it: the converted checks pass and the

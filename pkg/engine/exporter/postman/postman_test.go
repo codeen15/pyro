@@ -48,7 +48,8 @@ func bundle(base string) *importer.Bundle {
 					{Var: "num", From: "regex", Path: `ord_(\d+)`},
 				},
 			}},
-			{Path: "status", Request: &model.Request{Kind: model.KindHTTP, Name: "Status", URL: "{{base}}/status?verbose=1"}},
+			{Path: "status", Request: &model.Request{Kind: model.KindHTTP, Name: "Status", URL: "{{base}}/status?verbose=1",
+				Examples: []model.Example{{Name: "Healthy", Status: 200, Headers: []model.KeyValue{{Key: "Content-Type", Value: "application/json"}}, Body: `{"ok":true}`}}}},
 			{Path: "live", Request: &model.Request{Kind: model.KindWebSocket, Name: "Live", URL: "ws://x"}},
 		},
 	}
@@ -153,6 +154,27 @@ func TestRoundTripRunsConvertedChecks(t *testing.T) {
 			t.Errorf("%s = %q, want %q", k, got, want)
 		}
 	}
+}
+
+func TestExamplesRoundTrip(t *testing.T) {
+	out, _, err := Export(bundle("http://x"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	back, err := importpm.Parse(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range back.Requests {
+		if r.Path == "status" {
+			ex := r.Request.Examples
+			if len(ex) != 1 || ex[0].Name != "Healthy" || ex[0].Status != 200 || ex[0].Body != `{"ok":true}` || len(ex[0].Headers) != 1 {
+				t.Fatalf("examples after round trip: %+v", ex)
+			}
+			return
+		}
+	}
+	t.Fatal("status request missing")
 }
 
 func TestExportEnvironment(t *testing.T) {

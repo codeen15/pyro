@@ -141,3 +141,18 @@ test("cookies set by responses can be viewed, edited and deleted", async ({ page
   await page.getByRole("button", { name: "Delete cookie sid" }).click();
   await expect(page.getByText("No cookies yet")).toBeVisible();
 });
+
+test("save a response as an example", async ({ page }) => {
+  await page.getByRole("button", { name: "Create order" }).click();
+  await page.getByRole("button", { name: "Send" }).click();
+  await expect(page.locator(".response")).toContainText("201");
+  await page.getByRole("button", { name: "Save as example" }).click();
+  await page.getByRole("tab", { name: /Examples/ }).click();
+  await expect(page.getByLabel("Example name")).toHaveValue("201 Created");
+  await expect(page.getByLabel("Example body")).toHaveValue(/"id": "ord_1"/);
+  await expect(page.locator(".example-body")).not.toContainText("Keep-Alive");
+  await page.keyboard.press("Control+s");
+  await page.reload();
+  await page.getByRole("tab", { name: /Examples/ }).click();
+  await expect(page.getByLabel("Example name")).toHaveValue("201 Created");
+});

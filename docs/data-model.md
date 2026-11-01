@@ -142,6 +142,20 @@ variables:
   - { key: legacy, value: "x", disabled: true }
 ```
 
+## Examples (saved responses)
+A request may keep `examples`: responses saved for documentation and sharing.
+```yaml
+examples:
+  - name: 200 OK
+    status: 200
+    headers: [ { key: Content-Type, value: application/json } ]
+    body: |
+      { "id": "ord_1" }
+```
+**Save as example** on a response adds one; per-response headers (`Date`, `Content-Length`,
+`Connection`, …) and `Set-Cookie` are left out, and JSON is pretty-printed. Postman
+examples import and export; OpenAPI imports add one per documented JSON response.
+
 ## Variable scopes
 `{{name}}` resolves from the narrowest scope outward:
 

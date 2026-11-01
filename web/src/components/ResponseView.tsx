@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
-import { Check, CircleX, Copy, Terminal, TriangleAlert, X } from "lucide-react";
+import { BookmarkPlus, Check, CircleX, Copy, Terminal, TriangleAlert, X } from "lucide-react";
 import { decodeBody, type PyroResponse, type SendResult, type TestResult, type Timings } from "../api";
 import { HEAT_STEPS, formatBytes, formatMs, heatOf, type HeatStep } from "../heat";
 
 type Tab = "body" | "tests" | "headers" | "cookies" | "timing";
 const HOT: HeatStep[] = ["orange", "yellow", "white"];
 
-export function ResponseView({ result, sending }: { result?: SendResult; sending: boolean }) {
+export function ResponseView({ result, sending, onSaveExample }: { result?: SendResult; sending: boolean; onSaveExample?: () => void }) {
   const [tab, setTab] = useState<Tab>("body");
   // A hot response stays lit until the user has looked at where the time went.
   const [acknowledged, setAcknowledged] = useState(false);
@@ -64,7 +64,7 @@ export function ResponseView({ result, sending }: { result?: SendResult; sending
       )}
       {res && (
         <>
-          <StatusLine res={res} tests={result.tests} lit={!acknowledged} onTiming={() => setTab("timing")} onTests={() => setTab("tests")} />
+          <StatusLine res={res} tests={result.tests} lit={!acknowledged} onTiming={() => setTab("timing")} onTests={() => setTab("tests")} onSaveExample={onSaveExample} />
           <div className="tabs" role="tablist" aria-label="Response parts">
             {(["body", "tests", "headers", "cookies", "timing"] as Tab[]).map((t) => (
               <button key={t} role="tab" aria-selected={tab === t} className="tab" onClick={() => setTab(t)}>
@@ -100,12 +100,14 @@ function StatusLine({
   lit,
   onTiming,
   onTests,
+  onSaveExample,
 }: {
   res: PyroResponse;
   tests?: TestResult[];
   lit: boolean;
   onTiming: () => void;
   onTests: () => void;
+  onSaveExample?: () => void;
 }) {
   const cls = res.status >= 500 ? "s5" : res.status >= 400 ? "s4" : res.status >= 300 ? "s3" : "s2";
   const heat = heatOf(res.timings.total);
@@ -127,6 +129,11 @@ function StatusLine({
       {tests && tests.length > 0 && (
         <button className="tests-chip" onClick={onTests} title="Show test results">
           <TestCount tests={tests} long />
+        </button>
+      )}
+      {onSaveExample && (
+        <button className="btn ghost small save-example" onClick={onSaveExample} title="Keep this response in the request's Examples tab">
+          <BookmarkPlus size={13} /> Save as example
         </button>
       )}
     </div>
