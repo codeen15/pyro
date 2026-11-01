@@ -204,10 +204,13 @@ func (s *Session) Send(ctx context.Context, out protocol.Outgoing) (protocol.Mes
 		}
 		typ, payload, m.Kind, m.Size = websocket.MessageBinary, b, "binary", len(b)
 	}
+	// Numbered before writing: a fast reply must not be numbered (and shown)
+	// before the message that caused it.
+	m = s.next(m)
 	if err := s.conn.Write(ctx, typ, payload); err != nil {
 		return m, fmt.Errorf("send failed: %w", err)
 	}
-	return s.next(m), nil
+	return m, nil
 }
 
 // Close performs the closing handshake and waits for the reader to finish.

@@ -408,10 +408,12 @@ func (c *Client) Send(ctx context.Context, out protocol.Outgoing) (protocol.Mess
 		c.mu.Unlock()
 		ackID, m.AckID = &id, &id
 	}
+	// Stamped before writing: a fast reply or ack must come after the emit.
+	m = c.stamp(m)
 	if err := c.writeEIO(ctx, eioMessage, c.frame(sioEvent, ackID, payload)); err != nil {
 		return m, fmt.Errorf("emit failed: %w", err)
 	}
-	return c.stamp(m), nil
+	return m, nil
 }
 
 func argsArray(data string) string {
