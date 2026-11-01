@@ -58,6 +58,9 @@ type KeyValue struct {
 	Key      string `yaml:"key" json:"key"`
 	Value    string `yaml:"value" json:"value"`
 	Disabled bool   `yaml:"disabled,omitempty" json:"disabled,omitempty"`
+	// File marks a multipart field whose Value is a file path (relative to
+	// the workspace root, or absolute).
+	File bool `yaml:"file,omitempty" json:"file,omitempty"`
 }
 
 // Variable is a collection- or environment-scoped variable.

@@ -159,3 +159,23 @@ func TestEnvironments(t *testing.T) {
 		t.Fatalf("env = %+v", env)
 	}
 }
+
+func TestChain(t *testing.T) {
+	ws := newWorkspace(t)
+	if err := ws.WriteRequest("payments/a/b/req", &model.Request{Kind: model.KindHTTP}); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeYAML(ws.Root+"/collections/payments/a/folder.yaml", model.Collection{Auth: &model.Auth{Type: "basic"}}); err != nil {
+		t.Fatal(err)
+	}
+	chain, err := ws.Chain("payments/a/b/req")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(chain) != 3 || chain[0].Name != "Payments API" || chain[1].Auth == nil || chain[1].Auth.Type != "basic" || chain[2].Auth != nil {
+		t.Fatalf("chain = %+v", chain)
+	}
+	if _, err := ws.Chain("payments/../x"); !errors.Is(err, ErrInvalidPath) {
+		t.Fatalf("traversal: %v", err)
+	}
+}

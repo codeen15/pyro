@@ -193,6 +193,45 @@ func (w *Workspace) ReadCollection(slug string) (*model.Collection, error) {
 	return &c, nil
 }
 
+// WriteCollection replaces a collection's settings.
+func (w *Workspace) WriteCollection(slug string, c *model.Collection) error {
+	file, err := w.resolve(collectionsDir, slug, CollectionFile)
+	if err != nil {
+		return err
+	}
+	if _, err := os.Stat(filepath.Dir(file)); err != nil {
+		return fmt.Errorf("collection %q: %w", slug, ErrNotFound)
+	}
+	return writeYAML(file, c)
+}
+
+// Chain returns the settings that apply to the request at reqPath, outermost
+// first: the collection, then each enclosing folder. Folders without a
+// folder.yaml contribute an empty entry so indexes line up with path depth.
+func (w *Workspace) Chain(reqPath string) ([]*model.Collection, error) {
+	if _, err := w.requestFile(reqPath); err != nil {
+		return nil, err
+	}
+	segs := strings.Split(reqPath, "/")
+	coll, err := w.ReadCollection(segs[0])
+	if err != nil {
+		return nil, err
+	}
+	chain := []*model.Collection{coll}
+	for i := 2; i < len(segs); i++ {
+		file, err := w.resolve(collectionsDir, strings.Join(segs[:i], "/"), FolderFile)
+		if err != nil {
+			return nil, err
+		}
+		f := &model.Collection{}
+		if err := readYAML(file, f); err != nil && !errors.Is(err, ErrNotFound) {
+			return nil, err
+		}
+		chain = append(chain, f)
+	}
+	return chain, nil
+}
+
 // ReadRequest loads the request at reqPath.
 func (w *Workspace) ReadRequest(reqPath string) (*model.Request, error) {
 	file, err := w.requestFile(reqPath)
