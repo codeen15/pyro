@@ -42,7 +42,9 @@ Scripts run in goja with a compatibility shim.
 - Tests: `pm.test(name, fn)`, `pm.expect` (bundled chai), `pm.expect.fail`.
 - Requests: `pm.sendRequest` (callback form and Promise form).
 - Execution control: `pm.execution.skipRequest()`, `postman.setNextRequest` (runner only).
-- Modules: `require()` for an allow-list: `lodash`, `moment`, `crypto-js`, `uuid`, `chai`, `tv4`/`ajv` (JSON Schema), `xml2js`. Legacy globals `responseBody`, `responseCode` and `tests[]`.
+- Modules: `require('chai')` and `require('uuid').v4()` work today. `lodash`, `moment`, `crypto-js`, `tv4`/`ajv` and `xml2js` are planned; until then `require()` of them fails with a clear error.
+- Legacy globals `responseBody`, `responseCode`, `responseTime`, `responseHeaders`, `tests[]`, `postman.setEnvironmentVariable` / `getEnvironmentVariable` / `setGlobalVariable` / `setNextRequest`.
+- Scripts run collection → folder → request, with a 10 s timeout each. A failing pre-request script stops that request, as in Postman.
 
 **Not supported (reported):** `pm.vault`, `pm.visualizer` (ignored with a warning), `pm.cookies.jar()` write APIs (read-only at first), and packages from Postman's Package Library.
 

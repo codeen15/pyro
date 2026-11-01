@@ -24,10 +24,11 @@ type liveRun struct {
 	Status string `json:"status"` // running | finished | cancelled
 	Total  int    `json:"total"`
 
-	cancel context.CancelFunc
-	mu     sync.Mutex
-	done   int
-	sum    *runner.Summary
+	cancel  context.CancelFunc
+	mu      sync.Mutex
+	done    int
+	results []runner.ItemResult // trimmed, for clients that subscribe late
+	sum     *runner.Summary
 }
 
 type runRegistry struct {
@@ -79,11 +80,13 @@ func (s *Server) startRun(w http.ResponseWriter, r *http.Request) {
 	run := &liveRun{ID: newID(), Path: body.Path, Status: "running", Total: len(items) * iterations, cancel: cancel}
 	topic := "run:" + run.ID
 	opts.OnResult = func(ir runner.ItemResult) {
+		t := trimmed(ir)
 		run.mu.Lock()
 		run.done++
 		done := run.done
+		run.results = append(run.results, t)
 		run.mu.Unlock()
-		s.hub.publish(topic, "result", map[string]any{"done": done, "total": run.Total, "item": trimmed(ir)})
+		s.hub.publish(topic, "result", map[string]any{"done": done, "total": run.Total, "item": t})
 	}
 	s.runs.mu.Lock()
 	s.runs.byID[run.ID] = run
@@ -124,18 +127,37 @@ func trimmed(ir runner.ItemResult) runner.ItemResult {
 }
 
 type runView struct {
-	ID      string          `json:"id"`
-	Path    string          `json:"path"`
-	Status  string          `json:"status"`
-	Done    int             `json:"done"`
-	Total   int             `json:"total"`
-	Summary *runner.Summary `json:"summary,omitempty"`
+	ID     string `json:"id"`
+	Path   string `json:"path"`
+	Status string `json:"status"`
+	Done   int    `json:"done"`
+	Total  int    `json:"total"`
+	// Results so far (bodies trimmed); Summary is set once the run ends.
+	Results []runner.ItemResult `json:"results"`
+	Summary *runSummary         `json:"summary,omitempty"`
+}
+
+// runSummary is the summary without its per-item results, which Results carries.
+type runSummary struct {
+	Iterations  int     `json:"iterations"`
+	Requests    int     `json:"requests"`
+	Failed      int     `json:"failed"`
+	TestsPassed int     `json:"testsPassed"`
+	TestsFailed int     `json:"testsFailed"`
+	DurationMS  float64 `json:"durationMs"`
+	Stopped     string  `json:"stopped,omitempty"`
 }
 
 func (s *Server) runView(run *liveRun) runView {
 	run.mu.Lock()
 	defer run.mu.Unlock()
-	return runView{run.ID, run.Path, run.Status, run.done, run.Total, run.sum}
+	v := runView{ID: run.ID, Path: run.Path, Status: run.Status, Done: run.done, Total: run.Total,
+		Results: append([]runner.ItemResult{}, run.results...)}
+	if sm := run.sum; sm != nil {
+		v.Summary = &runSummary{sm.Iterations, sm.Requests, sm.Failed, sm.TestsPassed, sm.TestsFailed,
+			float64(sm.Duration.Microseconds()) / 1000, sm.Stopped}
+	}
+	return v
 }
 
 func (s *Server) lookupRun(w http.ResponseWriter, r *http.Request) *liveRun {

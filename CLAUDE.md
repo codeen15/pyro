@@ -2,13 +2,15 @@
 
 Pyro is an API client (REST, WebSocket, Socket.IO, Postman import) and load-testing
 tool (stress, spike, soak, concurrency) with WASM plugins. A single Go binary runs the
-engine and serves a React web UI on localhost. **Current phase: 1 done → Phase 2 next**
+engine and serves a React web UI on localhost. **Current phase: 2 done → Phase 3 (load engine) next**
 (see `docs/roadmap.md`). Product context: `PRODUCT.md`; visual system: `DESIGN.md`.
 
 ## Layout
-- `cmd/pyro`: CLI (cobra): `serve`, `init`, `import`, `version`
+- `cmd/pyro`: CLI (cobra): `serve`, `init`, `import`, `run`, `version`
 - `pkg/engine/...`: the engine, a library with no dependency on server/CLI/UI. `model/` is the shared data model;
-  `engine.go` is the send pipeline; `vars/`, `auth/`, `protocol/httpdriver/`, `importer/postman/`.
+  `engine.go` is the send pipeline, `session.go` opens WS/SIO sessions; `vars/`, `auth/`, `check/` (assertions,
+  extractors), `script/` (goja + pm.* shim, vendored chai), `runner/`, `report/`, `importer/postman/`,
+  `protocol/{httpdriver,wsdriver,sioclient}/`.
 - `internal/store`: workspace persistence (YAML files, path safety, atomic writes, `Import`)
 - `internal/history`: request history in SQLite (`~/.pyro/pyro.db`)
 - `internal/server`: REST API `/api/v1` (chi), token auth, embedded SPA
@@ -32,7 +34,10 @@ make dev-ui       # Vite on :5173, proxies /api
 - Request paths are relative to `collections/`, slash-separated, with no extension (`payments/orders/create`). All request kinds use `.req.yaml`; `kind` picks the driver.
 - Model types carry both `yaml` and `json` tags (lowerCamel, `omitempty` for optional fields).
 - Store errors are `store.ErrNotFound`, `ErrInvalidPath` and `ErrExists`; the server maps them to 404/400/409.
-- Tests use in-process servers (`httptest`, `t.TempDir()` workspaces); no network.
+- Tests use in-process servers (`httptest`, `t.TempDir()` workspaces); no network. Socket.IO conformance against the
+  real Node server: `pkg/engine/protocol/sioclient/testdata/server.js` + `PYRO_SIO_URL`.
+- Server pushes live data over `/api/v1/events` (topics `session:<id>`, `run:<id>`); clients subscribe, then fetch
+  state once and merge.
 - No CGO: dependencies must be pure Go. Builds use `CGO_ENABLED=0`.
 - UI: follow `DESIGN.md` (Pyrometry: heat colours only on measured data, flame accent for chrome). Tokens live in
   `web/src/styles.css`; heat thresholds in `web/src/heat.ts`. The impeccable design hook checks UI edits.

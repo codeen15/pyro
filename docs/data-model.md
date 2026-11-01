@@ -49,7 +49,12 @@ auth:
 scripts:
   pre: "..."     # pm.*-compatible JS, runs before every request in scope
   post: "..."
+order: [auth, orders, checkout]   # optional run order of children (file/folder names)
 ```
+
+Children listed in `order` come first, in that order (the tree and collection runs both
+use it). The Postman importer fills it from the source order. Anything not listed
+follows, folders first, sorted by name.
 
 ## `*.req.yaml`
 `kind`: `http` | `websocket` | `socketio` | `plugin:<name>`.

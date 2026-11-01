@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronRight, Folder, FolderOpen, Layers, Plug, Plus, Radio, RefreshCw, Trash2 } from "lucide-react";
+import { ChevronRight, Folder, FolderOpen, Layers, Play, Plug, Plus, Radio, RefreshCw, Trash2 } from "lucide-react";
 import { api, type TreeNode, type WorkspaceInfo } from "../api";
 import { formatMs, heatOf } from "../heat";
 import { useApp } from "../store";
@@ -101,14 +101,19 @@ function TreeItem({
   return (
     <li role="treeitem" aria-expanded={open}>
       <div className="row-wrap">
-        <button className={`row ${node.type}`} style={indent} onClick={() => setOpen(!open)}>
+        <button className={`row ${node.type} ${selected === `run:${node.path}` ? "is-active" : ""}`} style={indent} onClick={() => setOpen(!open)}>
           <ChevronRight size={13} className={`chev ${open ? "open" : ""}`} />
           <Icon size={14} className="row-icon" />
           <span className="row-label">{node.name}</span>
         </button>
-        <button className="icon-btn row-action" onClick={() => onCreate(node)} aria-label={`New request in ${node.name}`} title="New request">
-          <Plus size={14} />
-        </button>
+        <span className="row-actions">
+          <button className="icon-btn" onClick={() => onSelect(`run:${node.path}`)} aria-label={`Run ${node.name}`} title="Run all requests">
+            <Play size={13} />
+          </button>
+          <button className="icon-btn" onClick={() => onCreate(node)} aria-label={`New request in ${node.name}`} title="New request">
+            <Plus size={14} />
+          </button>
+        </span>
       </div>
       {open && node.children && node.children.length > 0 && (
         <ul role="group">

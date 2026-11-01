@@ -4,9 +4,18 @@ import { CircleAlert, Save, SendHorizontal } from "lucide-react";
 import { api, type Auth, type Body, type KeyValue, type PyroRequest } from "../api";
 import { useApp } from "../store";
 import { KVEditor } from "./KVEditor";
+import { ScriptsEditor, TestsEditor } from "./TestsEditor";
 
 const METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];
-type Tab = "params" | "headers" | "body" | "auth";
+type Tab = "params" | "headers" | "body" | "auth" | "scripts" | "tests";
+const TABS: { id: Tab; label: string }[] = [
+  { id: "params", label: "Params" },
+  { id: "headers", label: "Headers" },
+  { id: "body", label: "Body" },
+  { id: "auth", label: "Auth" },
+  { id: "scripts", label: "Scripts" },
+  { id: "tests", label: "Tests" },
+];
 
 export function RequestEditor({ path, saved }: { path: string; saved: PyroRequest }) {
   const qc = useQueryClient();
@@ -68,8 +77,7 @@ export function RequestEditor({ path, saved }: { path: string; saved: PyroReques
         <RequestTitle req={req} path={path} dirty={false} onName={() => {}} />
         <div className="notice">
           <CircleAlert size={16} />
-          {req.kind === "websocket" ? "WebSocket" : req.kind === "socketio" ? "Socket.IO" : req.kind} consoles arrive in the next
-          release. The definition is saved and will open here.
+          {req.kind} requests need their plugin, which isn't installed. The definition is kept as written.
         </div>
       </section>
     );
@@ -80,6 +88,8 @@ export function RequestEditor({ path, saved }: { path: string; saved: PyroReques
     headers: (req.headers ?? []).filter((h) => !h.disabled).length,
     body: req.body && req.body.type !== "none" ? 1 : 0,
     auth: req.auth ? 1 : 0,
+    scripts: (req.scripts?.pre?.trim() ? 1 : 0) + (req.scripts?.post?.trim() ? 1 : 0),
+    tests: (req.assertions?.length ?? 0) + (req.extract?.length ?? 0),
   };
 
   return (
@@ -125,9 +135,9 @@ export function RequestEditor({ path, saved }: { path: string; saved: PyroReques
       </form>
 
       <div className="tabs" role="tablist" aria-label="Request parts">
-        {(["params", "headers", "body", "auth"] as Tab[]).map((t) => (
+        {TABS.map(({ id: t, label }) => (
           <button key={t} role="tab" aria-selected={tab === t} className="tab" onClick={() => setTab(t)}>
-            {t[0].toUpperCase() + t.slice(1)}
+            {label}
             {counts[t] > 0 && <span className="count">{t === "body" ? req.body!.type : t === "auth" ? req.auth!.type : counts[t]}</span>}
           </button>
         ))}
@@ -138,12 +148,21 @@ export function RequestEditor({ path, saved }: { path: string; saved: PyroReques
         {tab === "headers" && <KVEditor label="Headers" rows={req.headers ?? []} onChange={(headers) => edit({ headers })} keyPlaceholder="Header" />}
         {tab === "body" && <BodyEditor body={req.body} onChange={(body) => edit({ body })} />}
         {tab === "auth" && <AuthEditor auth={req.auth} onChange={(auth) => edit({ auth })} />}
+        {tab === "scripts" && <ScriptsEditor scripts={req.scripts} onChange={(scripts) => edit({ scripts })} />}
+        {tab === "tests" && (
+          <TestsEditor
+            assertions={req.assertions ?? []}
+            extract={req.extract ?? []}
+            onAssertions={(assertions) => edit({ assertions })}
+            onExtract={(extract) => edit({ extract })}
+          />
+        )}
       </div>
     </section>
   );
 }
 
-function RequestTitle({
+export function RequestTitle({
   req,
   path,
   dirty,
@@ -272,7 +291,7 @@ const AUTH_FIELDS: Record<string, { key: string; label: string; secret?: boolean
   ],
 };
 
-function AuthEditor({ auth, onChange }: { auth?: Auth; onChange: (a: Auth | undefined) => void }) {
+export function AuthEditor({ auth, onChange }: { auth?: Auth; onChange: (a: Auth | undefined) => void }) {
   const type = auth?.type ?? "inherit";
   const params = auth?.params ?? {};
   const fields = AUTH_FIELDS[type];

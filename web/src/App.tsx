@@ -6,6 +6,8 @@ import { useApp } from "./store";
 import { Sidebar, KindBadge } from "./components/Sidebar";
 import { RequestEditor } from "./components/RequestEditor";
 import { ResponseView, HeatLegend } from "./components/ResponseView";
+import { SessionConsole } from "./components/SessionConsole";
+import { RunnerView } from "./components/RunnerView";
 
 export function App() {
   const health = useQuery({ queryKey: ["health"], queryFn: api.health, refetchInterval: 10_000 });
@@ -28,6 +30,8 @@ export function App() {
           <Blocker title="Couldn't load the workspace">{ws.error.message}</Blocker>
         ) : report ? (
           <ImportResult report={report} onClose={() => setReport(null)} />
+        ) : selected?.startsWith("run:") ? (
+          <RunnerView key={selected} path={selected.slice(4)} />
         ) : selected?.startsWith("history:") ? (
           <HistoryReplay id={selected} />
         ) : selected ? (
@@ -130,6 +134,9 @@ function Workspace({ path }: { path: string }) {
         </button>
       </Blocker>
     );
+  }
+  if (q.data.kind === "websocket" || q.data.kind === "socketio") {
+    return <SessionConsole key={path} path={path} saved={q.data} />;
   }
   return (
     <div className="work" style={{ gridTemplateRows: `${split.top}fr 6px ${100 - split.top}fr` }} ref={split.ref}>

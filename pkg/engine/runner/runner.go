@@ -38,6 +38,7 @@ type ItemResult struct {
 	Iteration int            `json:"iteration"`
 	Path      string         `json:"path"`
 	Name      string         `json:"name"`
+	Kind      model.Kind     `json:"kind"`
 	Result    *engine.Result `json:"result"`
 	// Note explains a request that was not sent (e.g. a WebSocket item).
 	Note string `json:"note,omitempty"`
@@ -136,7 +137,7 @@ func Run(ctx context.Context, e *engine.Engine, items []Item, opts Options) *Sum
 }
 
 func runItem(ctx context.Context, e *engine.Engine, rt *script.Runtime, item Item, v *vars.Set, iteration int) ItemResult {
-	ir := ItemResult{Iteration: iteration, Path: item.Path, Name: item.Request.Name}
+	ir := ItemResult{Iteration: iteration, Path: item.Path, Name: item.Request.Name, Kind: item.Request.Kind}
 	if k := item.Request.Kind; k != "" && k != model.KindHTTP {
 		ir.Note = string(k) + " requests are skipped in collection runs"
 		return ir

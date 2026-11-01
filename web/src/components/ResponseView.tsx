@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { CircleX, Copy, TriangleAlert } from "lucide-react";
-import { decodeBody, type PyroResponse, type SendResult, type Timings } from "../api";
+import { Check, CircleX, Copy, Terminal, TriangleAlert, X } from "lucide-react";
+import { decodeBody, type PyroResponse, type SendResult, type TestResult, type Timings } from "../api";
 import { HEAT_STEPS, formatBytes, formatMs, heatOf, type HeatStep } from "../heat";
 
-type Tab = "body" | "headers" | "cookies" | "timing";
+type Tab = "body" | "tests" | "headers" | "cookies" | "timing";
 const HOT: HeatStep[] = ["orange", "yellow", "white"];
 
 export function ResponseView({ result, sending }: { result?: SendResult; sending: boolean }) {
@@ -50,13 +50,26 @@ export function ResponseView({ result, sending }: { result?: SendResult; sending
           <span>{result.error}</span>
         </div>
       )}
+      {result.scriptErrors?.map((e, i) => (
+        <div key={i} className="notice error" role="alert">
+          <CircleX size={15} />
+          <span className="mono">{e}</span>
+        </div>
+      ))}
+      {result.skipped && (
+        <div className="notice" role="status">
+          <TriangleAlert size={15} />
+          <span>Not sent: a pre-request script called skipRequest().</span>
+        </div>
+      )}
       {res && (
         <>
-          <StatusLine res={res} lit={!acknowledged} onTiming={() => setTab("timing")} />
+          <StatusLine res={res} tests={result.tests} lit={!acknowledged} onTiming={() => setTab("timing")} onTests={() => setTab("tests")} />
           <div className="tabs" role="tablist" aria-label="Response parts">
-            {(["body", "headers", "cookies", "timing"] as Tab[]).map((t) => (
+            {(["body", "tests", "headers", "cookies", "timing"] as Tab[]).map((t) => (
               <button key={t} role="tab" aria-selected={tab === t} className="tab" onClick={() => setTab(t)}>
                 {t[0].toUpperCase() + t.slice(1)}
+                {t === "tests" && (result.tests?.length ?? 0) > 0 && <TestCount tests={result.tests!} />}
                 {t === "headers" && <span className="count">{res.headers?.length ?? 0}</span>}
                 {t === "cookies" && (res.cookies?.length ?? 0) > 0 && <span className="count">{res.cookies!.length}</span>}
               </button>
@@ -64,6 +77,7 @@ export function ResponseView({ result, sending }: { result?: SendResult; sending
           </div>
           <div className="tab-panel response-panel" role="tabpanel">
             {tab === "body" && <BodyView res={res} />}
+            {tab === "tests" && <TestsView result={result} />}
             {tab === "headers" && <Table rows={(res.headers ?? []).map((h) => [h.key, h.value])} empty="No headers." />}
             {tab === "cookies" && (
               <Table
@@ -80,7 +94,19 @@ export function ResponseView({ result, sending }: { result?: SendResult; sending
   );
 }
 
-function StatusLine({ res, lit, onTiming }: { res: PyroResponse; lit: boolean; onTiming: () => void }) {
+function StatusLine({
+  res,
+  tests,
+  lit,
+  onTiming,
+  onTests,
+}: {
+  res: PyroResponse;
+  tests?: TestResult[];
+  lit: boolean;
+  onTiming: () => void;
+  onTests: () => void;
+}) {
   const cls = res.status >= 500 ? "s5" : res.status >= 400 ? "s4" : res.status >= 300 ? "s3" : "s2";
   const heat = heatOf(res.timings.total);
   return (
@@ -97,6 +123,74 @@ function StatusLine({ res, lit, onTiming }: { res: PyroResponse; lit: boolean; o
       </button>
       <span className="meta">{formatBytes(res.size)}</span>
       <span className="meta">{res.proto}</span>
+      {tests && tests.length > 0 && (
+        <button className="tests-chip" onClick={onTests} title="Show test results">
+          <TestCount tests={tests} long />
+        </button>
+      )}
+    </div>
+  );
+}
+
+export function TestCount({ tests, long }: { tests: TestResult[]; long?: boolean }) {
+  const failed = tests.filter((t) => !t.passed).length;
+  const cls = failed > 0 ? "count fail" : "count pass";
+  if (!long) return <span className={cls}>{failed > 0 ? `${failed} failed` : tests.length}</span>;
+  return (
+    <span className={failed > 0 ? "tests-fail" : "tests-pass"}>
+      {failed > 0 ? <X size={13} /> : <Check size={13} />}
+      {failed > 0 ? `${failed} of ${tests.length} tests failed` : `${tests.length} test${tests.length > 1 ? "s" : ""} passed`}
+    </span>
+  );
+}
+
+export function TestsView({ result }: { result: SendResult }) {
+  const tests = result.tests ?? [];
+  const extracted = Object.entries(result.extracted ?? {});
+  const logs = result.logs ?? [];
+  if (tests.length === 0 && extracted.length === 0 && logs.length === 0 && !result.problems?.length) {
+    return <p className="muted pad">No tests for this request. Add assertions or a post-response script in the Tests and Scripts tabs.</p>;
+  }
+  return (
+    <div className="tests-view">
+      {tests.length > 0 && (
+        <ul className="test-list">
+          {tests.map((t, i) => (
+            <li key={i} className={t.passed ? "is-pass" : "is-fail"}>
+              {t.passed ? <Check size={14} aria-label="passed" /> : <X size={14} aria-label="failed" />}
+              <span className="test-name">{t.name}</span>
+              <span className="test-src">{t.source}</span>
+              {!t.passed && t.error && <span className="test-err mono">{t.error}</span>}
+            </li>
+          ))}
+        </ul>
+      )}
+      {(extracted.length > 0 || (result.problems?.length ?? 0) > 0) && (
+        <>
+          <h3 className="sub-head">Extracted</h3>
+          {extracted.length > 0 && <Table rows={extracted.map(([k, v]) => [`{{${k}}}`, v])} empty="" />}
+          {result.problems?.map((p, i) => (
+            <p key={i} className="inline-warn mono">
+              {p}
+            </p>
+          ))}
+        </>
+      )}
+      {logs.length > 0 && (
+        <>
+          <h3 className="sub-head">
+            <Terminal size={13} /> Console
+          </h3>
+          <pre className="console mono">
+            {logs.map((l, i) => (
+              <span key={i} className={`log-${l.level}`}>
+                {l.message}
+                {"\n"}
+              </span>
+            ))}
+          </pre>
+        </>
+      )}
     </div>
   );
 }

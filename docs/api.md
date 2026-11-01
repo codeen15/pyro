@@ -18,7 +18,7 @@ TypeScript client in `web/src/api.ts`.
 
 ## Endpoints
 
-### Implemented (Phases 0–1)
+### Implemented (Phases 0–2)
 | Method | Path | Description |
 |---|---|---|
 | GET | `/api/v1/health` | `{status, version}` |
@@ -38,19 +38,24 @@ TypeScript client in `web/src/api.ts`.
 | GET | `/api/v1/history/{id}` | Full stored send result (bodies capped at 256 KB) |
 | DELETE | `/api/v1/history` | Clear this workspace's history |
 | POST | `/api/v1/import` | Raw Postman collection or environment JSON as the body (≤ 50 MB). `201` with the import report; `422` if the file isn't a supported export. |
+| POST | `/api/v1/sessions` | Body `{path?, request?, environment?}`. Opens a WebSocket or Socket.IO session. Returns `{sent, unresolved?, error?, session?}`; on failure `error` is set and there is no `session`. |
+| GET | `/api/v1/sessions/{id}` | `{id, kind, info, openedAt, closed, error?, messages[]}` (last 2000 messages) |
+| POST | `/api/v1/sessions/{id}/send` | Body `{data, binary?, event?, ack?}` (variables resolved). Returns `{message, unresolved?}` |
+| DELETE | `/api/v1/sessions/{id}` | Close |
+| POST | `/api/v1/runs` | Body `{path, environment?, iterations?, data?, delayMs?, bail?}`. Starts a background collection run; `202` with the run view |
+| GET | `/api/v1/runs/{id}` | `{id, path, status, done, total, results[], summary?}` |
+| DELETE | `/api/v1/runs/{id}` | Cancel |
+| GET / DELETE | `/api/v1/session/variables` | Values set by scripts and extractors during this `pyro serve` (runtime, globals, per environment, per collection). Never written to files. DELETE resets them. |
 
 ### Planned
 | Method | Path | Phase | Description |
 |---|---|---|---|
-| POST | `/api/v1/sessions` | 2 | Open an interactive WebSocket or Socket.IO session; returns `{id}`. |
-| POST | `/api/v1/sessions/{id}/send` · DELETE `/api/v1/sessions/{id}` | 2 | Send a message, close the session. |
-| POST | `/api/v1/runs` | 2 | Start a collection run. |
 | GET/PUT | `/api/v1/loadtests/{name}` | 3 | Load plan CRUD. |
 | POST | `/api/v1/loadtests/{name}/start` · `/api/v1/loadruns/{id}/stop` | 3 | Control a load test. |
 | GET | `/api/v1/results/{id}` | 3 | Summary, time series, thresholds. |
 | GET/POST/DELETE | `/api/v1/plugins…` | 4 | List, install, configure, remove. |
 
-## Event WebSocket (Phase 2+)
+## Event WebSocket (implemented)
 `GET /api/v1/events?token=<token>` (browsers can't set headers on WebSocket, so the token
 goes in the query string; it is checked the same way).
 
@@ -66,7 +71,12 @@ Server → client:
 
 | Topic | Events |
 |---|---|
-| `session:<id>` | `open`, `message` (direction, data, event, ack), `error`, `close` |
-| `run:<id>` | `started`, `request` (result + tests), `iteration`, `finished` |
-| `load:<id>` | `started`, `metrics` (1s tick), `threshold`, `log`, `finished` |
-| `workspace` | `changed` (files edited on disk, through a file watcher) |
+| `session:<id>` | `message` (`{seq, at, direction, kind, data, event?, ackId?, rttMs?, size}`), `closed` (`{error}`) |
+| `run:<id>` | `result` (`{done, total, item}`, bodies trimmed to 64 KB), `finished` (the run view) |
+| `load:<id>` (Phase 3) | `started`, `metrics` (1s tick), `threshold`, `log`, `finished` |
+| `workspace` (planned) | `changed` (files edited on disk, through a file watcher) |
+
+Events published before a client subscribes are not replayed. Clients subscribe first,
+then fetch `GET /sessions/{id}` or `GET /runs/{id}` once and merge (by `seq` for
+session messages, by position for run results). Slow subscribers drop events rather
+than slowing the engine.

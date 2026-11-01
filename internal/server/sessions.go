@@ -61,7 +61,7 @@ type sessionState struct {
 func (ls *liveSession) state() sessionState {
 	ls.mu.Lock()
 	defer ls.mu.Unlock()
-	return sessionState{ls.ID, ls.Path, ls.Kind, ls.Info, ls.OpenedAt, ls.closed, ls.err, append([]messageView(nil), ls.log...)}
+	return sessionState{ls.ID, ls.Path, ls.Kind, ls.Info, ls.OpenedAt, ls.closed, ls.err, append([]messageView{}, ls.log...)}
 }
 
 func (ls *liveSession) record(m protocol.Message) messageView {

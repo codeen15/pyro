@@ -176,3 +176,19 @@ func TestRuns(t *testing.T) {
 		}
 	}
 }
+
+// Regression: a new session's empty log must serialise as [], not null.
+func TestNewSessionHasEmptyMessageList(t *testing.T) {
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		c, err := websocket.Accept(w, r, nil)
+		if err == nil {
+			c.Read(context.Background())
+		}
+	}))
+	defer target.Close()
+	ts := newTestServer(t)
+	_, body := do(t, ts, "POST", "/api/v1/sessions", `{"request":{"kind":"websocket","url":"`+target.URL+`"}}`, true)
+	if !strings.Contains(body, `"messages":[]`) {
+		t.Fatalf("open: %s", body)
+	}
+}

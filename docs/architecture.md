@@ -38,21 +38,21 @@
 |---|---|---|---|
 | Data model | `pkg/engine/model` | ✅ Phase 0 | Workspace, Collection, Request, Environment, Auth, Body, Assertion, Extractor, Message. |
 | Workspace store | `internal/store` | ✅ Phase 0 | YAML persistence, tree listing, path safety, atomic writes. |
-| API server | `internal/server` | ✅ Phase 1 | REST under `/api/v1` (CRUD, send, history, import), token auth, embedded SPA. Event WebSocket comes in Phase 2. |
+| API server | `internal/server` | ✅ Phase 2 | REST under `/api/v1` (CRUD, send, history, import, sessions, runs, session variables), event WebSocket, token auth, embedded SPA. |
 | History | `internal/history` | ✅ Phase 1 | Sent requests in SQLite (`~/.pyro/pyro.db`), per workspace. |
-| Send pipeline | `pkg/engine` (`engine.Send`) | ✅ Phase 1 | Resolve → auth → execute; scripts/assertions join in Phase 2. |
-| CLI | `cmd/pyro` | ✅ `serve`, `init`, `import`, `version` | `run`, `load`, `plugin`, `agent` come later. |
+| Send pipeline | `pkg/engine` (`engine.Send`, `engine.Connect`) | ✅ Phase 2 | Pre scripts → resolve → auth → execute → post scripts → assertions → extractors; `Connect` opens sessions with the same resolution and auth. |
+| CLI | `cmd/pyro` | ✅ `serve`, `init`, `import`, `run`, `version` | `load`, `plugin`, `agent` come later. |
 | Web UI | `web/` | ✅ Phase 1 | React SPA embedded with `go:embed`. Visual system in `DESIGN.md`. |
-| Protocol drivers | `pkg/engine/protocol/httpdriver` ✅, `websocket`, `socketio` (Phase 2) | Phase 1–2 | Execute requests and stream sessions. |
+| Protocol drivers | `pkg/engine/protocol/{httpdriver,wsdriver,sioclient}` | ✅ Phase 1–2 | Execute requests; WebSocket and Socket.IO sessions (`protocol.Session`). |
 | Variables, auth | `pkg/engine/vars`, `pkg/engine/auth` | ✅ Phase 1 | `{{var}}` resolution across scopes; auth inheritance and signing. |
-| Script runtime | `pkg/engine/script` | Phase 2 | goja with a `pm.*` shim and `pyro.*` API. |
-| Assertions, extractors | `pkg/engine/assert`, `pkg/engine/extract` | Phase 2 | Declarative checks; capture response values into variables. |
-| Collection runner | `pkg/engine/runner` | Phase 2 | Iterations, data files, functional reports. |
+| Script runtime | `pkg/engine/script` | ✅ Phase 2 | goja with a `pm.*` shim over vendored chai 4.5.0; `pyro.*` API comes with the load engine. |
+| Assertions, extractors | `pkg/engine/check` | ✅ Phase 2 | Declarative checks; capture response values into variables. |
+| Collection runner | `pkg/engine/runner` | ✅ Phase 2 | Iterations, data files, setNextRequest, bail. |
 | Load engine | `pkg/engine/load` | Phase 3 | Scheduler, executors, VU pool, flow DSL, thresholds. See [load-engine.md](load-engine.md). |
 | Metrics | `pkg/engine/metrics` | Phase 3 | Samples → HDR histograms → sinks. |
 | Plugin host | `pkg/engine/plugin` | Phase 4 | wazero runtime, ABI v1, registry. See [plugins.md](plugins.md). |
 | Importers | `pkg/engine/importer/postman` | ✅ Phase 1 | See [postman-import.md](postman-import.md). |
-| Reporters | `pkg/engine/report` | Phase 2–3 | JSON, HTML, JUnit, CSV. |
+| Reporters | `pkg/engine/report` | ✅ JUnit, JSON (Phase 2); HTML, CSV (Phase 3) | Run reports for CI. |
 
 ## Request pipeline
 Every mode runs the same steps:

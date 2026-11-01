@@ -56,10 +56,38 @@ export interface PyroRequest {
   body?: Body;
   auth?: Auth;
   scripts?: { pre?: string; post?: string };
-  assertions?: unknown[];
-  extract?: unknown[];
-  messages?: { name?: string; event?: string; content: string }[];
-  socketio?: unknown;
+  assertions?: Assertion[];
+  extract?: Extractor[];
+  messages?: SavedMessage[];
+  socketio?: SocketIOConfig;
+}
+
+export interface Assertion {
+  type: string;
+  path?: string;
+  op?: string;
+  value?: string;
+}
+
+export interface Extractor {
+  var: string;
+  from: string;
+  path?: string;
+}
+
+export interface SavedMessage {
+  name?: string;
+  event?: string;
+  content: string;
+  binary?: boolean;
+  ack?: boolean;
+}
+
+export interface SocketIOConfig {
+  path?: string;
+  namespace?: string;
+  auth?: string;
+  listen?: string[];
 }
 
 export interface Environment {
@@ -101,6 +129,18 @@ export interface PyroResponse {
   remoteAddr?: string;
 }
 
+export interface TestResult {
+  name: string;
+  passed: boolean;
+  error?: string;
+  source: "assertion" | "script";
+}
+
+export interface LogLine {
+  level: string;
+  message: string;
+}
+
 export interface SendResult {
   sent?: PyroRequest;
   response?: PyroResponse;
@@ -108,6 +148,69 @@ export interface SendResult {
   error?: string;
   startedAt: string;
   historyId?: number;
+  tests?: TestResult[];
+  logs?: LogLine[];
+  scriptErrors?: string[];
+  extracted?: Record<string, string>;
+  problems?: string[];
+  skipped?: boolean;
+}
+
+export interface SessionMessage {
+  seq: number;
+  at: string;
+  direction: "sent" | "received" | "system";
+  kind: string;
+  data?: string;
+  event?: string;
+  ackId?: number;
+  rttMs?: number;
+  size: number;
+}
+
+export interface SessionState {
+  id: string;
+  path?: string;
+  kind: Kind;
+  info: { url: string; status?: number; headers?: KeyValue[]; subprotocol?: string; sid?: string };
+  openedAt: string;
+  closed: boolean;
+  error?: string;
+  messages: SessionMessage[];
+}
+
+export interface OpenResult {
+  sent?: PyroRequest;
+  unresolved?: string[];
+  error?: string;
+  session?: SessionState;
+}
+
+export interface RunItem {
+  iteration: number;
+  path: string;
+  name: string;
+  kind?: Kind;
+  result?: SendResult;
+  note?: string;
+}
+
+export interface RunView {
+  id: string;
+  path: string;
+  status: "running" | "finished" | "cancelled";
+  done: number;
+  total: number;
+  results: RunItem[];
+  summary?: {
+    iterations: number;
+    requests: number;
+    failed: number;
+    testsPassed: number;
+    testsFailed: number;
+    durationMs: number;
+    stopped?: string;
+  };
 }
 
 export interface HistoryEntry {
@@ -159,6 +262,9 @@ function takeToken(): string | null {
 
 const token = takeToken();
 
+/** The session token, for the event WebSocket (which can't send headers). */
+export const sessionToken = () => token;
+
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -204,6 +310,15 @@ export const api = {
   historyEntry: (id: number) => call<SendResult>("GET", `/history/${id}`),
   clearHistory: () => call<void>("DELETE", "/history"),
   importFile: (json: string) => call<ImportReport>("POST", "/import", json, true),
+  openSession: (body: { path?: string; request?: PyroRequest; environment?: string }) => call<OpenResult>("POST", "/sessions", body),
+  sessionState: (id: string) => call<SessionState>("GET", `/sessions/${id}`),
+  sessionSend: (id: string, m: { data: string; binary?: boolean; event?: string; ack?: boolean }) =>
+    call<{ message: SessionMessage; unresolved?: string[] }>("POST", `/sessions/${id}/send`, m),
+  closeSession: (id: string) => call<void>("DELETE", `/sessions/${id}`),
+  startRun: (body: { path: string; environment?: string; iterations?: number; data?: Record<string, string>[]; delayMs?: number; bail?: boolean }) =>
+    call<RunView>("POST", "/runs", body),
+  run: (id: string) => call<RunView>("GET", `/runs/${id}`),
+  cancelRun: (id: string) => call<void>("DELETE", `/runs/${id}`),
 };
 
 /** Decodes a base64 response body into bytes. */
