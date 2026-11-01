@@ -40,24 +40,46 @@ type Config struct {
 }
 
 type Server struct {
-	cfg     Config
-	ws      *store.Workspace
-	log     *slog.Logger
-	session *sessionVars
+	cfg      Config
+	ws       *store.Workspace
+	log      *slog.Logger
+	session  *sessionVars
+	hub      *hub
+	sessions *sessionRegistry
+	runs     *runRegistry
 }
 
 func New(cfg Config) *Server {
 	if cfg.Logger == nil {
 		cfg.Logger = slog.Default()
 	}
-	return &Server{cfg: cfg, ws: cfg.Workspace, log: cfg.Logger, session: newSessionVars()}
+	return &Server{
+		cfg: cfg, ws: cfg.Workspace, log: cfg.Logger, session: newSessionVars(), hub: newHub(),
+		sessions: &sessionRegistry{byID: map[string]*liveSession{}},
+		runs:     &runRegistry{byID: map[string]*liveRun{}},
+	}
+}
+
+// Close ends open sessions and cancels running collection runs.
+func (s *Server) Close() {
+	s.closeAllSessions()
+	s.runs.mu.Lock()
+	for _, run := range s.runs.byID {
+		run.cancel()
+	}
+	s.runs.mu.Unlock()
 }
 
 func (s *Server) Handler() http.Handler {
 	r := chi.NewRouter()
-	r.Use(middleware.RealIP, middleware.Recoverer, middleware.Timeout(60*time.Second))
+	r.Use(middleware.RealIP, middleware.Recoverer)
+
+	// The event stream checks its token itself (browsers can't send headers
+	// on WebSocket upgrades) and must not sit behind the request timeout.
+	r.Get("/api/v1/events", s.events)
 
 	r.Route("/api/v1", func(r chi.Router) {
+		r.Use(middleware.Timeout(60 * time.Second))
 		r.Use(s.requireToken)
 		r.Get("/health", s.health)
 		r.Get("/workspace", s.getWorkspace)
@@ -81,6 +103,15 @@ func (s *Server) Handler() http.Handler {
 		r.Delete("/history", s.clearHistory)
 
 		r.Post("/import", s.importFile)
+
+		r.Post("/sessions", s.openSession)
+		r.Get("/sessions/{id}", s.getSession)
+		r.Post("/sessions/{id}/send", s.sendSession)
+		r.Delete("/sessions/{id}", s.closeSession)
+
+		r.Post("/runs", s.startRun)
+		r.Get("/runs/{id}", s.getRun)
+		r.Delete("/runs/{id}", s.cancelRun)
 
 		r.Get("/session/variables", s.getSessionVars)
 		r.Delete("/session/variables", s.clearSessionVars)

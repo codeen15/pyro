@@ -130,10 +130,12 @@ func serveCmd() *cobra.Command {
 				defer hist.Close()
 			}
 			eng := engine.New(httpdriver.New(httpdriver.Options{FileRoot: ws.Root}))
+			api := server.New(server.Config{
+				Workspace: ws, Engine: eng, History: hist, Token: token, UI: web.Dist(),
+			})
+			defer api.Close()
 			srv := &http.Server{
-				Handler: server.New(server.Config{
-					Workspace: ws, Engine: eng, History: hist, Token: token, UI: web.Dist(),
-				}).Handler(),
+				Handler:           api.Handler(),
 				ReadHeaderTimeout: 10 * time.Second,
 			}
 

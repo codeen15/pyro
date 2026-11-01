@@ -3,6 +3,7 @@ module github.com/pyrohq/pyro
 go 1.27.3
 
 require (
+	github.com/coder/websocket v1.8.15
 	github.com/dop251/goja v0.0.0-20261031103838-cf2ff0ec0b31
 	github.com/go-chi/chi/v5 v5.5.0
 	github.com/ohler55/ojg v1.28.9

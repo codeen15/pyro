@@ -5,7 +5,6 @@ import (
 	"io"
 	"net/http"
 	"strconv"
-	"strings"
 
 	"github.com/go-chi/chi/v5"
 
@@ -56,36 +55,10 @@ func (s *Server) send(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &body) {
 		return
 	}
-	if body.Path == "" && body.Request == nil {
-		writeError(w, http.StatusBadRequest, "path or request is required")
+	in, slug, ok := s.prepare(w, body.Path, body.Request, body.Environment)
+	if !ok {
 		return
 	}
-	in := engine.SendInput{Request: body.Request, Path: body.Path}
-	if body.Path != "" {
-		chain, err := s.ws.Chain(body.Path)
-		if err != nil {
-			s.fail(w, err)
-			return
-		}
-		in.Chain = chain
-		if in.Request == nil {
-			if in.Request, err = s.ws.ReadRequest(body.Path); err != nil {
-				s.fail(w, err)
-				return
-			}
-		}
-	}
-	var env *model.Environment
-	if body.Environment != "" {
-		var err error
-		if env, err = s.ws.ReadEnvironment(body.Environment); err != nil {
-			s.fail(w, err)
-			return
-		}
-		env.Name = body.Environment
-	}
-	in.Vars = engine.NewVars(env, in.Chain)
-	slug := strings.SplitN(body.Path, "/", 2)[0]
 	bases := s.session.apply(in.Vars, slug)
 	for k, v := range body.Runtime {
 		in.Vars.Runtime[k] = v
