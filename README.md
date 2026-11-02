@@ -6,6 +6,8 @@ distributed across agents) with WASM plugins, in a single binary that serves a w
 
 Design docs: [`docs/`](docs/) (start with [architecture](docs/architecture.md) and [roadmap](docs/roadmap.md)).
 
+**New here? Read the [user guide](docs/guide/README.md)** (also inside the app under **Docs**).
+
 ## Install
 
 Download the archive for your system from

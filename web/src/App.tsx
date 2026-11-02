@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { Alert, App as AntApp, Button, Dropdown, Result, Select, Skeleton, Table, Tag, Tooltip } from "antd";
 import { useQuery } from "@tanstack/react-query";
-import { Briefcase, ChevronDown, CircleCheck, Cookie, FileInput, SlidersHorizontal, X } from "./icons";
+import { BookOpen, Briefcase, ChevronDown, CircleCheck, Cookie, FileInput, SlidersHorizontal, X } from "./icons";
 import logo from "./assets/pyro-logo.png";
 import { api, ApiError, decodeBody, type ImportReport, type PyroResponse } from "./api";
 import { useApp, type Theme } from "./store";
@@ -18,6 +18,7 @@ import { ImportPage } from "./components/ImportPage";
 import { VariablesPage } from "./components/Variables";
 import { CookiesPage } from "./components/Cookies";
 import { SettingsPage } from "./components/Settings";
+import { DocsPage } from "./components/DocsPage";
 
 export function App() {
   const health = useQuery({ queryKey: ["health"], queryFn: api.health, refetchInterval: 10_000 });
@@ -47,6 +48,8 @@ export function App() {
           <SettingsPage key={selected} path={selected.slice(9)} />
         ) : selected === "cookies" ? (
           <CookiesPage />
+        ) : selected === "docs" || selected?.startsWith("docs:") ? (
+          <DocsPage target={selected.slice(5)} />
         ) : selected === "import" ? (
           <ImportPage />
         ) : selected === "plugins:install" ? (
@@ -142,6 +145,9 @@ function TopBar({ workspace }: { workspace?: string }) {
         </Tooltip>
         <Tooltip title="Cookies">
           <Button type="text" icon={<Cookie size={16} />} onClick={() => go("cookies")} aria-label="Manage cookies" />
+        </Tooltip>
+        <Tooltip title="User guide">
+          <Button type="text" icon={<BookOpen size={16} />} onClick={() => go("docs")} aria-label="Docs" />
         </Tooltip>
         <Button icon={<FileInput size={14} />} onClick={() => go("import")} aria-label="Import">
           Import
@@ -409,6 +415,11 @@ function Welcome({ hasCollections }: { hasCollections: boolean }) {
           {hasCollections
             ? "Choose a request in the sidebar, or press + on a collection to add one. Send with Ctrl + Enter, save with Ctrl + S."
             : "Import a Postman collection or environment with Import in the top bar. Pyro writes it as YAML files you can commit."}
+        </p>
+        <p>
+          <Button icon={<BookOpen size={14} />} onClick={() => useApp.getState().select("docs:getting-started")}>
+            Read the user guide
+          </Button>
         </p>
         <div className="welcome-legend">
           <h2>Reading response times</h2>

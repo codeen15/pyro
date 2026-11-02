@@ -441,3 +441,17 @@ test("Socket.IO messages take several typed arguments, WebSocket a formatted pay
     }
   }
 });
+
+test("the user guide opens from the top bar, links between pages and searches", async ({ page }) => {
+  await page.getByRole("button", { name: "Docs", exact: true }).click();
+  await expect(page.locator(".docs-body h1")).toHaveText("Pyro user guide");
+  await page.locator(".docs-body").getByRole("link", { name: "Load testing" }).click();
+  await expect(page.locator(".docs-body h1")).toHaveText("Load testing");
+  await expect(page.locator(".docs-nav [aria-current=page]")).toHaveText("Load testing");
+  // An in-guide link with an anchor.
+  await page.locator(".docs-body").getByRole("link", { name: "the console" }).click();
+  await expect(page.locator(".docs-body h1")).toHaveText("WebSocket and Socket.IO");
+  await expect(page.locator("#sending-socketio-events")).toBeInViewport();
+  await page.getByLabel("Search the guide").fill("Poisson");
+  await expect(page.locator(".docs-results")).toContainText("Processors and tests");
+});

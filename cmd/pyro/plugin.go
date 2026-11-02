@@ -55,9 +55,9 @@ func indexURL(flag string) string {
 func pluginCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "plugin",
-		Short: "Install and manage plugins (new request types and auth types)",
-		Long: "Plugins are WebAssembly modules that add request types (e.g. raw TCP) and auth\n" +
-			"types. They run sandboxed and may only reach the network addresses they declare,\n" +
+		Short: "Install and manage plugins (request types, auth types and processors)",
+		Long: "Plugins are WebAssembly modules that add request types (e.g. raw TCP), auth types\n" +
+			"and pre/post processors. They run sandboxed and may only reach the network addresses they declare,\n" +
 			"which you approve when installing. Installed plugins live in ~/.pyro/plugins\n" +
 			"(or $PYRO_PLUGINS_DIR).",
 	}
@@ -358,12 +358,13 @@ func newPluginCmd() *cobra.Command {
 		Use:   "new <dir>",
 		Short: "Create a new Go plugin from a template",
 		Example: "  pyro plugin new ./redis-plugin --kind protocol --id redis\n" +
-			"  pyro plugin new ./sigv4 --kind auth --id sigv4 --sdk ../pyro/plugins/sdk/go",
+			"  pyro plugin new ./sigv4 --kind auth --id sigv4 --sdk ../pyro/plugins/sdk/go\n" +
+			"  pyro plugin new ./jwt-check --kind processor --id jwt-check",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			dir := args[0]
-			if kind != plugin.KindProtocol && kind != plugin.KindAuth {
-				return errors.New("--kind must be protocol or auth")
+			if kind != plugin.KindProtocol && kind != plugin.KindAuth && kind != plugin.KindProcessor {
+				return errors.New("--kind must be protocol, auth or processor")
 			}
 			if id == "" {
 				id = strings.ToLower(filepath.Base(dir))
@@ -385,9 +386,12 @@ func newPluginCmd() *cobra.Command {
 			}
 			data := map[string]string{"ID": id, "Kind": kind, "SDK": sdk}
 			files := map[string]string{"go.mod": tmplGoMod, "pyro-plugin.yaml": tmplManifest, "README.md": tmplReadme}
-			if kind == plugin.KindProtocol {
+			switch kind {
+			case plugin.KindProtocol:
 				files["main.go"] = tmplProtocol
-			} else {
+			case plugin.KindProcessor:
+				files["main.go"] = tmplProcessor
+			default:
 				files["main.go"] = tmplAuth
 			}
 			for name, src := range files {
@@ -407,8 +411,8 @@ func newPluginCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&kind, "kind", plugin.KindProtocol, "protocol or auth")
-	cmd.Flags().StringVar(&id, "id", "", "the type id (request kind plugin:<id>); default: directory name")
+	cmd.Flags().StringVar(&kind, "kind", plugin.KindProtocol, "protocol, auth or processor")
+	cmd.Flags().StringVar(&id, "id", "", "the type id (plugin:<id>); default: directory name")
 	cmd.Flags().StringVar(&sdk, "sdk", "", "path to a local copy of the Go SDK (adds a replace directive)")
 	return cmd
 }
@@ -440,6 +444,11 @@ capabilities:
   # host:port patterns this plugin may connect to (matched literally, so list
   # both names you use); users approve these when installing.
   network: ["localhost:*", "127.0.0.1:*"]
+{{- else if eq .Kind "processor"}}
+    phases: [pre, post]
+    fields:
+      - { key: var, label: Variable, type: string, default: requestId }
+capabilities: {}
 {{- else}}
     fields:
       - { key: secret, label: Secret, type: secret }
@@ -505,6 +514,40 @@ func sign(ctx *pyro.Context, req *pyro.Request) error {
 		return errors.New("secret is empty")
 	}
 	req.SetHeader("Authorization", "Custom "+secret)
+	return nil
+}
+`
+
+const tmplProcessor = `// Command {{.ID}} is a Pyro processor plugin: pre/post processor plugin:{{.ID}}.
+package main
+
+import (
+	"fmt"
+	"time"
+
+	pyro "github.com/codeen15/pyro/plugins/sdk/go"
+)
+
+func init() {
+	pyro.RegisterProcessor("{{.ID}}", pyro.ProcessorFunc(process))
+}
+
+func main() {}
+
+func process(ctx *pyro.Context, p *pyro.Process) error {
+	name := ctx.Params["var"]
+	if name == "" {
+		name = "requestId"
+	}
+	if p.Phase == "pre" {
+		// Before the request: set a variable and add a header.
+		id := fmt.Sprintf("req-%d", time.Now().UnixNano())
+		p.SetVar(name, id)
+		p.Request.SetHeader("X-Request-Id", id)
+		return nil
+	}
+	// After the response: report a check.
+	p.Test("status is below 500", p.Response.Status < 500, fmt.Sprintf("got %d", p.Response.Status))
 	return nil
 }
 `

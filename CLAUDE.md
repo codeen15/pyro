@@ -66,6 +66,10 @@ cd web && npm run e2e   # browser tests (needs bin/pyro and npx playwright insta
   validated with the dataviz palette script against the card surface (`--iron-1`).
 
 ## Docs
+**Keep the docs complete:** every change that adds or alters a user-visible feature updates the user guide
+(`docs/guide/*.md`, rendered in the app's Docs page) in the same change, plus the matching reference doc below
+(formats, API, CLI flags). New guide pages go in `ORDER` in `web/src/components/DocsPage.tsx` and the guide's README.
+- `docs/guide/`: the user guide (how to use Pyro), bundled into the UI under **Docs**
 - `docs/PRD.md`: goals, users, non-goals
 - `docs/architecture.md`: components, pipeline, tech choices
 - `docs/data-model.md`: workspace and YAML formats, variable scopes, auth inheritance

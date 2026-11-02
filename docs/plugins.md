@@ -130,7 +130,7 @@ SDK API: `RegisterProtocol`, `RegisterAuth`, `Request` (`Option`, `Header`, `Set
 `Response`, `Context` (`Config`, `Params`), `Dial` → `Conn` (`Read`, `Write`, `Close`,
 `SetReadTimeout`; `ErrTimeout`, `io.EOF`), `Logf`. Panics in plugin code become error replies.
 
-`pyro plugin new <dir> --kind protocol|auth --id <id> [--sdk <path>]` scaffolds a plugin.
+`pyro plugin new <dir> --kind protocol|auth|processor --id <id> [--sdk <path>]` scaffolds a plugin.
 The SDK module isn't published yet, so pass `--sdk` with the path to `plugins/sdk/go` in a
 Pyro checkout. A Go plugin module is about 2–5 MB; instances start in 2–4 ms and are pooled
 (one per concurrent call), so load tests pay that once per VU.
