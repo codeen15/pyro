@@ -5,6 +5,7 @@ import { Check, Pencil, Save, SendHorizontal, Trash2 } from "../icons";
 import { OAuth2Form, TokenPanel, type TokenContext } from "./OAuth2";
 import { api, type Auth, type Body, type KeyValue, type PyroRequest } from "../api";
 import { useApp } from "../store";
+import { VarInput, VarTextArea, VarScope } from "../vars";
 import { KVEditor } from "./KVEditor";
 import { ProcessorList, TimerEditor, postList, preList, setPost, setPre } from "./Processors";
 import { FieldsForm, KindLabel, usePluginTypes } from "./Plugins";
@@ -108,130 +109,132 @@ export function RequestEditor({ path, saved }: { path: string; saved: PyroReques
   };
 
   return (
-    <section className="card editor">
-      <RequestTitle req={req} path={path} dirty={dirty} onName={(name) => edit({ name })}>
-        <KindLabel value={req.kind} />
-        <SaveButton dirty={dirty} saving={save.isPending} onSave={() => save.mutate()} />
-        <DeleteRequestButton path={path} name={saved.name} />
-      </RequestTitle>
-      {save.error && <Alert type="error" showIcon title={`Couldn't save: ${save.error.message}`} />}
-      {pluginId && !provider && (
-        <Alert
-          type="warning"
-          showIcon
-          title={
-            <>
-              No installed plugin provides <code>{req.kind}</code>. Install it from the Plugins tab; the request is kept as written.
-            </>
-          }
-        />
-      )}
-      {provider && !provider.plugin.ready && (
-        <Alert
-          type="warning"
-          showIcon
-          title={`The ${provider.plugin.title || provider.plugin.name} plugin is ${provider.plugin.approved ? "disabled" : "waiting for approval"}. Open it in the Plugins tab.`}
-        />
-      )}
-
-      <form
-        className="urlbar"
-        onSubmit={(e) => {
-          e.preventDefault();
-          send();
-        }}
-      >
-        <Space.Compact block size="large">
-          {pluginId ? (
-            <span className="kind-tag plugin-tag" title={provider?.plugin.title}>
-              {(provider?.title || pluginId).toUpperCase().slice(0, 8)}
-            </span>
-          ) : (
-            <Select
-              className={`method-select m-${(req.method ?? "GET").toLowerCase()}`}
-              value={req.method ?? "GET"}
-              onChange={(method) => edit({ method })}
-              aria-label="Method"
-              popupMatchSelectWidth={false}
-              options={METHODS.map((m) => ({ value: m, label: <span className={`method-opt m-${m.toLowerCase()}`}>{m}</span> }))}
-            />
-          )}
-          <Input
-            className="url-input mono"
-            value={req.url}
-            onChange={(e) => edit({ url: e.target.value })}
-            placeholder={provider?.urlPlaceholder ?? (pluginId ? `${pluginId}://host:port` : "https://api.example.com/resource or {{baseUrl}}/path")}
-            aria-label="URL"
-            spellCheck={false}
-            autoComplete="off"
+    <VarScope path={path}>
+      <section className="card editor">
+        <RequestTitle req={req} path={path} dirty={dirty} onName={(name) => edit({ name })}>
+          <KindLabel value={req.kind} />
+          <SaveButton dirty={dirty} saving={save.isPending} onSave={() => save.mutate()} />
+          <DeleteRequestButton path={path} name={saved.name} />
+        </RequestTitle>
+        {save.error && <Alert type="error" showIcon title={`Couldn't save: ${save.error.message}`} />}
+        {pluginId && !provider && (
+          <Alert
+            type="warning"
+            showIcon
+            title={
+              <>
+                No installed plugin provides <code>{req.kind}</code>. Install it from the Plugins tab; the request is kept as written.
+              </>
+            }
           />
-          <Button className="send" type="primary" htmlType="submit" loading={sending} disabled={!req.url.trim()} icon={<SendHorizontal size={15} />} title="Send (Ctrl+Enter)">
-            {sending ? "Sending" : "Send"}
-          </Button>
-        </Space.Compact>
-      </form>
+        )}
+        {provider && !provider.plugin.ready && (
+          <Alert
+            type="warning"
+            showIcon
+            title={`The ${provider.plugin.title || provider.plugin.name} plugin is ${provider.plugin.approved ? "disabled" : "waiting for approval"}. Open it in the Plugins tab.`}
+          />
+        )}
 
-      <Tabs
-        className="part-tabs"
-        activeKey={activeTab}
-        onChange={(k) => setTab(k as Tab)}
-        aria-label="Request parts"
-        items={tabs.map(({ id: t, label }) => ({
-          key: t,
-          label: (
-            <>
-              {label}
-              {counts[t] > 0 && !(pluginId && t === "body") && <span className="count">{t === "body" ? req.body!.type : t === "auth" ? req.auth!.type : counts[t]}</span>}
-            </>
-          ),
-        }))}
-      />
-
-      <div className="tab-panel" role="tabpanel">
-        {activeTab === "params" && <KVEditor label="Query parameters" rows={req.query ?? []} onChange={(query) => edit({ query })} />}
-        {activeTab === "headers" && <KVEditor label="Headers" rows={req.headers ?? []} onChange={(headers) => edit({ headers })} keyPlaceholder="Header" />}
-        {activeTab === "body" &&
-          (pluginId ? (
-            <Input.TextArea
-              className="code-input mono"
-              value={req.body?.content ?? ""}
-              onChange={(e) => edit({ body: { type: "text", content: e.target.value } })}
+        <form
+          className="urlbar"
+          onSubmit={(e) => {
+            e.preventDefault();
+            send();
+          }}
+        >
+          <Space.Compact block>
+            {pluginId ? (
+              <span className="kind-tag plugin-tag" title={provider?.plugin.title}>
+                {(provider?.title || pluginId).toUpperCase().slice(0, 8)}
+              </span>
+            ) : (
+              <Select
+                className={`method-select m-${(req.method ?? "GET").toLowerCase()}`}
+                value={req.method ?? "GET"}
+                onChange={(method) => edit({ method })}
+                aria-label="Method"
+                popupMatchSelectWidth={false}
+                options={METHODS.map((m) => ({ value: m, label: <span className={`method-opt m-${m.toLowerCase()}`}>{m}</span> }))}
+              />
+            )}
+            <VarInput
+              className="url-input mono"
+              value={req.url}
+              onChange={(e) => edit({ url: e.target.value })}
+              placeholder={provider?.urlPlaceholder ?? (pluginId ? `${pluginId}://host:port` : "https://api.example.com/resource or {{baseUrl}}/path")}
+              aria-label="URL"
               spellCheck={false}
-              aria-label="Payload"
-              autoSize={{ minRows: 6 }}
-              placeholder="Payload sent by the plugin. Variables like {{name}} are filled in."
+              autoComplete="off"
             />
-          ) : (
-            <BodyEditor body={req.body} onChange={(body) => edit({ body })} />
-          ))}
-        {activeTab === "options" && (
-          <FieldsForm fields={provider?.fields ?? []} values={req.options} onChange={(options) => edit({ options: Object.keys(options).length ? options : undefined })} label="request type" />
-        )}
-        {activeTab === "auth" && <AuthEditor auth={req.auth} onChange={(auth) => edit({ auth })} context={{ path, request: req }} />}
-        {activeTab === "examples" && <ExamplesEditor examples={req.examples ?? []} onChange={(examples) => edit({ examples: examples.length ? examples : undefined })} />}
-        {activeTab === "pre" && (
-          <div className="proc-tab">
-            <section>
-              <h3 className="sub-head">Think time</h3>
-              <p className="muted small">Load tests and opted-in collection runs; manual sends don't wait.</p>
-              <TimerEditor value={req.think} onChange={(think) => edit({ think })} inheritLabel="Inherit (folder/collection)" />
-            </section>
-            <section>
-              <h3 className="sub-head">Pre-processors</h3>
-              <ProcessorList phase="pre" items={pre} onChange={(items) => edit(setPre(req, items))} />
-            </section>
-          </div>
-        )}
-        {activeTab === "post" && (
-          <div className="proc-tab">
-            <section>
-              <h3 className="sub-head">Post-processors</h3>
-              <ProcessorList phase="post" items={post} onChange={(items) => edit(setPost(req, items))} />
-            </section>
-          </div>
-        )}
-      </div>
-    </section>
+            <Button className="send" type="primary" htmlType="submit" loading={sending} disabled={!req.url.trim()} icon={<SendHorizontal size={15} />} title="Send (Ctrl+Enter)">
+              {sending ? "Sending" : "Send"}
+            </Button>
+          </Space.Compact>
+        </form>
+
+        <Tabs
+          className="part-tabs"
+          activeKey={activeTab}
+          onChange={(k) => setTab(k as Tab)}
+          aria-label="Request parts"
+          items={tabs.map(({ id: t, label }) => ({
+            key: t,
+            label: (
+              <>
+                {label}
+                {counts[t] > 0 && !(pluginId && t === "body") && <span className="count">{t === "body" ? req.body!.type : t === "auth" ? req.auth!.type : counts[t]}</span>}
+              </>
+            ),
+          }))}
+        />
+
+        <div className="tab-panel" role="tabpanel">
+          {activeTab === "params" && <KVEditor label="Query parameters" rows={req.query ?? []} onChange={(query) => edit({ query })} />}
+          {activeTab === "headers" && <KVEditor label="Headers" rows={req.headers ?? []} onChange={(headers) => edit({ headers })} keyPlaceholder="Header" />}
+          {activeTab === "body" &&
+            (pluginId ? (
+              <VarTextArea
+                className="code-input mono"
+                value={req.body?.content ?? ""}
+                onChange={(e) => edit({ body: { type: "text", content: e.target.value } })}
+                spellCheck={false}
+                aria-label="Payload"
+                autoSize={{ minRows: 6 }}
+                placeholder="Payload sent by the plugin. Variables like {{name}} are filled in."
+              />
+            ) : (
+              <BodyEditor body={req.body} onChange={(body) => edit({ body })} />
+            ))}
+          {activeTab === "options" && (
+            <FieldsForm fields={provider?.fields ?? []} values={req.options} onChange={(options) => edit({ options: Object.keys(options).length ? options : undefined })} label="request type" />
+          )}
+          {activeTab === "auth" && <AuthEditor auth={req.auth} onChange={(auth) => edit({ auth })} context={{ path, request: req }} />}
+          {activeTab === "examples" && <ExamplesEditor examples={req.examples ?? []} onChange={(examples) => edit({ examples: examples.length ? examples : undefined })} />}
+          {activeTab === "pre" && (
+            <div className="proc-tab">
+              <section>
+                <h3 className="sub-head">Think time</h3>
+                <p className="muted small">Load tests and opted-in collection runs; manual sends don't wait.</p>
+                <TimerEditor value={req.think} onChange={(think) => edit({ think })} inheritLabel="Inherit (folder/collection)" />
+              </section>
+              <section>
+                <h3 className="sub-head">Pre-processors</h3>
+                <ProcessorList phase="pre" items={pre} onChange={(items) => edit(setPre(req, items))} />
+              </section>
+            </div>
+          )}
+          {activeTab === "post" && (
+            <div className="proc-tab">
+              <section>
+                <h3 className="sub-head">Post-processors</h3>
+                <ProcessorList phase="post" items={post} onChange={(items) => edit(setPost(req, items))} />
+              </section>
+            </div>
+          )}
+        </div>
+      </section>
+    </VarScope>
   );
 }
 
@@ -319,7 +322,7 @@ function BodyEditor({ body, onChange }: { body?: Body; onChange: (b: Body | unde
           />
         </div>
         {type === "json" && body?.content && !jsonError && (
-          <Button size="small" onClick={() => set({ content: JSON.stringify(JSON.parse(body.content!), null, 2) })}>
+          <Button onClick={() => set({ content: JSON.stringify(JSON.parse(body.content!), null, 2) })}>
             Format
           </Button>
         )}
@@ -328,7 +331,7 @@ function BodyEditor({ body, onChange }: { body?: Body; onChange: (b: Body | unde
       {type === "none" && <p className="muted">This request sends no body.</p>}
       {(type === "json" || type === "text" || type === "xml") && (
         <>
-          <Input.TextArea
+          <VarTextArea
             className="code-input mono"
             value={body?.content ?? ""}
             onChange={(e) => set({ content: e.target.value })}
@@ -347,18 +350,18 @@ function BodyEditor({ body, onChange }: { body?: Body; onChange: (b: Body | unde
         <div className="split-2">
           <label>
             <span className="field-label">Query</span>
-            <Input.TextArea className="code-input mono" value={body?.content ?? ""} onChange={(e) => set({ content: e.target.value })} spellCheck={false} autoSize={{ minRows: 8 }} />
+            <VarTextArea className="code-input mono" value={body?.content ?? ""} onChange={(e) => set({ content: e.target.value })} spellCheck={false} autoSize={{ minRows: 8 }} />
           </label>
           <label>
             <span className="field-label">Variables (JSON)</span>
-            <Input.TextArea className="code-input mono" value={body?.variables ?? ""} onChange={(e) => set({ variables: e.target.value })} spellCheck={false} autoSize={{ minRows: 8 }} />
+            <VarTextArea className="code-input mono" value={body?.variables ?? ""} onChange={(e) => set({ variables: e.target.value })} spellCheck={false} autoSize={{ minRows: 8 }} />
           </label>
         </div>
       )}
       {type === "file" && (
         <label className="field-row">
           <span className="field-label">File path</span>
-          <Input className="mono wide" value={body?.file ?? ""} onChange={(e) => set({ file: e.target.value })} placeholder="data/payload.bin (relative to the workspace)" />
+          <VarInput className="mono wide" value={body?.file ?? ""} onChange={(e) => set({ file: e.target.value })} placeholder="data/payload.bin (relative to the workspace)" />
         </label>
       )}
     </div>
@@ -440,7 +443,7 @@ export function AuthEditor({ auth, onChange, context }: { auth?: Auth; onChange:
       {type === "inherit" && context?.path && <TokenPanel context={context} inheritedOnly />}
       {type === "oauth2" && <OAuth2Form params={params} onChange={(p) => onChange({ type, params: p })} context={context} />}
       {fields?.map((f) => {
-        const Field = f.secret ? Input.Password : Input;
+        const Field = f.secret ? Input.Password : VarInput;
         return (
           <label key={f.key} className="field-row">
             <span className="field-label">{f.label}</span>

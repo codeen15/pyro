@@ -427,7 +427,6 @@ export function InstallPlugin() {
                     {e.description && <p className="muted small">{e.description}</p>}
                   </div>
                   <Button
-                    size="small"
                     disabled={busy}
                     onClick={async () => {
                       setBusy(true);

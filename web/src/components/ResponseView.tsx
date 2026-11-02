@@ -145,7 +145,7 @@ function StatusLine({
         </button>
       )}
       {onSaveExample && (
-        <Button size="small" className="save-example" icon={<BookmarkPlus size={13} />} onClick={onSaveExample} title="Keep this response in the request's Examples tab">
+        <Button className="save-example" icon={<BookmarkPlus size={13} />} onClick={onSaveExample} title="Keep this response in the request's Examples tab">
           Save as example
         </Button>
       )}
@@ -255,7 +255,7 @@ function BodyView({ res }: { res: PyroResponse }) {
         />
         <span className="meta">{contentType || "no content-type"}</span>
         <Tooltip title="Copy body">
-          <Button type="text" size="small" icon={<Copy size={14} />} onClick={() => navigator.clipboard?.writeText(text)} aria-label="Copy body" />
+          <Button type="text" icon={<Copy size={14} />} onClick={() => navigator.clipboard?.writeText(text)} aria-label="Copy body" />
         </Tooltip>
       </div>
       {res.bodyTruncated && (

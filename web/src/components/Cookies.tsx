@@ -97,7 +97,6 @@ export function CookiesPage() {
               <Tooltip title="Delete this domain's cookies">
                 <Button
                   type="text"
-                  size="small"
                   icon={<Trash2 size={13} />}
                   aria-label={`Delete cookies for ${domain}`}
                   onClick={async () => {
@@ -133,7 +132,6 @@ export function CookiesPage() {
                   render: (_, c) => (
                     <Button
                       type="text"
-                      size="small"
                       icon={<Trash2 size={13} />}
                       aria-label={`Delete cookie ${c.name}`}
                       onClick={async () => {

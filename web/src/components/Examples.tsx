@@ -32,7 +32,6 @@ export function ExamplesEditor({ examples, onChange }: { examples: Example[]; on
           <div className="example-head">
             <Button
               type="text"
-              size="small"
               icon={<ChevronRight size={12} className={`chev ${open === i ? "open" : ""}`} />}
               onClick={() => setOpen(open === i ? null : i)}
               aria-expanded={open === i}
@@ -45,7 +44,7 @@ export function ExamplesEditor({ examples, onChange }: { examples: Example[]; on
             ) : null}
             <Input value={ex.name} onChange={(e) => update(i, { name: e.target.value })} aria-label="Example name" />
             <Tooltip title="Delete example">
-              <Button type="text" size="small" icon={<Trash2 size={13} />} onClick={() => onChange(examples.filter((_, j) => j !== i))} aria-label={`Delete example ${ex.name}`} />
+              <Button type="text" icon={<Trash2 size={13} />} onClick={() => onChange(examples.filter((_, j) => j !== i))} aria-label={`Delete example ${ex.name}`} />
             </Tooltip>
           </div>
           {open === i && (

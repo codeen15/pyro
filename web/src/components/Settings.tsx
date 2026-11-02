@@ -208,7 +208,6 @@ function VarsTable({ vars, onChange }: { vars: Variable[]; onChange: (v: Variabl
                     <Tooltip title={v.secret ? "Secret (double-click to unmark)" : "Mark as secret"}>
                       <Button
                         type="text"
-                        size="small"
                         className={v.secret ? "is-on" : undefined}
                         icon={masked ? <EyeOff size={13} /> : <Eye size={13} />}
                         aria-label={v.secret ? `Show or hide ${v.key}` : `Mark ${v.key} as secret`}
@@ -223,7 +222,7 @@ function VarsTable({ vars, onChange }: { vars: Variable[]; onChange: (v: Variabl
                       />
                     </Tooltip>
                     <Tooltip title="Remove">
-                      <Button type="text" size="small" icon={<Trash2 size={13} />} aria-label={`Remove ${v.key}`} onClick={() => onChange(vars.filter((_, j) => j !== i))} />
+                      <Button type="text" icon={<Trash2 size={13} />} aria-label={`Remove ${v.key}`} onClick={() => onChange(vars.filter((_, j) => j !== i))} />
                     </Tooltip>
                   </td>
                 </tr>

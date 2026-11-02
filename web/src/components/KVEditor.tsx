@@ -1,4 +1,5 @@
-import { Button, Checkbox, Input, Tooltip } from "antd";
+import { VarInput } from "../vars";
+import { Button, Checkbox, Tooltip } from "antd";
 import { FileUp, Trash2 } from "../icons";
 import type { KeyValue } from "../api";
 
@@ -40,7 +41,7 @@ export function KVEditor({ rows, onChange, keyPlaceholder = "Key", valuePlacehol
                 {!blank && <Checkbox checked={!r.disabled} onChange={(e) => update(i, { disabled: !e.target.checked })} aria-label={`Include ${r.key || "row"}`} />}
               </td>
               <td>
-                <Input
+                <VarInput
                   variant="borderless"
                   className="mono"
                   value={r.key}
@@ -51,7 +52,7 @@ export function KVEditor({ rows, onChange, keyPlaceholder = "Key", valuePlacehol
                 />
               </td>
               <td>
-                <Input
+                <VarInput
                   variant="borderless"
                   className="mono"
                   value={r.value}
@@ -66,7 +67,6 @@ export function KVEditor({ rows, onChange, keyPlaceholder = "Key", valuePlacehol
                   <Tooltip title={r.file ? "Value is a file path" : "Send value as text"}>
                     <Button
                       type="text"
-                      size="small"
                       className={r.file ? "is-on" : undefined}
                       icon={<FileUp size={13} />}
                       onClick={() => update(i, { file: !r.file })}
@@ -75,7 +75,7 @@ export function KVEditor({ rows, onChange, keyPlaceholder = "Key", valuePlacehol
                     />
                   </Tooltip>
                 )}
-                {!blank && <Button type="text" size="small" icon={<Trash2 size={13} />} onClick={() => remove(i)} aria-label={`Remove ${r.key || "row"}`} title="Remove" />}
+                {!blank && <Button type="text" icon={<Trash2 size={13} />} onClick={() => remove(i)} aria-label={`Remove ${r.key || "row"}`} title="Remove" />}
               </td>
             </tr>
           );

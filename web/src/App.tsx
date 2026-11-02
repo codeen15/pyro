@@ -334,7 +334,6 @@ function ImportResult({ report, mode, onClose }: { report: ImportReport; mode: "
                   {" "}· load test{" "}
                   <Button
                     type="link"
-                    size="small"
                     className="inline-link"
                     onClick={() => {
                       onClose();
@@ -372,7 +371,6 @@ function ImportResult({ report, mode, onClose }: { report: ImportReport; mode: "
                     w.path && report.slug ? (
                       <Button
                         type="link"
-                        size="small"
                         className="inline-link mono"
                         onClick={() => {
                           setTab("collections");
@@ -456,7 +454,7 @@ function ThemeSelect() {
         onClick: ({ key }) => setTheme(key as Theme),
       }}
     >
-      <Button type="text" size="small" className="theme-switch" aria-label="Theme">
+      <Button type="text" className="theme-switch" aria-label="Theme">
         {THEMES.find((t) => t.value === theme)?.label}
         <ChevronDown size={12} />
       </Button>

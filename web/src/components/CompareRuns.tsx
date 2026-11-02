@@ -187,7 +187,7 @@ export function CompareRunsPage({ a, b }: { a: string; b: string }) {
 
         <div className="chart-head">
           <h2 className="dash-title">Over time</h2>
-          <Button size="small" icon={<Table2 size={13} />} onClick={() => setShowTable(!showTable)} aria-pressed={showTable}>
+          <Button icon={<Table2 size={13} />} onClick={() => setShowTable(!showTable)} aria-pressed={showTable}>
             {showTable ? "Charts" : "Table view"}
           </Button>
         </div>

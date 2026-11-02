@@ -575,10 +575,10 @@ input[type="checkbox"] {
   transition: background-color 0.2s var(--ease);
 }
 .row-wrap .row {
-  padding-right: 92px;
+  padding-right: 132px;
 }
 .row-wrap.request-row .row {
-  padding-right: 32px;
+  padding-right: 36px;
 }
 .row:hover {
   background: rgba(0, 0, 0, 0.04);
@@ -621,8 +621,8 @@ input[type="checkbox"] {
 
 .row-actions {
   position: absolute;
-  top: 4px;
-  right: 4px;
+  top: 0;
+  right: 0;
   display: flex;
   gap: 0;
   opacity: 0;
@@ -871,10 +871,7 @@ input[type="checkbox"] {
   color: var(--accent);
 }
 
-/* URL bar: method / URL / Send, one 40px compact group. */
-.urlbar .ant-space-compact {
-  height: 40px;
-}
+/* URL bar: method / URL / Send, one compact group at the standard 32px. */
 .method-select.ant-select {
   width: 104px;
   flex: none;
@@ -917,7 +914,7 @@ input[type="checkbox"] {
   flex: none;
   border: 1px solid var(--rule-strong);
   border-right: 0;
-  border-radius: var(--r-lg) 0 0 var(--r-lg);
+  border-radius: var(--r) 0 0 var(--r);
   background: var(--iron-2);
   font: 600 13px var(--font-mono);
 }
@@ -3855,3 +3852,123 @@ input[type="checkbox"] {
   margin: 0 0 12px;
 }
 
+
+/* ---------- {{variables}} in inputs ----------
+   The field's own text turns transparent and a mirror underneath draws the
+   same text with variables coloured: green defined, red missing, purple
+   dynamic. Highlights add no padding so the mirror stays aligned. */
+.var-field {
+  position: relative;
+  min-width: 0;
+}
+.urlbar .var-field {
+  flex: 1;
+}
+.urlbar .var-field .ant-input {
+  height: 100%;
+}
+.var-field.has-vars .ant-input,
+.var-field.has-vars textarea.ant-input {
+  position: relative;
+  z-index: 1;
+  color: transparent;
+  caret-color: var(--text);
+  background: transparent;
+}
+.var-field.has-vars .ant-input::selection {
+  color: transparent;
+}
+.var-mirror {
+  position: absolute;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  box-sizing: border-box;
+  border-style: solid;
+  border-color: transparent;
+  color: var(--text);
+  white-space: pre;
+}
+/* Inputs centre a single line vertically whatever their padding. */
+.var-mirror:not(.is-multi) {
+  display: flex;
+  align-items: center;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+}
+.var-mirror:not(.is-multi) .var-mirror-text {
+  flex: none;
+}
+.var-mirror.is-multi {
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+.var-mirror-text {
+  will-change: transform;
+}
+.var-token {
+  border-radius: 3px;
+}
+.var-token.is-defined {
+  color: var(--ok);
+  background: var(--ok-soft);
+}
+.var-token.is-missing {
+  color: var(--error);
+  background: var(--error-soft);
+}
+.var-token.is-dynamic {
+  color: var(--m-patch);
+  background: rgba(114, 46, 209, 0.08);
+}
+:root[data-theme="dark"] .var-token.is-dynamic {
+  background: rgba(146, 84, 222, 0.16);
+}
+.var-anchor {
+  position: absolute;
+  pointer-events: none;
+}
+.var-card {
+  display: grid;
+  gap: 8px;
+  width: 300px;
+  max-width: calc(100vw - 48px);
+}
+.var-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.var-card-head code {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.var-card-head .ant-tag {
+  margin: 0;
+  max-width: 60%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.var-card-value {
+  padding: 4px 8px;
+  border-radius: var(--r-sm);
+  background: var(--iron-2);
+  overflow-wrap: anywhere;
+}
+.var-card-note {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+.var-card-target {
+  width: 100%;
+}
+.var-card-edit {
+  display: flex;
+  gap: 8px;
+}
+.var-card-edit .ant-input-affix-wrapper,
+.var-card-edit > .ant-input {
+  flex: 1;
+}

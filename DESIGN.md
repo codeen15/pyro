@@ -219,6 +219,14 @@ their field rather than pushing the page sideways.
 
 ## Do's and Don'ts
 
+- **Buttons:** one size everywhere, antd's default 32px (Send, Start, tree row actions,
+  inline links and dialog buttons alike). Don't pass `size` to a Button.
+- **Variables in fields:** URL, key/value, body, auth and message fields highlight
+  `{{name}}` in place: green when it resolves (runtime → environment → folders → collection →
+  globals, as the engine does), red when it doesn't, purple for dynamic `{{$…}}` values.
+  Hovering one opens a card with its value and scope; it can be edited there (saved to its
+  scope's file) or, when missing, added to the environment, folder, collection or globals.
+
 ### Do:
 - **Do** reach for an antd component before writing a custom one, and theme it through tokens
   rather than CSS overrides.
