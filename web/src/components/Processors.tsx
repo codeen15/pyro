@@ -195,17 +195,16 @@ export function ProcessorList({ phase, items, onChange }: { phase: Phase; items:
               />
               <span className="proc-tools">
                 <Switch size="small" checked={!p.disabled} onChange={(on) => set(i, { ...p, disabled: on ? undefined : true })} aria-label={`Enable ${label}`} />
-                <Button type="text" size="small" icon={<ArrowUp size={13} />} disabled={i === 0} onClick={() => move(i, -1)} aria-label={`Move ${label} up`} title="Move up" />
+                <Button type="text" icon={<ArrowUp size={13} />} disabled={i === 0} onClick={() => move(i, -1)} aria-label={`Move ${label} up`} title="Move up" />
                 <Button
                   type="text"
-                  size="small"
                   icon={<ArrowDown size={13} />}
                   disabled={i === items.length - 1}
                   onClick={() => move(i, 1)}
                   aria-label={`Move ${label} down`}
                   title="Move down"
                 />
-                <Button type="text" size="small" icon={<Trash2 size={13} />} onClick={() => remove(i)} aria-label={`Remove ${label}`} title="Remove" />
+                <Button type="text" icon={<Trash2 size={13} />} onClick={() => remove(i)} aria-label={`Remove ${label}`} title="Remove" />
               </span>
             </header>
             <div className="proc-body">

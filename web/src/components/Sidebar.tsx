@@ -3,6 +3,7 @@ import { Alert, App, Button, Dropdown, Empty, Input, Modal, Skeleton, Tabs, Tool
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Activity, BookOpen, ChevronRight, Download, Folder, FolderOpen, FolderPlus, Gauge, Layers, MoreVertical, Play, Plus, RefreshCw, Search, Settings2, Trash2, TriangleAlert } from "../icons";
 import { PluginsRail, usePluginTypes } from "./Plugins";
+import { LoadTestMenu } from "./LoadActions";
 import { api, saveFile, type Kind, type PyroRequest, type TreeNode, type WorkspaceInfo } from "../api";
 import { formatMs, heatOf } from "../heat";
 import { useApp } from "../store";
@@ -295,13 +296,13 @@ function TreeItem({
         </button>
         <span className="row-actions">
           <Tooltip title="Run all requests">
-            <Button type="text" size="small" icon={<Play size={12} />} onClick={() => onSelect(`run:${node.path}`)} aria-label={`Run ${node.name}`} />
+            <Button type="text" icon={<Play size={12} />} onClick={() => onSelect(`run:${node.path}`)} aria-label={`Run ${node.name}`} />
           </Tooltip>
           <Tooltip title="New request">
-            <Button type="text" size="small" icon={<Plus size={12} />} onClick={() => onCreate(node)} aria-label={`New request in ${node.name}`} />
+            <Button type="text" icon={<Plus size={12} />} onClick={() => onCreate(node)} aria-label={`New request in ${node.name}`} />
           </Tooltip>
           <Tooltip title="Variables, auth and scripts">
-            <Button type="text" size="small" icon={<Settings2 size={12} />} onClick={() => onSelect(`settings:${node.path}`)} aria-label={`Settings for ${node.name}`} />
+            <Button type="text" icon={<Settings2 size={12} />} onClick={() => onSelect(`settings:${node.path}`)} aria-label={`Settings for ${node.name}`} />
           </Tooltip>
           <NodeMenu node={node} onNewFolder={onNewFolder} />
         </span>
@@ -370,7 +371,7 @@ function History() {
     <div className="rail-scroll">
       <div className="rail-head">
         <span className="rail-section">Last {q.data.length}</span>
-        <Button type="link" size="small" onClick={() => clear.mutate()} aria-label="Clear history">
+        <Button type="link" onClick={() => clear.mutate()} aria-label="Clear history">
           Clear
         </Button>
       </div>
@@ -437,11 +438,16 @@ function LoadTests() {
       <ul className="tree">
         {tests.data?.map((t) => (
           <li key={t.name}>
-            <button className={`row ${selected === `load:${t.name}` ? "is-active" : ""}`} onClick={() => select(`load:${t.name}`)}>
-              <Gauge size={14} className="row-icon" />
-              <span className="row-label">{t.title || t.name}</span>
-              {t.error && <TriangleAlert size={13} className="row-warn" aria-label="Invalid plan" />}
-            </button>
+            <div className="row-wrap request-row">
+              <button className={`row ${selected === `load:${t.name}` ? "is-active" : ""}`} onClick={() => select(`load:${t.name}`)}>
+                <Gauge size={14} className="row-icon" />
+                <span className="row-label">{t.title || t.name}</span>
+                {t.error && <TriangleAlert size={13} className="row-warn" aria-label="Invalid plan" />}
+              </button>
+              <span className="row-actions">
+                <LoadTestMenu name={t.name} title={t.title || t.name} inRail />
+              </span>
+            </div>
           </li>
         ))}
       </ul>
@@ -542,7 +548,7 @@ function NodeMenu({ node, onNewFolder }: { node: TreeNode; onNewFolder: (n: Tree
   items.push({ key: "delete", icon: <Trash2 size={14} />, danger: true, label: `Delete ${node.name}`, onClick: () => del(node) });
   return (
     <Dropdown trigger={["click"]} menu={{ items }}>
-      <Button type="text" size="small" icon={<MoreVertical size={14} />} aria-label={`More actions for ${node.name}`} />
+      <Button type="text" icon={<MoreVertical size={14} />} aria-label={`More actions for ${node.name}`} />
     </Dropdown>
   );
 }

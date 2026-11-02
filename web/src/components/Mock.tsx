@@ -69,9 +69,9 @@ export function MockPanel({ slug }: { slug: string }) {
         <Badge status="processing" text="Running" />
         <code className="mono">{m.url}</code>
         <Tooltip title="Copy URL">
-          <Button type="text" size="small" icon={<Copy size={13} />} onClick={() => navigator.clipboard?.writeText(m.url)} aria-label="Copy mock URL" />
+          <Button type="text" icon={<Copy size={13} />} onClick={() => navigator.clipboard?.writeText(m.url)} aria-label="Copy mock URL" />
         </Tooltip>
-        <Button size="small" icon={<Square size={13} />} onClick={stop}>
+        <Button icon={<Square size={13} />} onClick={stop}>
           Stop
         </Button>
       </div>
@@ -96,7 +96,7 @@ export function MockPanel({ slug }: { slug: string }) {
               title: "Request",
               key: "request",
               render: (_, r) => (
-                <Button type="link" size="small" className="inline-link" onClick={() => select(`${slug}/${r.request}`)}>
+                <Button type="link" className="inline-link" onClick={() => select(`${slug}/${r.request}`)}>
                   {r.name}
                 </Button>
               ),

@@ -312,3 +312,46 @@ test("add a folder, then delete a request and the folder", async ({ page }) => {
   await expect(page.locator(".tree")).not.toContainText("Refunds");
   await expect(page.locator(".tree")).toContainText("List items");
 });
+
+test("rename, duplicate and delete a load test", async ({ page }) => {
+  await page.getByRole("tab", { name: "Load" }).click();
+  const row = page.locator(".rail .row-wrap", { hasText: "Smoke" }).first();
+  await row.hover();
+  await row.getByRole("button", { name: "More actions for Smoke" }).click();
+  await page.getByRole("menuitem", { name: "Duplicate Smoke" }).click();
+  await page.getByLabel("Load test name").fill("Smoke nightly");
+  await page.getByRole("button", { name: "Duplicate", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Smoke nightly" })).toBeVisible();
+
+  // Rename and delete from the plan's own header menu.
+  await page.locator(".lt-head-actions").getByRole("button", { name: "More actions for Smoke nightly" }).click();
+  await page.getByRole("menuitem", { name: "Rename Smoke nightly" }).click();
+  await page.getByLabel("Load test name").fill("Nightly");
+  await page.getByRole("button", { name: "Rename", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Nightly" })).toBeVisible();
+  await expect(page.locator(".rail")).not.toContainText("Smoke nightly");
+
+  await page.locator(".lt-head-actions").getByRole("button", { name: "More actions for Nightly" }).click();
+  await page.getByRole("menuitem", { name: "Delete Nightly" }).click();
+  await page.getByRole("button", { name: "Delete", exact: true }).click();
+  await expect(page.locator(".rail")).not.toContainText("Nightly");
+  await expect(page.locator(".rail")).toContainText("Smoke");
+});
+
+test("variables are coloured and editable from a hover card", async ({ page }) => {
+  await page.getByRole("button", { name: "GET List items", exact: true }).click();
+  await page.getByLabel("URL").fill("{{base}}/items/{{color}}");
+  await expect(page.locator(".var-token.is-defined[data-var=base]")).toBeVisible();
+  await expect(page.locator(".var-token.is-missing[data-var=color]")).toBeVisible();
+
+  // Add the missing variable to the collection from its card.
+  // The coloured text sits under the input, so point at where it is drawn.
+  const box = (await page.locator(".var-token[data-var=color]").boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await expect(page.locator(".var-card")).toContainText("Not defined");
+  await page.locator(".var-card").getByLabel("Value of color").fill("red");
+  await page.locator(".var-card").getByRole("button", { name: "Add" }).click();
+  await expect(page.locator(".var-token.is-defined[data-var=color]")).toBeVisible();
+  await page.getByRole("button", { name: "Send" }).click();
+  await expect(page.locator(".response")).toContainText("/items/red");
+});

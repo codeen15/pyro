@@ -175,7 +175,7 @@ export function LoadRunPage({ id }: { id: string }) {
             </h1>
             <p className="muted small">
               {st.test && (
-                <Button type="link" size="small" className="inline-link" onClick={() => select(`load:${st.test}`)}>
+                <Button type="link" className="inline-link" onClick={() => select(`load:${st.test}`)}>
                   loadtests/{st.test}.load.yaml
                 </Button>
               )}
@@ -249,7 +249,7 @@ export function LoadRunPage({ id }: { id: string }) {
                     <span className="muted small">{t.noData ? "no data yet" : `now ${thresholdActual(t)}`}</span>
                     {!failing && t.breached && <span className="muted small">· failed earlier</span>}
                     {lit && (
-                      <Button size="small" className="th-seen" onClick={() => setSeen(new Set(seen).add(key))}>
+                      <Button className="th-seen" onClick={() => setSeen(new Set(seen).add(key))}>
                         Seen
                       </Button>
                     )}
@@ -262,7 +262,7 @@ export function LoadRunPage({ id }: { id: string }) {
 
         <div className="chart-head">
           <h2 className="dash-title">Over time</h2>
-          <Button size="small" icon={<Table2 size={13} />} onClick={() => setShowTable(!showTable)} aria-pressed={showTable}>
+          <Button icon={<Table2 size={13} />} onClick={() => setShowTable(!showTable)} aria-pressed={showTable}>
             {showTable ? "Charts" : "Table view"}
           </Button>
         </div>

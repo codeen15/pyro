@@ -6,6 +6,7 @@ import { api, type PyroRequest, type SavedMessage, type SessionMessage, type Ses
 import { subscribe } from "../events";
 import { formatMs, heatOf } from "../heat";
 import { useApp } from "../store";
+import { VarInput, VarTextArea, VarScope } from "../vars";
 import { KVEditor } from "./KVEditor";
 import { AuthEditor, DeleteRequestButton, RequestTitle, SaveButton } from "./RequestEditor";
 import { EmptyState } from "./ResponseView";
@@ -155,127 +156,129 @@ export function SessionConsole({ path, saved }: { path: string; saved: PyroReque
   ];
 
   return (
-    <div className="work session">
-      <section className="card editor">
-        <RequestTitle req={req} path={path} dirty={dirty} onName={(name) => edit({ name })}>
-          <KindLabel value={req.kind} />
-          <SaveButton dirty={dirty} saving={save.isPending} onSave={() => save.mutate()} />
-          <DeleteRequestButton path={path} name={saved.name} />
-        </RequestTitle>
+    <VarScope path={path}>
+      <div className="work session">
+        <section className="card editor">
+          <RequestTitle req={req} path={path} dirty={dirty} onName={(name) => edit({ name })}>
+            <KindLabel value={req.kind} />
+            <SaveButton dirty={dirty} saving={save.isPending} onSave={() => save.mutate()} />
+            <DeleteRequestButton path={path} name={saved.name} />
+          </RequestTitle>
 
-        <form
-          className="urlbar"
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (connected) disconnect();
-            else connect();
-          }}
-        >
-          <Space.Compact block size="large">
-            <span className={`kind-tag ${sio ? "m-sio" : "m-ws"} ${connected ? "is-live" : ""}`}>{sio ? "SIO" : "WS"}</span>
-            <Input
-              className="url-input mono"
-              value={req.url}
-              onChange={(e) => edit({ url: e.target.value })}
-              placeholder={sio ? "http://localhost:3000" : "wss://echo.example.com/socket"}
-              aria-label="URL"
-              spellCheck={false}
-              disabled={connected}
-            />
-            {connected ? (
-              <Button className="send" htmlType="submit" danger icon={<Unplug size={15} />}>
-                Disconnect
-              </Button>
-            ) : (
-              <Button className="send" type="primary" htmlType="submit" loading={connecting} disabled={!req.url.trim()} icon={<PlugZap size={15} />} title="Connect (Ctrl+Enter)">
-                {connecting ? "Connecting" : "Connect"}
-              </Button>
-            )}
-          </Space.Compact>
-        </form>
-        {connectError && <Alert type="error" showIcon role="alert" title={connectError} />}
-
-        <Tabs
-          className="part-tabs"
-          activeKey={tab}
-          onChange={(k) => setTab(k as Tab)}
-          aria-label="Session parts"
-          items={tabs.map((t) => ({
-            key: t.id,
-            label: (
-              <>
-                {t.label}
-                {!!t.count && <span className="count">{t.count}</span>}
-              </>
-            ),
-          }))}
-        />
-
-        <div className="tab-panel" role="tabpanel">
-          {tab === "message" && (
-            <div className="composer">
-              {sio && (
-                <div className="field-row">
-                  <label className="field-label" htmlFor="sio-event">
-                    Event
-                  </label>
-                  <Input id="sio-event" className="mono event-input" value={compose.event ?? ""} onChange={(e) => setCompose({ ...compose, event: e.target.value })} spellCheck={false} />
-                  <Checkbox checked={!!compose.ack} onChange={(e) => setCompose({ ...compose, ack: e.target.checked })}>
-                    Ask for an ack
-                  </Checkbox>
-                </div>
-              )}
-              <Input.TextArea
-                className="code-input mono"
-                value={compose.content}
-                onChange={(e) => setCompose({ ...compose, content: e.target.value })}
+          <form
+            className="urlbar"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (connected) disconnect();
+              else connect();
+            }}
+          >
+            <Space.Compact block>
+              <span className={`kind-tag ${sio ? "m-sio" : "m-ws"} ${connected ? "is-live" : ""}`}>{sio ? "SIO" : "WS"}</span>
+              <VarInput
+                className="url-input mono"
+                value={req.url}
+                onChange={(e) => edit({ url: e.target.value })}
+                placeholder={sio ? "http://localhost:3000" : "wss://echo.example.com/socket"}
+                aria-label="URL"
                 spellCheck={false}
-                aria-label="Message"
-                autoSize={{ minRows: 5 }}
-                placeholder={sio ? '["hello", {"room": "{{room}}"}]   (a JSON array of arguments)' : '{"op": "subscribe", "channel": "{{channel}}"}'}
+                disabled={connected}
               />
-              <div className="composer-actions">
-                <Button type="primary" icon={<SendHorizontal size={14} />} onClick={send} disabled={!connected} title={connected ? "Send (Ctrl+Enter)" : "Connect first"}>
-                  Send
+              {connected ? (
+                <Button className="send" htmlType="submit" danger icon={<Unplug size={15} />}>
+                  Disconnect
                 </Button>
-                <Button icon={<Bookmark size={13} />} onClick={saveTemplate} disabled={!compose.content.trim() && !compose.event}>
-                  Save message
+              ) : (
+                <Button className="send" type="primary" htmlType="submit" loading={connecting} disabled={!req.url.trim()} icon={<PlugZap size={15} />} title="Connect (Ctrl+Enter)">
+                  {connecting ? "Connecting" : "Connect"}
                 </Button>
-                {!sio && (
-                  <Checkbox checked={!!compose.binary} onChange={(e) => setCompose({ ...compose, binary: e.target.checked })}>
-                    Binary (base64)
-                  </Checkbox>
-                )}
-                {!connected && <span className="muted small">Connect to send. Variables like {"{{name}}"} are filled in when sent.</span>}
-              </div>
-              {sendError && <Alert type="error" showIcon title={sendError} />}
-            </div>
-          )}
-          {tab === "saved" && (
-            <SavedMessages
-              messages={req.messages ?? []}
-              onUse={(m) => {
-                setCompose({ ...m });
-                setTab("message");
-              }}
-              onChange={(messages) => edit({ messages: messages.length ? messages : undefined })}
-            />
-          )}
-          {tab === "headers" && <KVEditor label="Handshake headers" rows={req.headers ?? []} onChange={(headers) => edit({ headers })} keyPlaceholder="Header" />}
-          {tab === "auth" && <AuthEditor auth={req.auth} onChange={(auth) => edit({ auth })} context={{ path, request: req }} />}
-          {tab === "settings" && sio && <SocketIOSettings cfg={req.socketio ?? {}} onChange={(socketio) => edit({ socketio })} />}
-        </div>
-      </section>
+              )}
+            </Space.Compact>
+          </form>
+          {connectError && <Alert type="error" showIcon role="alert" title={connectError} />}
 
-      <Timeline
-        live={live}
-        unresolved={unresolved}
-        connecting={connecting}
-        canConnect={!!req.url.trim()}
-        onConnect={connect}
-        onClear={() => setLive((cur) => (cur ? { ...cur, messages: [] } : cur))}
-      />
-    </div>
+          <Tabs
+            className="part-tabs"
+            activeKey={tab}
+            onChange={(k) => setTab(k as Tab)}
+            aria-label="Session parts"
+            items={tabs.map((t) => ({
+              key: t.id,
+              label: (
+                <>
+                  {t.label}
+                  {!!t.count && <span className="count">{t.count}</span>}
+                </>
+              ),
+            }))}
+          />
+
+          <div className="tab-panel" role="tabpanel">
+            {tab === "message" && (
+              <div className="composer">
+                {sio && (
+                  <div className="field-row">
+                    <label className="field-label" htmlFor="sio-event">
+                      Event
+                    </label>
+                    <VarInput id="sio-event" className="mono event-input" value={compose.event ?? ""} onChange={(e) => setCompose({ ...compose, event: e.target.value })} spellCheck={false} />
+                    <Checkbox checked={!!compose.ack} onChange={(e) => setCompose({ ...compose, ack: e.target.checked })}>
+                      Ask for an ack
+                    </Checkbox>
+                  </div>
+                )}
+                <VarTextArea
+                  className="code-input mono"
+                  value={compose.content}
+                  onChange={(e) => setCompose({ ...compose, content: e.target.value })}
+                  spellCheck={false}
+                  aria-label="Message"
+                  autoSize={{ minRows: 5 }}
+                  placeholder={sio ? '["hello", {"room": "{{room}}"}]   (a JSON array of arguments)' : '{"op": "subscribe", "channel": "{{channel}}"}'}
+                />
+                <div className="composer-actions">
+                  <Button type="primary" icon={<SendHorizontal size={14} />} onClick={send} disabled={!connected} title={connected ? "Send (Ctrl+Enter)" : "Connect first"}>
+                    Send
+                  </Button>
+                  <Button icon={<Bookmark size={13} />} onClick={saveTemplate} disabled={!compose.content.trim() && !compose.event}>
+                    Save message
+                  </Button>
+                  {!sio && (
+                    <Checkbox checked={!!compose.binary} onChange={(e) => setCompose({ ...compose, binary: e.target.checked })}>
+                      Binary (base64)
+                    </Checkbox>
+                  )}
+                  {!connected && <span className="muted small">Connect to send. Variables like {"{{name}}"} are filled in when sent.</span>}
+                </div>
+                {sendError && <Alert type="error" showIcon title={sendError} />}
+              </div>
+            )}
+            {tab === "saved" && (
+              <SavedMessages
+                messages={req.messages ?? []}
+                onUse={(m) => {
+                  setCompose({ ...m });
+                  setTab("message");
+                }}
+                onChange={(messages) => edit({ messages: messages.length ? messages : undefined })}
+              />
+            )}
+            {tab === "headers" && <KVEditor label="Handshake headers" rows={req.headers ?? []} onChange={(headers) => edit({ headers })} keyPlaceholder="Header" />}
+            {tab === "auth" && <AuthEditor auth={req.auth} onChange={(auth) => edit({ auth })} context={{ path, request: req }} />}
+            {tab === "settings" && sio && <SocketIOSettings cfg={req.socketio ?? {}} onChange={(socketio) => edit({ socketio })} />}
+          </div>
+        </section>
+
+        <Timeline
+          live={live}
+          unresolved={unresolved}
+          connecting={connecting}
+          canConnect={!!req.url.trim()}
+          onConnect={connect}
+          onClear={() => setLive((cur) => (cur ? { ...cur, messages: [] } : cur))}
+        />
+      </div>
+    </VarScope>
   );
 }
 
@@ -289,10 +292,10 @@ function SavedMessages({ messages, onUse, onChange }: { messages: SavedMessage[]
         <li key={i}>
           {m.event && <span className="event-tag">{m.event}</span>}
           <span className="mono saved-preview">{m.content || "(no payload)"}</span>
-          <Button type="link" size="small" onClick={() => onUse(m)} title="Load into the composer">
+          <Button type="link" onClick={() => onUse(m)} title="Load into the composer">
             Load
           </Button>
-          <Button type="text" size="small" icon={<Trash2 size={13} />} onClick={() => onChange(messages.filter((_, j) => j !== i))} aria-label="Delete saved message" />
+          <Button type="text" icon={<Trash2 size={13} />} onClick={() => onChange(messages.filter((_, j) => j !== i))} aria-label="Delete saved message" />
         </li>
       ))}
     </ul>
@@ -312,7 +315,7 @@ function SocketIOSettings({ cfg, onChange }: { cfg: SocketIOConfig; onChange: (c
       </label>
       <label className="field-row">
         <span className="field-label">Auth (JSON)</span>
-        <Input className="mono wide" value={cfg.auth ?? ""} placeholder='{"token": "{{token}}"}' onChange={(e) => onChange({ ...cfg, auth: e.target.value || undefined })} />
+        <VarInput className="mono wide" value={cfg.auth ?? ""} placeholder='{"token": "{{token}}"}' onChange={(e) => onChange({ ...cfg, auth: e.target.value || undefined })} />
       </label>
       <div className="field-row">
         <span className="field-label">Transport</span>

@@ -235,18 +235,18 @@ export function TokenPanel({ context, inheritedOnly = false }: { context: TokenC
         <div className="token-value">
           <code className="mono">{show ? t.accessToken : `${t.accessToken.slice(0, 6)}…${t.accessToken.slice(-4)}`}</code>
           <Tooltip title={show ? "Hide token" : "Show token"}>
-            <Button type="text" size="small" icon={show ? <EyeOff size={13} /> : <Eye size={13} />} onClick={() => setShow(!show)} aria-label={show ? "Hide token" : "Show token"} />
+            <Button type="text" icon={show ? <EyeOff size={13} /> : <Eye size={13} />} onClick={() => setShow(!show)} aria-label={show ? "Hide token" : "Show token"} />
           </Tooltip>
           {t.scope && <span className="muted small">scope: {t.scope}</span>}
         </div>
       )}
       {s.unresolved && s.unresolved.length > 0 && <Alert type="warning" showIcon title={`Unresolved variables: ${s.unresolved.join(", ")} (pick an environment?)`} />}
       <div className="token-actions">
-        <Button size="small" icon={s.interactive ? <LogIn size={13} /> : <RefreshCw size={13} />} onClick={getToken} disabled={busy}>
+        <Button icon={s.interactive ? <LogIn size={13} /> : <RefreshCw size={13} />} onClick={getToken} disabled={busy}>
           {busy ? (s.interactive ? "Waiting for sign-in…" : "Getting token…") : "Get new access token"}
         </Button>
         {t && (
-          <Button size="small" icon={<Trash2 size={13} />} onClick={clear}>
+          <Button icon={<Trash2 size={13} />} onClick={clear}>
             Forget
           </Button>
         )}

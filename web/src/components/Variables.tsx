@@ -269,7 +269,6 @@ function VariableEditor({ scope, name }: { scope: "globals" | "environment"; nam
                           <Tooltip title="Save as initial value">
                             <Button
                               type="text"
-                              size="small"
                               icon={<Upload size={13} />}
                               aria-label={`Save current value of ${v.key} as initial`}
                               onClick={async () => {
@@ -281,7 +280,7 @@ function VariableEditor({ scope, name }: { scope: "globals" | "environment"; nam
                             />
                           </Tooltip>
                           <Tooltip title="Reset to initial value">
-                            <Button type="text" size="small" icon={<RotateCcw size={13} />} aria-label={`Reset ${v.key}`} onClick={() => setCurrent(v.key, null, true)} />
+                            <Button type="text" icon={<RotateCcw size={13} />} aria-label={`Reset ${v.key}`} onClick={() => setCurrent(v.key, null, true)} />
                           </Tooltip>
                         </>
                       )}
@@ -291,7 +290,6 @@ function VariableEditor({ scope, name }: { scope: "globals" | "environment"; nam
                     <Tooltip title={v.secret ? (masked ? "Show (double-click to unmark)" : "Hide (double-click to unmark)") : "Mark as secret"}>
                       <Button
                         type="text"
-                        size="small"
                         className={v.secret ? "is-on" : undefined}
                         icon={masked ? <EyeOff size={13} /> : <Eye size={13} />}
                         aria-label={v.secret ? (masked ? `Show ${v.key}` : `Hide ${v.key}`) : `Mark ${v.key} as secret`}
@@ -309,7 +307,7 @@ function VariableEditor({ scope, name }: { scope: "globals" | "environment"; nam
                       />
                     </Tooltip>
                     <Tooltip title="Remove">
-                      <Button type="text" size="small" icon={<Trash2 size={13} />} aria-label={`Remove ${v.key}`} onClick={() => setRows(list.filter((_, j) => j !== i))} />
+                      <Button type="text" icon={<Trash2 size={13} />} aria-label={`Remove ${v.key}`} onClick={() => setRows(list.filter((_, j) => j !== i))} />
                     </Tooltip>
                   </td>
                 </tr>

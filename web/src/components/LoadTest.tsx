@@ -35,6 +35,7 @@ import {
 import { useApp } from "../store";
 import { LineChart, clock } from "./LineChart";
 import { SaveButton } from "./RequestEditor";
+import { LoadTestMenu } from "./LoadActions";
 
 const EXECUTORS = [
   { id: "constant-vus", label: "Constant VUs" },
@@ -187,6 +188,7 @@ export function LoadTestPage({ name }: { name: string }) {
               saving={save.isPending}
               onSave={() => save.mutate()}
             />
+            <LoadTestMenu name={name} title={v.title || name} />
             {agentCount > 0 && (
               <Select
                 className="run-on"
@@ -208,7 +210,6 @@ export function LoadTestPage({ name }: { name: string }) {
             )}
             <Button
               type="primary"
-              size="large"
               className="lt-run"
               icon={<Play size={16} />}
               onClick={() => start(false)}
@@ -629,7 +630,6 @@ function ScenarioEditor({
                   <td className="lt-table-actions">
                     <Button
                       type="text"
-                      size="small"
                       icon={<X size={14} />}
                       onClick={() =>
                         update((d) => d.deleteIn([...base, "stages", i]))
@@ -643,7 +643,6 @@ function ScenarioEditor({
           </table>
           <div>
             <Button
-              size="small"
               icon={<Plus size={13} />}
               onClick={() =>
                 update((d) => {
@@ -898,7 +897,6 @@ function FlowEditor({
               <span className="step-actions">
                 <Button
                   type="text"
-                  size="small"
                   icon={<ArrowUp size={13} />}
                   onClick={() => move(i, -1)}
                   aria-label="Move up"
@@ -906,7 +904,6 @@ function FlowEditor({
                 />
                 <Button
                   type="text"
-                  size="small"
                   icon={<ArrowDown size={13} />}
                   onClick={() => move(i, 1)}
                   aria-label="Move down"
@@ -914,7 +911,6 @@ function FlowEditor({
                 />
                 <Button
                   type="text"
-                  size="small"
                   icon={<X size={13} />}
                   onClick={() => update((d) => d.deleteIn([...path, i]))}
                   aria-label="Remove step"
@@ -926,7 +922,6 @@ function FlowEditor({
       </ol>
       <div className="flow-add">
         <Button
-          size="small"
           icon={<Plus size={13} />}
           onClick={() =>
             update((d) =>
@@ -945,7 +940,6 @@ function FlowEditor({
           Request
         </Button>
         <Button
-          size="small"
           icon={<Plus size={13} />}
           onClick={() =>
             update((d) =>
@@ -959,7 +953,6 @@ function FlowEditor({
           Think time
         </Button>
         <Button
-          size="small"
           icon={<Plus size={13} />}
           onClick={() =>
             update((d) => {
@@ -1067,7 +1060,6 @@ function ThresholdsEditor({
                 <td className="lt-table-actions">
                   <Button
                     type="text"
-                    size="small"
                     icon={<X size={14} />}
                     aria-label="Remove threshold"
                     onClick={() =>
@@ -1360,7 +1352,6 @@ export function NewLoadTest() {
           <div className="lt-head-actions">
             <Button
               type="primary"
-              size="large"
               className="lt-run"
               onClick={create}
               disabled={!picked.length || !title.trim()}

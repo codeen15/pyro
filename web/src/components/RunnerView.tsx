@@ -121,7 +121,7 @@ export function RunnerView({ path }: { path: string }) {
               {data ? (
                 <span className="data-chip">
                   {data.name} · {data.rows.length} rows
-                  <Button type="text" size="small" icon={<X size={12} />} onClick={() => setData(null)} aria-label="Remove data file" disabled={running} />
+                  <Button type="text" icon={<X size={12} />} onClick={() => setData(null)} aria-label="Remove data file" disabled={running} />
                 </span>
               ) : (
                 <Button icon={<FileUp size={13} />} onClick={() => fileRef.current?.click()} disabled={running}>
