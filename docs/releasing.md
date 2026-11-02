@@ -1,6 +1,6 @@
 # Releasing
 
-1. Make sure `master` is green in CI (it includes a release dry run).
+1. Make sure `main` is green in CI (it includes a release dry run).
 2. Move the `CHANGELOG.md` entry from "unreleased" to the version and date; commit.
 3. Tag and push:
    ```sh
