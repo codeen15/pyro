@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { Alert, Button, Table, Tag, type TableColumnsType } from "antd";
 import {
   ArrowLeftRight,
   Check,
@@ -9,7 +10,7 @@ import {
   TrendingDown,
   TrendingUp,
   X,
-} from "lucide-react";
+} from "../icons";
 import { api, type LoadResult, type LoadTick, type RequestStat } from "../api";
 import { formatMs, heatOf } from "../heat";
 import { useApp } from "../store";
@@ -44,14 +45,18 @@ export function CompareRunsPage({ a, b }: { a: string; b: string }) {
   });
   if (qa.error || qb.error)
     return (
-      <p className="pad inline-error">{(qa.error ?? qb.error)!.message}</p>
+      <div className="page">
+        <Alert type="error" showIcon title={(qa.error ?? qb.error)!.message} />
+      </div>
     );
   if (!qa.data || !qb.data) return <p className="pad muted">Loading…</p>;
   const ra = qa.data.result;
   const rb = qb.data.result;
   if (!ra || !rb)
     return (
-      <p className="pad muted">Both runs must have finished to compare them.</p>
+      <div className="page">
+        <Alert type="info" showIcon title="Both runs must have finished to compare them." />
+      </div>
     );
 
   const m = (r: LoadResult, k: string) => r.metrics[k];
@@ -138,133 +143,89 @@ export function CompareRunsPage({ a, b }: { a: string; b: string }) {
     (m(ra, "http_reqs")?.value ?? 0) + (m(rb, "http_reqs")?.value ?? 0) > 0;
 
   return (
-    <section className="loadrun compare">
-      <header className="lt-head">
-        <div>
-          <h1>Compare runs</h1>
-          <p className="muted small">
-            {ra.name}
-            {ra.name !== rb.name && <> vs {rb.name}</>}
-          </p>
+    <div className="page compare">
+      <div className="dash">
+        <header className="lt-head dash-head">
+          <div>
+            <h1>Compare runs</h1>
+            <p className="muted small">
+              {ra.name}
+              {ra.name !== rb.name && <> vs {rb.name}</>}
+            </p>
+          </div>
+          <div className="lt-actions">
+            <Button icon={<ArrowLeftRight size={13} />} onClick={() => select(`compare:${b}:${a}`)} title="Make the candidate the baseline">
+              Swap
+            </Button>
+          </div>
+        </header>
+
+        <div className="compare-runs">
+          <RunCard role="Baseline" swatch="var(--viz-base)" id={a} r={ra} />
+          <RunCard role="Candidate" swatch="var(--viz-series)" id={b} r={rb} />
         </div>
-        <div className="lt-actions">
-          <button
-            className="btn ghost"
-            onClick={() => select(`compare:${b}:${a}`)}
-            title="Make the candidate the baseline"
-          >
-            <ArrowLeftRight size={13} /> Swap
-          </button>
-        </div>
-      </header>
 
-      <div className="compare-runs">
-        <RunCard role="Baseline" swatch="var(--viz-base)" id={a} r={ra} />
-        <RunCard role="Candidate" swatch="var(--viz-series)" id={b} r={rb} />
-      </div>
-
-      <div className="scroll-x">
-        <table className="data-table compare-table">
-          <thead>
-            <tr>
-              <th>Metric</th>
-              <th className="num">Baseline</th>
-              <th className="num">Candidate</th>
-              <th>Change</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r) => (
-              <tr key={r.label}>
-                <td>{r.label}</td>
-                <td className="num">{r.fmt(r.a)}</td>
-                <td className="num">{r.fmt(r.b)}</td>
-                <td>
-                  <Delta a={r.a} b={r.b} better={r.better} />
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      <ThresholdCompare a={ra} b={rb} />
-
-      <div className="chart-head">
-        <h2 className="sub-head">Over time</h2>
-        <button
-          className="btn ghost small"
-          onClick={() => setShowTable(!showTable)}
-          aria-pressed={showTable}
-        >
-          <Table2 size={13} /> {showTable ? "Charts" : "Table view"}
-        </button>
-      </div>
-      {showTable ? (
-        <CompareTickTable ta={ta} tb={tb} />
-      ) : (
-        <div className="chart-grid">
-          {hasHTTP && (
-            <LineChart
-              title="p95 response time"
-              x={x}
-              series={pair((t) => t.latency.p95)}
-              unit="ms"
-            />
-          )}
-          {hasHTTP && (
-            <LineChart
-              title="Requests per second"
-              x={x}
-              series={pair((t) => t.rps)}
-              unit=""
-            />
-          )}
-          <LineChart
-            title="Active virtual users"
-            x={x}
-            series={pair((t) => t.vus)}
-            unit=""
+        <section className="card dash-card">
+          <h2 className="dash-title">Summary</h2>
+          <Table<Row>
+            className="compare-table"
+            size="small"
+            pagination={false}
+            scroll={{ x: "max-content" }}
+            rowKey="label"
+            dataSource={rows}
+            columns={[
+              { title: "Metric", dataIndex: "label" },
+              { title: "Baseline", key: "a", align: "right", render: (_, r) => r.fmt(r.a) },
+              { title: "Candidate", key: "b", align: "right", render: (_, r) => r.fmt(r.b) },
+              { title: "Change", key: "delta", render: (_, r) => <Delta a={r.a} b={r.b} better={r.better} /> },
+            ]}
           />
-          {hasHTTP && (
-            <LineChart
-              title="Failed requests"
-              x={x}
-              series={pair((t) => t.errorRate)}
-              unit="%"
-            />
-          )}
-        </div>
-      )}
+        </section>
 
-      <RequestCompare a={ra.requests ?? []} b={rb.requests ?? []} />
-    </section>
+        <ThresholdCompare a={ra} b={rb} />
+
+        <div className="chart-head">
+          <h2 className="dash-title">Over time</h2>
+          <Button size="small" icon={<Table2 size={13} />} onClick={() => setShowTable(!showTable)} aria-pressed={showTable}>
+            {showTable ? "Charts" : "Table view"}
+          </Button>
+        </div>
+        {showTable ? (
+          <section className="card dash-card">
+            <CompareTickTable ta={ta} tb={tb} />
+          </section>
+        ) : (
+          <div className="chart-grid">
+            {hasHTTP && <LineChart title="p95 response time" x={x} series={pair((t) => t.latency.p95)} unit="ms" />}
+            {hasHTTP && <LineChart title="Requests per second" x={x} series={pair((t) => t.rps)} unit="" />}
+            <LineChart title="Active virtual users" x={x} series={pair((t) => t.vus)} unit="" />
+            {hasHTTP && <LineChart title="Failed requests" x={x} series={pair((t) => t.errorRate)} unit="%" />}
+          </div>
+        )}
+
+        <RequestCompare a={ra.requests ?? []} b={rb.requests ?? []} />
+      </div>
+    </div>
   );
 }
 
-function RunCard({
-  role,
-  swatch,
-  id,
-  r,
-}: {
-  role: string;
-  swatch: string;
-  id: string;
-  r: LoadResult;
-}) {
+const STATUS_COLOR: Record<string, string> = { passed: "success", failed: "error", aborted: "error", stopped: "warning" };
+
+function RunCard({ role, swatch, id, r }: { role: string; swatch: string; id: string; r: LoadResult }) {
   const select = useApp((s) => s.select);
+  // The whole card opens the run; a native button keeps it one tab stop.
   return (
-    <button className="run-card" onClick={() => select(`loadrun:${id}`)}>
+    <button className="card run-card" onClick={() => select(`loadrun:${id}`)}>
       <span className="run-card-role">
         <i style={{ background: swatch }} aria-hidden /> {role}
+        <Tag className={`verdict v-${r.status}`} color={STATUS_COLOR[r.status]}>
+          {r.status[0].toUpperCase() + r.status.slice(1)}
+        </Tag>
       </span>
       <span>{new Date(r.startedAt).toLocaleString()}</span>
       <span className="muted small">
-        <span className={`verdict v-${r.status}`}>
-          {r.status[0].toUpperCase() + r.status.slice(1)}
-        </span>{" "}
-        · {clock(r.duration)} · up to {r.maxVUs} VUs
+        {clock(r.duration)} · up to {r.maxVUs} VUs
         {r.agents?.length ? ` · ${r.agents.length} agents` : ""}
       </span>
     </button>
@@ -275,9 +236,7 @@ function RunCard({
 function Delta({ a, b, better }: { a: number; b: number; better: Better }) {
   if (a === 0 && b === 0) return <span className="delta">–</span>;
   const rel = a === 0 ? Infinity : (b - a) / a;
-  const pct = Number.isFinite(rel)
-    ? `${rel > 0 ? "+" : ""}${(rel * 100).toFixed(Math.abs(rel) < 0.1 ? 1 : 0)}%`
-    : "new";
+  const pct = Number.isFinite(rel) ? `${rel > 0 ? "+" : ""}${(rel * 100).toFixed(Math.abs(rel) < 0.1 ? 1 : 0)}%` : "new";
   if (Math.abs(rel) < NOISE) {
     return (
       <span className="delta">
@@ -303,12 +262,8 @@ function Delta({ a, b, better }: { a: number; b: number; better: Better }) {
 }
 
 function ThresholdCompare({ a, b }: { a: LoadResult; b: LoadResult }) {
-  const keys = new Map<
-    string,
-    { a?: boolean; b?: boolean; noA?: boolean; noB?: boolean }
-  >();
-  for (const t of a.thresholds ?? [])
-    keys.set(`${t.metric} ${t.condition}`, { a: t.passed, noA: t.noData });
+  const keys = new Map<string, { a?: boolean; b?: boolean; noA?: boolean; noB?: boolean }>();
+  for (const t of a.thresholds ?? []) keys.set(`${t.metric} ${t.condition}`, { a: t.passed, noA: t.noData });
   for (const t of b.thresholds ?? []) {
     const k = `${t.metric} ${t.condition}`;
     keys.set(k, { ...keys.get(k), b: t.passed, noB: t.noData });
@@ -330,30 +285,23 @@ function ThresholdCompare({ a, b }: { a: LoadResult; b: LoadResult }) {
         <X size={13} aria-hidden /> failed
       </span>
     );
+  const data = [...keys].map(([key, v]) => ({ key, ...v }));
   return (
-    <>
-      <h2 className="sub-head">Thresholds</h2>
-      <div className="scroll-x">
-        <table className="data-table compare-table">
-          <thead>
-            <tr>
-              <th>Threshold</th>
-              <th>Baseline</th>
-              <th>Candidate</th>
-            </tr>
-          </thead>
-          <tbody>
-            {[...keys].map(([k, v]) => (
-              <tr key={k}>
-                <td className="mono">{k}</td>
-                <td>{mark(v.a, v.noA)}</td>
-                <td>{mark(v.b, v.noB)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </>
+    <section className="card dash-card">
+      <h2 className="dash-title">Thresholds</h2>
+      <Table
+        className="compare-table"
+        size="small"
+        pagination={false}
+        scroll={{ x: "max-content" }}
+        dataSource={data}
+        columns={[
+          { title: "Threshold", dataIndex: "key", className: "mono" },
+          { title: "Baseline", key: "a", render: (_, v) => mark(v.a, v.noA) },
+          { title: "Candidate", key: "b", render: (_, v) => mark(v.b, v.noB) },
+        ]}
+      />
+    </section>
   );
 }
 
@@ -366,110 +314,67 @@ function RequestCompare({ a, b }: { a: RequestStat[]; b: RequestStat[] }) {
   const rows = [...byKey.values()].sort((x, y) => {
     const rx = x.a ?? x.b!;
     const ry = y.a ?? y.b!;
-    return (
-      rx.scenario.localeCompare(ry.scenario) ||
-      rx.request.localeCompare(ry.request)
-    );
+    return rx.scenario.localeCompare(ry.scenario) || rx.request.localeCompare(ry.request);
   });
+  type Pair = { a?: RequestStat; b?: RequestStat };
+  const one = (p: Pair) => (p.a ?? p.b)!;
+  const columns: TableColumnsType<Pair> = [
+    { title: "Request", key: "request", className: "mono", render: (_, p) => `${one(p).method} ${one(p).request}` },
+    { title: "Scenario", key: "scenario", render: (_, p) => one(p).scenario },
+    { title: "Count", key: "count", align: "right", render: (_, p) => `${(p.a?.count ?? 0).toLocaleString()} → ${(p.b?.count ?? 0).toLocaleString()}` },
+    { title: "Failed", key: "failed", align: "right", render: (_, p) => `${(p.a?.failed ?? 0).toLocaleString()} → ${(p.b?.failed ?? 0).toLocaleString()}` },
+    { title: "p95 baseline", key: "p95a", align: "right", render: (_, p) => <HeatValue ms={p.a?.duration.p95} /> },
+    { title: "p95 candidate", key: "p95b", align: "right", render: (_, p) => <HeatValue ms={p.b?.duration.p95} /> },
+    {
+      title: "p95 change",
+      key: "delta",
+      render: (_, p) => (p.a && p.b ? <Delta a={p.a.duration.p95 ?? 0} b={p.b.duration.p95 ?? 0} better="lower" /> : <span className="muted">only in one run</span>),
+    },
+  ];
   return (
-    <>
-      <h2 className="sub-head">Requests</h2>
-      <div className="scroll-x">
-        <table className="data-table compare-table">
-          <thead>
-            <tr>
-              <th>Request</th>
-              <th>Scenario</th>
-              <th className="num">Count</th>
-              <th className="num">Failed</th>
-              <th className="num">p95 baseline</th>
-              <th className="num">p95 candidate</th>
-              <th>p95 change</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map(({ a: ra, b: rb }) => {
-              const r = (ra ?? rb)!;
-              return (
-                <tr key={key(r)}>
-                  <td className="mono">
-                    {r.method} {r.request}
-                  </td>
-                  <td>{r.scenario}</td>
-                  <td className="num">
-                    {(ra?.count ?? 0).toLocaleString()} →{" "}
-                    {(rb?.count ?? 0).toLocaleString()}
-                  </td>
-                  <td className="num">
-                    {(ra?.failed ?? 0).toLocaleString()} →{" "}
-                    {(rb?.failed ?? 0).toLocaleString()}
-                  </td>
-                  <HeatCell ms={ra?.duration.p95} />
-                  <HeatCell ms={rb?.duration.p95} />
-                  <td>
-                    {ra && rb ? (
-                      <Delta
-                        a={ra.duration.p95 ?? 0}
-                        b={rb.duration.p95 ?? 0}
-                        better="lower"
-                      />
-                    ) : (
-                      <span className="muted">only in one run</span>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    </>
+    <section className="card dash-card">
+      <h2 className="dash-title">Requests</h2>
+      <Table<Pair> className="compare-table" size="small" pagination={false} scroll={{ x: "max-content" }} rowKey={(p) => key(one(p))} dataSource={rows} columns={columns} />
+    </section>
   );
 }
 
-function HeatCell({ ms }: { ms?: number }) {
-  if (ms === undefined) return <td className="num muted">–</td>;
+/** A duration with its heat swatch beside it (text stays neutral). */
+function HeatValue({ ms }: { ms?: number }) {
+  if (ms === undefined) return <span className="muted">–</span>;
   return (
-    <td className="num">
+    <span className="heat-value">
       <span className={`swatch heat-${heatOf(ms)}`} aria-hidden />
       {formatMs(ms)}
-    </td>
+    </span>
   );
 }
 
 function CompareTickTable({ ta, tb }: { ta: LoadTick[]; tb: LoadTick[] }) {
   const n = Math.max(ta.length, tb.length);
-  const cell = (t: LoadTick | undefined, f: (t: LoadTick) => string) => (
-    <td className="num">{t ? f(t) : "–"}</td>
-  );
+  const data = Array.from({ length: n }, (_, i) => ({ i, a: ta[i] as LoadTick | undefined, b: tb[i] as LoadTick | undefined }));
+  type R = (typeof data)[number];
+  const cell = (t: LoadTick | undefined, f: (t: LoadTick) => string) => (t ? f(t) : "–");
+  const p95 = (t: LoadTick) => formatMs(t.latency.p95);
+  const rps = (t: LoadTick) => t.rps.toFixed(1);
+  const failed = (t: LoadTick) => `${(t.errorRate * 100).toFixed(2)}%`;
   return (
-    <div className="scroll-x tick-table">
-      <table className="data-table">
-        <thead>
-          <tr>
-            <th>Time</th>
-            <th className="num">p95 baseline</th>
-            <th className="num">p95 candidate</th>
-            <th className="num">req/s baseline</th>
-            <th className="num">req/s candidate</th>
-            <th className="num">Failed baseline</th>
-            <th className="num">Failed candidate</th>
-          </tr>
-        </thead>
-        <tbody>
-          {Array.from({ length: n }, (_, i) => (
-            <tr key={i}>
-              <td className="mono">{clock((ta[i] ?? tb[i]).elapsed)}</td>
-              {cell(ta[i], (t) => formatMs(t.latency.p95))}
-              {cell(tb[i], (t) => formatMs(t.latency.p95))}
-              {cell(ta[i], (t) => t.rps.toFixed(1))}
-              {cell(tb[i], (t) => t.rps.toFixed(1))}
-              {cell(ta[i], (t) => `${(t.errorRate * 100).toFixed(2)}%`)}
-              {cell(tb[i], (t) => `${(t.errorRate * 100).toFixed(2)}%`)}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <Table<R>
+      className="tick-table"
+      size="small"
+      pagination={false}
+      scroll={{ x: "max-content", y: 420 }}
+      rowKey="i"
+      dataSource={data}
+      columns={[
+        { title: "Time", key: "time", className: "mono", render: (_, r) => clock((r.a ?? r.b)!.elapsed) },
+        { title: "p95 baseline", key: "p95a", align: "right", render: (_, r) => cell(r.a, p95) },
+        { title: "p95 candidate", key: "p95b", align: "right", render: (_, r) => cell(r.b, p95) },
+        { title: "req/s baseline", key: "rpsa", align: "right", render: (_, r) => cell(r.a, rps) },
+        { title: "req/s candidate", key: "rpsb", align: "right", render: (_, r) => cell(r.b, rps) },
+        { title: "Failed baseline", key: "fa", align: "right", render: (_, r) => cell(r.a, failed) },
+        { title: "Failed candidate", key: "fb", align: "right", render: (_, r) => cell(r.b, failed) },
+      ]}
+    />
   );
 }

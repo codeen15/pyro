@@ -1,17 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Check, Download, ExternalLink, Minus, Network, Play, Square, Table2, TriangleAlert, X } from "lucide-react";
+import { Alert, Button, Table, Tag, type TableColumnsType } from "antd";
+import { Check, Download, ExternalLink, Minus, Network, Play, Square, Table2, TriangleAlert, X } from "../icons";
 import { api, type AgentStatus, type ErrorCount, type LiveSnapshot, type LoadRunView, type LoadTick, type RequestStat, type ThresholdResult } from "../api";
 import { subscribe } from "../events";
 import { formatMs, heatOf } from "../heat";
 import { useApp } from "../store";
 import { LineChart, clock, fmtValue, type Ref } from "./LineChart";
 
-const VERDICT: Record<string, { label: string; icon: typeof Check }> = {
-  passed: { label: "Passed", icon: Check },
-  failed: { label: "Failed", icon: X },
-  aborted: { label: "Aborted", icon: X },
-  stopped: { label: "Stopped", icon: Square },
+const VERDICT: Record<string, { label: string; icon: typeof Check; color: string }> = {
+  passed: { label: "Passed", icon: Check, color: "success" },
+  failed: { label: "Failed", icon: X, color: "error" },
+  aborted: { label: "Aborted", icon: X, color: "error" },
+  stopped: { label: "Stopped", icon: Square, color: "warning" },
 };
 
 interface State {
@@ -115,7 +116,12 @@ export function LoadRunPage({ id }: { id: string }) {
     };
   }, [st]);
 
-  if (error) return <p className="pad inline-error">{error}</p>;
+  if (error)
+    return (
+      <div className="page">
+        <Alert type="error" showIcon title={error} />
+      </div>
+    );
   if (!st) return <p className="pad muted">Loading…</p>;
 
   const running = st.status === "running";
@@ -132,6 +138,7 @@ export function LoadRunPage({ id }: { id: string }) {
       return m ? [{ label: t.condition, value: Number(m[2]) }] : [];
     });
   const v = VERDICT[st.status];
+  const [p95Value, p95Unit] = formatMs(p95).split(" ");
 
   const openReport = async (download: boolean) => {
     const html = await api.loadReport(id);
@@ -148,195 +155,178 @@ export function LoadRunPage({ id }: { id: string }) {
   };
 
   return (
-    <section className="loadrun">
-      <header className="lt-head">
-        <div>
-          <h1>
-            {st.name || st.test || "Load test"}
-            {running ? (
-              <span className="verdict v-running">Running · {clock(last?.elapsed ?? 0)}</span>
-            ) : (
-              v && (
-                <span className={`verdict v-${st.status}`}>
-                  <v.icon size={14} /> {v.label}
-                </span>
-              )
-            )}
-          </h1>
-          <p className="muted small">
-            {st.test && (
-              <button className="link" onClick={() => select(`load:${st.test}`)}>
-                loadtests/{st.test}.load.yaml
-              </button>
-            )}
-            {st.maxRPS ? <> · capped at {st.maxRPS} req/s</> : null}
-            {st.reason && <> · {st.reason}</>}
-          </p>
-        </div>
-        <div className="lt-actions">
-          {running ? (
-            <>
-              <button
-                className="btn ghost"
-                disabled={stopping}
-                onClick={() => {
-                  setStopping(true);
-                  api.stopLoadRun(id);
-                }}
-                title="No new iterations; in-flight ones finish"
-              >
-                <Square size={13} /> {stopping ? "Stopping…" : "Stop"}
-              </button>
-              {stopping && (
-                <button className="btn ghost" onClick={() => api.stopLoadRun(id, true)} title="Cancel in-flight requests now">
-                  Abort now
-                </button>
+    <div className="page loadrun">
+      <div className="dash">
+        <header className="lt-head dash-head">
+          <div>
+            <h1>
+              {st.name || st.test || "Load test"}
+              {running ? (
+                <Tag className="verdict v-running" color="processing">
+                  Running · {clock(last?.elapsed ?? 0)}
+                </Tag>
+              ) : (
+                v && (
+                  <Tag className={`verdict v-${st.status}`} color={v.color} icon={<v.icon size={12} />}>
+                    {v.label}
+                  </Tag>
+                )
               )}
-            </>
-          ) : (
-            <>
-              <button className="btn ghost" onClick={() => openReport(false)}>
-                <ExternalLink size={13} /> Report
-              </button>
-              <button className="btn ghost" onClick={() => openReport(true)} aria-label="Download report">
-                <Download size={13} />
-              </button>
-            </>
+            </h1>
+            <p className="muted small">
+              {st.test && (
+                <Button type="link" size="small" className="inline-link" onClick={() => select(`load:${st.test}`)}>
+                  loadtests/{st.test}.load.yaml
+                </Button>
+              )}
+              {st.maxRPS ? <> · capped at {st.maxRPS} req/s</> : null}
+              {st.reason && <> · {st.reason}</>}
+            </p>
+          </div>
+          <div className="lt-actions">
+            {running ? (
+              <>
+                <Button
+                  icon={<Square size={13} />}
+                  disabled={stopping}
+                  onClick={() => {
+                    setStopping(true);
+                    api.stopLoadRun(id);
+                  }}
+                  title="No new iterations; in-flight ones finish"
+                >
+                  {stopping ? "Stopping…" : "Stop"}
+                </Button>
+                {stopping && (
+                  <Button danger onClick={() => api.stopLoadRun(id, true)} title="Cancel in-flight requests now">
+                    Abort now
+                  </Button>
+                )}
+              </>
+            ) : (
+              <>
+                <Button icon={<ExternalLink size={13} />} onClick={() => openReport(false)}>
+                  Report
+                </Button>
+                <Button icon={<Download size={13} />} onClick={() => openReport(true)} aria-label="Download report" />
+              </>
+            )}
+          </div>
+        </header>
+
+        <div className="kpis">
+          {running ? <Kpi label="Virtual users" value={String(last?.vus ?? 0)} /> : <Kpi label="Virtual users" value={String(st.maxVUs ?? 0)} unit="max" />}
+          {hasHTTP && <Kpi label="Requests per second" value={running ? fmtValue(last?.rps ?? 0, "") : fmtValue(st.totals?.http_reqs?.perSecond ?? 0, "")} />}
+          {hasHTTP && <Kpi label={`p95 response time${running ? " (last second)" : ""}`} value={p95Value} unit={p95Unit} heat={heatOf(p95)} />}
+          {hasHTTP && <Kpi label="Requests" value={totalReqs.toLocaleString()} sub={`${totalFailed.toLocaleString()} failed (${totalReqs ? ((totalFailed / totalReqs) * 100).toFixed(2) : "0.00"}%)`} />}
+          {charts.ws && <Kpi label="Stream messages per second" value={fmtValue(last?.wsMessagesPerSecond ?? 0, "")} />}
+          {(last?.dropped ?? 0) > 0 && <Kpi label="Dropped iterations (last second)" value={String(last?.dropped)} sub="Not enough VUs for the arrival rate" />}
+          {running && !agents?.length && (last?.cpu ?? -1) >= 0 && (
+            <Kpi
+              label="Load generator CPU"
+              value={String(Math.round((last?.cpu ?? 0) * 100))}
+              unit="%"
+              sub={(last?.cpu ?? 0) >= 0.9 ? "Saturated: latencies may include Pyro's own waiting" : `${Math.round(last?.memMB ?? 0)} MB memory`}
+            />
           )}
         </div>
-      </header>
+        {st.warnings?.map((w) => <Alert key={w} type="warning" showIcon role="note" title={w} />)}
 
-      <div className="kpis">
-        <Kpi label="Virtual users" value={running ? String(last?.vus ?? 0) : `${st.maxVUs ?? 0} max`} />
-        {hasHTTP && <Kpi label="Requests per second" value={running ? fmtValue(last?.rps ?? 0, "") : fmtValue(st.totals?.http_reqs?.perSecond ?? 0, "")} />}
-        {hasHTTP && (
-          <div className="kpi">
-            <span className="kpi-label">p95 response time{running ? " (last second)" : ""}</span>
-            <span className={`heat-chip big heat-${heatOf(p95)}`}>{formatMs(p95)}</span>
-          </div>
+        {st.thresholds.length > 0 && (
+          <section className="card dash-card">
+            <h2 className="dash-title">Thresholds</h2>
+            <ul className="th-list" aria-label="Thresholds">
+              {st.thresholds.map((t) => {
+                const key = `${t.metric} ${t.condition}`;
+                const failing = !t.passed;
+                const lit = (failing || t.breached) && !seen.has(key);
+                return (
+                  <li key={key} className={`th ${t.noData ? "is-nodata" : failing ? "is-fail" : "is-pass"} ${lit ? "is-lit" : ""}`}>
+                    {t.noData ? <Minus size={14} aria-label="no data" /> : failing ? <X size={14} aria-label="failing" /> : <Check size={14} aria-label="passing" />}
+                    <span className="mono">
+                      {t.metric} {t.condition}
+                    </span>
+                    <span className="muted small">{t.noData ? "no data yet" : `now ${thresholdActual(t)}`}</span>
+                    {!failing && t.breached && <span className="muted small">· failed earlier</span>}
+                    {lit && (
+                      <Button size="small" className="th-seen" onClick={() => setSeen(new Set(seen).add(key))}>
+                        Seen
+                      </Button>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
         )}
-        {hasHTTP && <Kpi label="Requests" value={totalReqs.toLocaleString()} sub={`${totalFailed.toLocaleString()} failed (${totalReqs ? ((totalFailed / totalReqs) * 100).toFixed(2) : "0.00"}%)`} />}
-        {charts.ws && <Kpi label="Stream messages per second" value={fmtValue(last?.wsMessagesPerSecond ?? 0, "")} />}
-        {(last?.dropped ?? 0) > 0 && <Kpi label="Dropped iterations (last second)" value={String(last?.dropped)} sub="Not enough VUs for the arrival rate" />}
-        {running && !agents?.length && (last?.cpu ?? -1) >= 0 && (
-          <Kpi
-            label="Load generator CPU"
-            value={`${Math.round((last?.cpu ?? 0) * 100)}%`}
-            sub={(last?.cpu ?? 0) >= 0.9 ? "Saturated: latencies may include Pyro's own waiting" : `${Math.round(last?.memMB ?? 0)} MB memory`}
-          />
-        )}
-      </div>
-      {st.warnings?.map((w) => (
-        <p key={w} className="run-warning" role="note">
-          <TriangleAlert size={14} aria-hidden /> {w}
-        </p>
-      ))}
 
-      {st.thresholds.length > 0 && (
-        <ul className="th-list" aria-label="Thresholds">
-          {st.thresholds.map((t) => {
-            const key = `${t.metric} ${t.condition}`;
-            const failing = !t.passed;
-            const lit = (failing || t.breached) && !seen.has(key);
-            return (
-              <li key={key} className={`th ${t.noData ? "is-nodata" : failing ? "is-fail" : "is-pass"} ${lit ? "is-lit" : ""}`}>
-                {t.noData ? <Minus size={14} aria-label="no data" /> : failing ? <X size={14} aria-label="failing" /> : <Check size={14} aria-label="passing" />}
-                <span className="mono">
-                  {t.metric} {t.condition}
-                </span>
-                <span className="muted small">{t.noData ? "no data yet" : `now ${thresholdActual(t)}`}</span>
-                {!failing && t.breached && <span className="muted small">· failed earlier</span>}
-                {lit && (
-                  <button className="btn ghost small" onClick={() => setSeen(new Set(seen).add(key))}>
-                    Seen
-                  </button>
-                )}
-              </li>
-            );
-          })}
-        </ul>
-      )}
-
-      <div className="chart-head">
-        <h2 className="sub-head">Over time</h2>
-        <button className="btn ghost small" onClick={() => setShowTable(!showTable)} aria-pressed={showTable}>
-          <Table2 size={13} /> {showTable ? "Charts" : "Table view"}
-        </button>
-      </div>
-      {showTable ? (
-        <TickTable ticks={st.ticks} />
-      ) : (
-        <div className="chart-grid">
-          {hasHTTP && <LineChart title="Requests per second" x={x} series={charts.rps} unit="" />}
-          {hasHTTP && <LineChart title="Response time percentiles" x={x} series={charts.latency} unit="ms" refs={refs} />}
-          <LineChart title="Active virtual users" x={x} series={charts.vus} unit="" />
-          {hasHTTP && <LineChart title="Failed requests" x={x} series={charts.errors} unit="%" />}
-          {charts.ws && <LineChart title="Stream messages received per second" x={x} series={charts.ws} unit="" />}
+        <div className="chart-head">
+          <h2 className="dash-title">Over time</h2>
+          <Button size="small" icon={<Table2 size={13} />} onClick={() => setShowTable(!showTable)} aria-pressed={showTable}>
+            {showTable ? "Charts" : "Table view"}
+          </Button>
         </div>
-      )}
-
-      {st.requests.length > 0 && (
-        <>
-          <h2 className="sub-head">Requests{running ? " (so far)" : ""}</h2>
-          <div className="scroll-x">
-            <table className="data-table req-table">
-              <thead>
-                <tr>
-                  <th>Request</th>
-                  <th>Scenario</th>
-                  <th className="num">Count</th>
-                  <th className="num">Failed</th>
-                  <th className="num">req/s</th>
-                  <th className="num">Avg</th>
-                  <th className="num">p50</th>
-                  <th className="num">p95</th>
-                  <th className="num">p99</th>
-                  <th className="num">Max</th>
-                </tr>
-              </thead>
-              <tbody>
-                {st.requests.map((r) => (
-                  <tr key={r.scenario + r.request}>
-                    <td className="mono">
-                      {r.method} {r.request}
-                    </td>
-                    <td>{r.scenario}</td>
-                    <td className="num">{r.count.toLocaleString()}</td>
-                    <td className={`num ${r.failed ? "fail-text" : ""}`}>{r.failed.toLocaleString()}</td>
-                    <td className="num">{r.perSecond.toFixed(1)}</td>
-                    <td className="num">{formatMs(r.duration.avg ?? 0)}</td>
-                    <td className="num">{formatMs(r.duration.med ?? 0)}</td>
-                    <HeatCell ms={r.duration.p95 ?? 0} />
-                    <HeatCell ms={r.duration.p99 ?? 0} />
-                    <td className="num">{formatMs(r.duration.max ?? 0)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        {showTable ? (
+          <section className="card dash-card">
+            <TickTable ticks={st.ticks} />
+          </section>
+        ) : (
+          <div className="chart-grid">
+            {hasHTTP && <LineChart title="Requests per second" x={x} series={charts.rps} unit="" />}
+            {hasHTTP && <LineChart title="Response time percentiles" x={x} series={charts.latency} unit="ms" refs={refs} />}
+            <LineChart title="Active virtual users" x={x} series={charts.vus} unit="" />
+            {hasHTTP && <LineChart title="Failed requests" x={x} series={charts.errors} unit="%" />}
+            {charts.ws && <LineChart title="Stream messages received per second" x={x} series={charts.ws} unit="" />}
           </div>
-        </>
-      )}
+        )}
 
-      {agents && agents.length > 0 && <AgentTable agents={agents} running={running} />}
+        {st.requests.length > 0 && (
+          <section className="card dash-card">
+            <h2 className="dash-title">Requests{running ? " (so far)" : ""}</h2>
+            <Table<RequestStat>
+              className="req-table"
+              size="small"
+              pagination={false}
+              scroll={{ x: "max-content" }}
+              rowKey={(r) => r.scenario + r.request}
+              dataSource={st.requests}
+              columns={[
+                { title: "Request", key: "request", className: "mono", render: (_, r) => `${r.method} ${r.request}` },
+                { title: "Scenario", dataIndex: "scenario" },
+                { title: "Count", key: "count", align: "right", render: (_, r) => r.count.toLocaleString() },
+                { title: "Failed", key: "failed", align: "right", render: (_, r) => <span className={r.failed ? "fail-text" : undefined}>{r.failed.toLocaleString()}</span> },
+                { title: "req/s", key: "rps", align: "right", render: (_, r) => r.perSecond.toFixed(1) },
+                { title: "Avg", key: "avg", align: "right", render: (_, r) => formatMs(r.duration.avg ?? 0) },
+                { title: "p50", key: "p50", align: "right", render: (_, r) => formatMs(r.duration.med ?? 0) },
+                { title: "p95", key: "p95", align: "right", render: (_, r) => <HeatValue ms={r.duration.p95 ?? 0} /> },
+                { title: "p99", key: "p99", align: "right", render: (_, r) => <HeatValue ms={r.duration.p99 ?? 0} /> },
+                { title: "Max", key: "max", align: "right", render: (_, r) => formatMs(r.duration.max ?? 0) },
+              ]}
+            />
+          </section>
+        )}
 
-      {st.errors.length > 0 && (
-        <>
-          <h2 className="sub-head">
-            <TriangleAlert size={13} /> Errors
-          </h2>
-          <table className="data-table">
-            <tbody>
-              {st.errors.map((e) => (
-                <tr key={e.message}>
-                  <td className="mono">{e.message}</td>
-                  <td className="num">{e.count.toLocaleString()}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </>
-      )}
-    </section>
+        {agents && agents.length > 0 && <AgentTable agents={agents} running={running} />}
+
+        {st.errors.length > 0 && (
+          <section className="card dash-card">
+            <h2 className="dash-title">
+              <TriangleAlert size={14} /> Errors
+            </h2>
+            <Table<ErrorCount>
+              size="small"
+              pagination={false}
+              rowKey="message"
+              dataSource={st.errors}
+              columns={[
+                { title: "Error", dataIndex: "message", className: "mono" },
+                { title: "Count", key: "count", align: "right", render: (_, e) => e.count.toLocaleString() },
+              ]}
+            />
+          </section>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -348,48 +338,35 @@ const AGENT_STATE: Record<AgentStatus["state"], { label: string; icon: typeof Ch
 
 /** Each agent's share of a distributed test. */
 function AgentTable({ agents, running }: { agents: AgentStatus[]; running: boolean }) {
+  const cpu = (a: AgentStatus) => (running ? a.cpu : a.peakCPU);
+  const columns: TableColumnsType<AgentStatus> = [
+    { title: "Agent", dataIndex: "name", className: "mono agent-name" },
+    { title: "Segment", key: "segment", align: "right", render: (_, a) => `${a.segment + 1} of ${agents.length}` },
+    { title: running ? "VUs" : "Max VUs", key: "vus", align: "right", render: (_, a) => a.vus.toLocaleString() },
+    { title: "Requests", key: "requests", align: "right", render: (_, a) => a.requests.toLocaleString() },
+    ...(running ? [{ title: "req/s", key: "rps", align: "right" as const, render: (_: unknown, a: AgentStatus) => (a.rps ?? 0).toFixed(1) }] : []),
+    { title: running ? "CPU" : "Peak CPU", key: "cpu", align: "right", render: (_, a) => (cpu(a) >= 0 ? `${Math.round(cpu(a) * 100)}%` : "–") },
+    {
+      title: "State",
+      key: "state",
+      render: (_, a) => {
+        const s = AGENT_STATE[a.state] ?? AGENT_STATE.done;
+        return (
+          <span className={`agent-state is-${a.state}`}>
+            <s.icon size={13} aria-hidden /> {s.label}
+            {a.error && <span className="muted small"> · {a.error}</span>}
+          </span>
+        );
+      },
+    },
+  ];
   return (
-    <>
-      <h2 className="sub-head">
-        <Network size={13} /> Agents
+    <section className="card dash-card">
+      <h2 className="dash-title">
+        <Network size={14} /> Agents
       </h2>
-      <div className="scroll-x">
-        <table className="data-table agent-table">
-          <thead>
-            <tr>
-              <th>Agent</th>
-              <th className="num">Segment</th>
-              <th className="num">{running ? "VUs" : "Max VUs"}</th>
-              <th className="num">Requests</th>
-              {running && <th className="num">req/s</th>}
-              <th className="num">{running ? "CPU" : "Peak CPU"}</th>
-              <th>State</th>
-            </tr>
-          </thead>
-          <tbody>
-            {agents.map((a) => {
-              const s = AGENT_STATE[a.state] ?? AGENT_STATE.done;
-              return (
-                <tr key={a.segment}>
-                  <td className="mono">{a.name}</td>
-                  <td className="num">
-                    {a.segment + 1} of {agents.length}
-                  </td>
-                  <td className="num">{a.vus.toLocaleString()}</td>
-                  <td className="num">{a.requests.toLocaleString()}</td>
-                  {running && <td className="num">{(a.rps ?? 0).toFixed(1)}</td>}
-                  <td className="num">{(running ? a.cpu : a.peakCPU) >= 0 ? `${Math.round((running ? a.cpu : a.peakCPU) * 100)}%` : "–"}</td>
-                  <td className={`agent-state is-${a.state}`}>
-                    <s.icon size={13} aria-hidden /> {s.label}
-                    {a.error && <span className="muted small"> · {a.error}</span>}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    </>
+      <Table<AgentStatus> className="agent-table" size="small" pagination={false} scroll={{ x: "max-content" }} rowKey="segment" dataSource={agents} columns={columns} />
+    </section>
   );
 }
 
@@ -399,55 +376,49 @@ function thresholdActual(t: ThresholdResult) {
   return String(Math.round(t.actual * 100) / 100);
 }
 
-function Kpi({ label, value, sub }: { label: string; value: string; sub?: string }) {
+/** A stat tile in the style of antd Statistic. Heat shows as a swatch, never as text colour. */
+function Kpi({ label, value, unit, sub, heat }: { label: string; value: string; unit?: string; sub?: string; heat?: string }) {
   return (
-    <div className="kpi">
+    <div className="card kpi">
       <span className="kpi-label">{label}</span>
-      <span className="kpi-value">{value}</span>
+      <span className="kpi-value">
+        {heat && <span className={`swatch heat-${heat}`} aria-hidden />}
+        {value}
+        {unit && <span className="kpi-unit">{unit}</span>}
+      </span>
       {sub && <span className="kpi-sub">{sub}</span>}
     </div>
   );
 }
 
 /** A duration with its heat swatch beside it (text stays neutral). */
-function HeatCell({ ms }: { ms: number }) {
+function HeatValue({ ms }: { ms: number }) {
   return (
-    <td className="num">
+    <span className="heat-value">
       <span className={`swatch heat-${heatOf(ms)}`} aria-hidden />
       {formatMs(ms)}
-    </td>
+    </span>
   );
 }
 
 function TickTable({ ticks }: { ticks: LoadTick[] }) {
   return (
-    <div className="scroll-x tick-table">
-      <table className="data-table">
-        <thead>
-          <tr>
-            <th>Time</th>
-            <th className="num">VUs</th>
-            <th className="num">req/s</th>
-            <th className="num">Failed</th>
-            <th className="num">p50</th>
-            <th className="num">p95</th>
-            <th className="num">p99</th>
-          </tr>
-        </thead>
-        <tbody>
-          {ticks.map((t) => (
-            <tr key={t.elapsed}>
-              <td className="mono">{clock(t.elapsed)}</td>
-              <td className="num">{t.vus}</td>
-              <td className="num">{t.rps.toFixed(1)}</td>
-              <td className="num">{(t.errorRate * 100).toFixed(2)}%</td>
-              <td className="num">{formatMs(t.latency.p50)}</td>
-              <td className="num">{formatMs(t.latency.p95)}</td>
-              <td className="num">{formatMs(t.latency.p99)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <Table<LoadTick>
+      className="tick-table"
+      size="small"
+      pagination={false}
+      scroll={{ x: "max-content", y: 420 }}
+      rowKey="elapsed"
+      dataSource={ticks}
+      columns={[
+        { title: "Time", key: "time", className: "mono", render: (_, t) => clock(t.elapsed) },
+        { title: "VUs", dataIndex: "vus", align: "right" },
+        { title: "req/s", key: "rps", align: "right", render: (_, t) => t.rps.toFixed(1) },
+        { title: "Failed", key: "failed", align: "right", render: (_, t) => `${(t.errorRate * 100).toFixed(2)}%` },
+        { title: "p50", key: "p50", align: "right", render: (_, t) => formatMs(t.latency.p50) },
+        { title: "p95", key: "p95", align: "right", render: (_, t) => formatMs(t.latency.p95) },
+        { title: "p99", key: "p99", align: "right", render: (_, t) => formatMs(t.latency.p99) },
+      ]}
+    />
   );
 }

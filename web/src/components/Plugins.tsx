@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, FileUp, Plus, Puzzle, ShieldAlert, ShieldCheck, Trash2, TriangleAlert } from "lucide-react";
+import { Alert, App, Button, Checkbox, Empty, Input, Segmented, Select, Switch, Tag } from "antd";
+import { FileUp, Plus, Puzzle, ShieldAlert, ShieldCheck, Trash2, TriangleAlert, Upload } from "../icons";
 import { api, type Kind, type PluginField, type PluginInfo, type PluginProvide } from "../api";
 import { useApp } from "../store";
 
@@ -52,40 +53,37 @@ export function FieldsForm({
         switch (f.type) {
           case "select":
             input = (
-              <select id={id} value={v || f.default || ""} onChange={(e) => set(f.key, e.target.value)}>
-                {(f.options ?? []).map((o) => (
-                  <option key={o} value={o}>
-                    {o}
-                  </option>
-                ))}
-              </select>
+              <Select
+                id={id}
+                className="fields-select"
+                value={v || f.default || undefined}
+                onChange={(val: string) => set(f.key, val)}
+                options={(f.options ?? []).map((o) => ({ value: o, label: o }))}
+              />
             );
             break;
           case "boolean":
             input = (
-              <label className="check">
-                <input id={id} type="checkbox" checked={(v || f.default) === "true"} onChange={(e) => set(f.key, e.target.checked ? "true" : "false")} />
+              <Checkbox id={id} checked={(v || f.default) === "true"} onChange={(e) => set(f.key, e.target.checked ? "true" : "false")}>
                 {f.help ?? "On"}
-              </label>
+              </Checkbox>
             );
             break;
           case "text":
-            input = <textarea id={id} className="code-input mono small-area" value={v} placeholder={f.default} onChange={(e) => set(f.key, e.target.value)} spellCheck={false} />;
+            input = <Input.TextArea id={id} className="mono" autoSize={{ minRows: 3, maxRows: 12 }} value={v} placeholder={f.default} onChange={(e) => set(f.key, e.target.value)} spellCheck={false} />;
             break;
-          default:
-            input = (
-              <input
-                id={id}
-                className="cell mono wide"
-                type={f.type === "secret" ? "password" : "text"}
-                inputMode={f.type === "number" ? "numeric" : undefined}
-                value={v}
-                placeholder={f.default ?? (f.type === "secret" ? "{{secret}}" : "")}
-                onChange={(e) => set(f.key, e.target.value)}
-                autoComplete="off"
-                spellCheck={false}
-              />
-            );
+          default: {
+            const props = {
+              id,
+              className: "mono",
+              value: v,
+              placeholder: f.default ?? (f.type === "secret" ? "{{secret}}" : ""),
+              onChange: (e: React.ChangeEvent<HTMLInputElement>) => set(f.key, e.target.value),
+              autoComplete: "off",
+              spellCheck: false,
+            };
+            input = f.type === "secret" ? <Input.Password {...props} /> : <Input {...props} inputMode={f.type === "number" ? "numeric" : undefined} />;
+          }
         }
         return (
           <div key={f.key} className="field-row field-top">
@@ -108,21 +106,19 @@ export function KindSelect({ value, onChange }: { value: Kind; onChange: (k: Kin
   const protos = usePluginTypes("protocol");
   const known = ["http", "websocket", "socketio", ...protos.map((p) => `plugin:${p.id}`)].includes(value);
   return (
-    <select className="kind-select" value={value} onChange={(e) => onChange(e.target.value as Kind)} aria-label="Request type" title="Request type">
-      <option value="http">HTTP</option>
-      <option value="websocket">WebSocket</option>
-      <option value="socketio">Socket.IO</option>
-      {protos.length > 0 && (
-        <optgroup label="Plugins">
-          {protos.map((p) => (
-            <option key={p.id} value={`plugin:${p.id}`}>
-              {p.title || p.id}
-            </option>
-          ))}
-        </optgroup>
-      )}
-      {!known && <option value={value}>{value} (not installed)</option>}
-    </select>
+    <Segmented
+      className="kind-select"
+      aria-label="Request type"
+      value={value}
+      onChange={(v) => onChange(v as Kind)}
+      options={[
+        { value: "http", label: "REST" },
+        { value: "websocket", label: "WebSocket" },
+        { value: "socketio", label: "Socket.IO" },
+        ...protos.map((p) => ({ value: `plugin:${p.id}`, label: p.title || p.id })),
+        ...(known ? [] : [{ value, label: `${value} (not installed)` }]),
+      ]}
+    />
   );
 }
 
@@ -134,17 +130,26 @@ export function PluginsRail() {
   const selected = useApp((s) => s.selected);
   return (
     <div className="rail-scroll">
-      <div className="rail-head">
-        <span className="muted small">{q.data ? `${q.data.plugins.length} installed` : ""}</span>
-        <button className="icon-btn" onClick={() => select("plugins:install")} aria-label="Install a plugin" title="Install a plugin">
-          <Plus size={14} />
-        </button>
+      <div className="rail-cta">
+        <Button type="dashed" block icon={<Plus size={13} />} onClick={() => select("plugins:install")} aria-label="Install a plugin" title="Install a plugin">
+          Install plugin
+        </Button>
       </div>
-      {q.data && !q.data.available && <p className="pad inline-warn">Plugins are unavailable: the plugin folder couldn't be opened.</p>}
+      {q.data && !q.data.available && (
+        <div className="pad">
+          <Alert type="warning" showIcon title="Plugins are unavailable: the plugin folder couldn't be opened." />
+        </div>
+      )}
       {q.data?.plugins.length === 0 && (
         <div className="rail-empty">
-          <p>No plugins yet.</p>
-          <p className="muted">Plugins add request types (like raw TCP) and auth types. Press + to install one.</p>
+          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No plugins yet">
+            <p className="muted">Plugins add request types (like raw TCP) and auth types. Install one to get started.</p>
+          </Empty>
+        </div>
+      )}
+      {(q.data?.plugins.length ?? 0) > 0 && (
+        <div className="rail-head">
+          <span className="rail-section">{q.data!.plugins.length} installed</span>
         </div>
       )}
       <ul className="tree">
@@ -152,15 +157,11 @@ export function PluginsRail() {
           const st = pluginStatus(p);
           return (
             <li key={p.name}>
-              <button className={`hist-row ${selected === `plugin:${p.name}` ? "is-active" : ""}`} onClick={() => select(`plugin:${p.name}`)}>
-                <span className="hist-top">
-                  <Puzzle size={13} className="row-icon" />
-                  <span className="row-label">{p.title || p.name}</span>
-                </span>
-                <span className="hist-meta">
-                  <span className={`tone-${st.tone}`}>{st.label}</span>
-                  <span>{p.version}</span>
-                </span>
+              <button className={`row plugin-row ${selected === `plugin:${p.name}` ? "is-active" : ""}`} onClick={() => select(`plugin:${p.name}`)}>
+                <Puzzle size={14} className="row-icon" />
+                <span className="row-label">{p.title || p.name}</span>
+                {st.tone !== "ok" && <TriangleAlert size={13} className={`plugin-row-status tone-${st.tone}`} aria-label={st.label} />}
+                <span className="plugin-row-version mono">{p.version}</span>
               </button>
             </li>
           );
@@ -172,13 +173,15 @@ export function PluginsRail() {
 
 // --- Plugin page --------------------------------------------------------------
 
+const TONE_COLOR: Record<ReturnType<typeof pluginStatus>["tone"], string> = { ok: "success", warn: "warning", error: "error", muted: "default" };
+
 export function PluginPage({ name }: { name: string }) {
   const qc = useQueryClient();
+  const { modal } = App.useApp();
   const select = useApp((s) => s.select);
   const q = usePlugins();
   const p = q.data?.plugins.find((x) => x.name === name);
   const [settings, setSettings] = useState<Record<string, string> | null>(null);
-  const [confirmRemove, setConfirmRemove] = useState(false);
   const refresh = (info?: PluginInfo) => {
     if (info) qc.setQueryData(["plugins"], (old: typeof q.data) => (old ? { ...old, plugins: old.plugins.map((x) => (x.name === info.name ? info : x)) } : old));
     qc.invalidateQueries({ queryKey: ["plugins"] });
@@ -201,118 +204,152 @@ export function PluginPage({ name }: { name: string }) {
   });
 
   if (q.isPending) return <p className="pad muted">Loading…</p>;
-  if (!p) return <p className="pad muted">This plugin isn't installed.</p>;
+  if (!p)
+    return (
+      <div className="page">
+        <Empty className="plugin-missing" description="This plugin isn't installed." />
+      </div>
+    );
   const st = pluginStatus(p);
   const net = p.capabilities?.network ?? [];
   const err = approve.error || toggle.error || save.error || remove.error;
+  const title = p.title || p.name;
+  const confirmRemove = () =>
+    modal.confirm({
+      title: `Remove ${title}?`,
+      content: "Requests using it will stop working until it's installed again.",
+      okText: "Remove",
+      okButtonProps: { danger: true },
+      cancelText: "Keep it",
+      onOk: () => remove.mutateAsync(),
+    });
 
   return (
-    <section className="plugin-page">
-      <header className="lt-head">
-        <div>
-          <h1>
-            {p.title || p.name}
-            <span className={`verdict tone-${st.tone}`}>{st.label}</span>
-          </h1>
-          <p className="muted small">
-            {p.name} {p.version}
-            {p.author && <> · {p.author}</>}
-            {p.license && <> · {p.license}</>}
-          </p>
-        </div>
-        <div className="lt-actions">
-          <label className="check">
-            <input type="checkbox" checked={p.enabled} onChange={(e) => toggle.mutate(e.target.checked)} />
+    <div className="page">
+      <section className="card plugin-card">
+        <header className="plugin-head">
+          <span className="plugin-icon" aria-hidden>
+            <Puzzle size={24} />
+          </span>
+          <div className="plugin-title">
+            <h1>
+              {title}
+              <Tag className="mono">{p.version}</Tag>
+              <Tag color={TONE_COLOR[st.tone]}>{st.label}</Tag>
+            </h1>
+            {p.description && <p className="plugin-desc">{p.description}</p>}
+            <p className="muted small">
+              {p.name}
+              {p.author && <> · {p.author}</>}
+              {p.license && <> · {p.license}</>}
+              {p.homepage && (
+                <>
+                  {" "}·{" "}
+                  <a href={p.homepage} target="_blank" rel="noreferrer noopener">
+                    Homepage
+                  </a>
+                </>
+              )}
+            </p>
+          </div>
+          <label className="plugin-enable">
+            <Switch checked={p.enabled} loading={toggle.isPending} onChange={(on) => toggle.mutate(on)} />
             Enabled
           </label>
-        </div>
-      </header>
-      {p.description && <p className="plugin-desc">{p.description}</p>}
-      {p.error && (
-        <div className="notice error">
-          <TriangleAlert size={15} />
-          <span>{p.error}</span>
-        </div>
-      )}
-      {err && <p className="inline-error">{(err as Error).message}</p>}
+        </header>
 
-      <section className={`caps ${p.approved ? "is-approved" : "is-pending"}`}>
-        {p.approved ? <ShieldCheck size={18} /> : <ShieldAlert size={18} />}
-        <div>
-          <h2>Capabilities</h2>
-          {net.length === 0 ? (
-            <p>No network access. It can only work with the data Pyro passes it.</p>
-          ) : (
-            <>
-              <p>It may open connections to:</p>
-              <ul className="cap-list">
-                {net.map((n) => (
-                  <li key={n} className="mono">
-                    {n === "*:*" ? "*:* (any host and port)" : n}
-                  </li>
-                ))}
-              </ul>
-            </>
-          )}
-          {p.approved ? (
-            <p className="muted small">
-              <Check size={12} /> Approved. A new version asking for anything different needs approval again.
-            </p>
-          ) : (
-            <>
-              <p className="muted small">Plugins run sandboxed and can't touch files or other hosts. Approve only plugins you trust.</p>
-              <button className="btn primary" onClick={() => approve.mutate()} disabled={approve.isPending}>
-                Approve these capabilities
-              </button>
-            </>
-          )}
-        </div>
-      </section>
-
-      <h2 className="sub-head">Adds</h2>
-      <ul className="provides">
-        {p.provides.map((pr) => (
-          <li key={pr.kind + pr.id}>
-            <span className="badge stream mono">{pr.kind === "protocol" ? "REQUEST TYPE" : "AUTH TYPE"}</span>
-            <strong>{pr.title || pr.id}</strong>
-            <code>plugin:{pr.id}</code>
-            {pr.fields && pr.fields.length > 0 && <span className="muted small">fields: {pr.fields.map((f) => f.label || f.key).join(", ")}</span>}
-          </li>
-        ))}
-      </ul>
-      <p className="muted small">
-        {p.provides.some((pr) => pr.kind === "protocol") && "Use it by choosing its type in a request's Type menu. "}
-        {p.provides.some((pr) => pr.kind === "auth") && "Its auth type appears in the Auth tab of requests, folders and collections."}
-      </p>
-
-      {(p.config?.length ?? 0) > 0 && (
-        <>
-          <h2 className="sub-head">Settings</h2>
-          <FieldsForm fields={p.config ?? []} values={settings ?? p.settings} onChange={setSettings} label="plugin" />
-          <button className="btn ghost" onClick={() => save.mutate()} disabled={settings === null || save.isPending}>
-            Save settings
-          </button>
-        </>
-      )}
-
-      <div className="danger-zone">
-        {confirmRemove ? (
-          <>
-            <span>Remove {p.title || p.name}? Requests using it will stop working until it's installed again.</span>
-            <button className="btn ghost" onClick={() => remove.mutate()}>
-              <Trash2 size={13} /> Remove
-            </button>
-            <button className="btn ghost" onClick={() => setConfirmRemove(false)}>
-              Keep it
-            </button>
-          </>
-        ) : (
-          <button className="btn ghost" onClick={() => setConfirmRemove(true)}>
-            <Trash2 size={13} /> Remove plugin
-          </button>
+        {p.error && <Alert type="error" showIcon title={p.error} />}
+        {err && <Alert type="error" showIcon title={(err as Error).message} />}
+        {!p.approved && (
+          <Alert
+            className="caps"
+            type="warning"
+            showIcon
+            icon={<ShieldAlert size={18} />}
+            title="Approve its capabilities before it can run"
+            description={
+              <>
+                <p>Plugins run sandboxed and can't touch files or other hosts. Approve only plugins you trust.</p>
+                <Button type="primary" onClick={() => approve.mutate()} loading={approve.isPending}>
+                  Approve these capabilities
+                </Button>
+              </>
+            }
+          />
         )}
-      </div>
-    </section>
+
+        <dl className="plugin-defs">
+          <dt>Hooks</dt>
+          <dd>
+            <ul className="provides">
+              {p.provides.map((pr) => (
+                <li key={pr.kind + pr.id}>
+                  <Tag className="tag-accent">
+                    {pr.kind === "protocol" ? "Request type" : "Auth type"}: {pr.title || pr.id}
+                  </Tag>
+                  <code>plugin:{pr.id}</code>
+                  {pr.fields && pr.fields.length > 0 && <span className="muted small">fields: {pr.fields.map((f) => f.label || f.key).join(", ")}</span>}
+                </li>
+              ))}
+            </ul>
+            <p className="muted small">
+              {p.provides.some((pr) => pr.kind === "protocol") && "Use it by choosing its type in a request's Type menu. "}
+              {p.provides.some((pr) => pr.kind === "auth") && "Its auth type appears in the Auth tab of requests, folders and collections."}
+            </p>
+          </dd>
+
+          <dt>Permissions</dt>
+          <dd>
+            {net.length === 0 ? (
+              <>
+                <Tag>No network access</Tag>
+                <p className="muted small">It can only work with the data Pyro passes it.</p>
+              </>
+            ) : (
+              <>
+                <p className="small">It may open connections to:</p>
+                <div className="cap-tags">
+                  {net.map((n) => (
+                    <Tag key={n} className="mono">
+                      {n === "*:*" ? "*:* (any host and port)" : n}
+                    </Tag>
+                  ))}
+                </div>
+              </>
+            )}
+            {p.approved && (
+              <p className="muted small caps-approved">
+                <ShieldCheck size={13} /> Approved. A new version asking for anything different needs approval again.
+              </p>
+            )}
+          </dd>
+
+          <dt>Module</dt>
+          <dd className="mono">{p.module}</dd>
+
+          <dt>ABI</dt>
+          <dd>v{p.abi}</dd>
+        </dl>
+
+        {(p.config?.length ?? 0) > 0 && (
+          <div className="plugin-settings">
+            <h2 className="dash-title">Settings</h2>
+            <FieldsForm fields={p.config ?? []} values={settings ?? p.settings} onChange={setSettings} label="plugin" />
+          </div>
+        )}
+
+        <footer className="plugin-foot">
+          {(p.config?.length ?? 0) > 0 && (
+            <Button type="primary" onClick={() => save.mutate()} disabled={settings === null} loading={save.isPending}>
+              Save settings
+            </Button>
+          )}
+          <Button danger icon={<Trash2 size={13} />} onClick={confirmRemove} className="plugin-remove">
+            Remove plugin
+          </Button>
+        </footer>
+      </section>
+    </div>
   );
 }
 
@@ -351,68 +388,74 @@ export function InstallPlugin() {
   };
 
   return (
-    <section className="plugin-page">
-      <header className="lt-head">
-        <div>
-          <h1>Install a plugin</h1>
-          <p className="muted small">After installing, you'll review what the plugin may connect to before it can run.</p>
+    <div className="page">
+      <section className="card plugin-card">
+        <header className="plugin-head">
+          <span className="plugin-icon" aria-hidden>
+            <Puzzle size={24} />
+          </span>
+          <div className="plugin-title">
+            <h1>Install a plugin</h1>
+            <p className="muted">After installing, you'll review what the plugin may connect to before it can run.</p>
+          </div>
+        </header>
+        <div className="install-box">
+          <FileUp size={20} />
+          <div>
+            <p>
+              <strong>From a file.</strong> A <code>.pyro-plugin</code> or <code>.zip</code> archive holding <code>pyro-plugin.yaml</code> and the module.
+            </p>
+            <p className="muted small">
+              Build one with <code>pyro plugin pack &lt;dir&gt;</code>. From a folder, use the CLI: <code>pyro plugin install &lt;dir&gt;</code>.
+            </p>
+            <Button type="primary" icon={<Upload size={14} />} onClick={() => fileRef.current?.click()} loading={busy}>
+              {busy ? "Installing…" : "Choose archive"}
+            </Button>
+            <input ref={fileRef} type="file" accept=".pyro-plugin,.zip,application/zip" hidden onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} />
+          </div>
         </div>
-      </header>
-      <div className="install-box">
-        <FileUp size={20} />
-        <div>
-          <p>
-            <strong>From a file.</strong> A <code>.pyro-plugin</code> or <code>.zip</code> archive holding <code>pyro-plugin.yaml</code> and the module.
-          </p>
-          <p className="muted small">
-            Build one with <code>pyro plugin pack &lt;dir&gt;</code>. From a folder, use the CLI: <code>pyro plugin install &lt;dir&gt;</code>.
-          </p>
-          <button className="btn primary" onClick={() => fileRef.current?.click()} disabled={busy}>
-            {busy ? "Installing…" : "Choose archive"}
-          </button>
-          <input ref={fileRef} type="file" accept=".pyro-plugin,.zip,application/zip" hidden onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} />
-        </div>
-      </div>
-      {error && <pre className="inline-error mono pre-wrap">{error}</pre>}
+        {error && <Alert type="error" showIcon title={<pre className="mono pre-wrap">{error}</pre>} />}
 
-      <h2 className="sub-head">From the plugin index</h2>
-      {!list.data?.indexConfigured ? (
-        <p className="muted small">
-          No index configured. Start Pyro with <code>PYRO_PLUGIN_INDEX=&lt;url of index.json&gt;</code> to browse one. A public index isn't published yet.
-        </p>
-      ) : (
-        <>
-          <input className="cell wide" placeholder="Search plugins" value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Search plugins" />
-          {search.error && <p className="inline-error">{search.error.message}</p>}
-          <ul className="index-list">
-            {search.data?.map((e) => (
-              <li key={e.name}>
-                <div>
-                  <strong>{e.title || e.name}</strong> <span className="muted small">{e.version}</span>
-                  {e.description && <p className="muted small">{e.description}</p>}
-                </div>
-                <button
-                  className="btn ghost small"
-                  disabled={busy}
-                  onClick={async () => {
-                    setBusy(true);
-                    setError(null);
-                    try {
-                      await done((await api.installFromIndex(e.name, e.version)).name);
-                    } catch (err) {
-                      setError((err as Error).message);
-                    } finally {
-                      setBusy(false);
-                    }
-                  }}
-                >
-                  Install
-                </button>
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
-    </section>
+        <h2 className="dash-title">From the plugin index</h2>
+        {!list.data?.indexConfigured ? (
+          <p className="muted small">
+            No index configured. Start Pyro with <code>PYRO_PLUGIN_INDEX=&lt;url of index.json&gt;</code> to browse one. A public index isn't published yet.
+          </p>
+        ) : (
+          <>
+            <Input.Search placeholder="Search plugins" value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Search plugins" allowClear loading={search.isFetching} />
+            {search.error && <Alert type="error" showIcon title={search.error.message} />}
+            {search.data && search.data.length === 0 && <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No plugins match" />}
+            <ul className="index-list">
+              {search.data?.map((e) => (
+                <li key={e.name}>
+                  <div>
+                    <strong>{e.title || e.name}</strong> <span className="muted small mono">{e.version}</span>
+                    {e.description && <p className="muted small">{e.description}</p>}
+                  </div>
+                  <Button
+                    size="small"
+                    disabled={busy}
+                    onClick={async () => {
+                      setBusy(true);
+                      setError(null);
+                      try {
+                        await done((await api.installFromIndex(e.name, e.version)).name);
+                      } catch (err) {
+                        setError((err as Error).message);
+                      } finally {
+                        setBusy(false);
+                      }
+                    }}
+                  >
+                    Install
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+      </section>
+    </div>
   );
 }

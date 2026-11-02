@@ -1,4 +1,5 @@
-import { FileUp, X } from "lucide-react";
+import { Button, Checkbox, Input, Tooltip } from "antd";
+import { FileUp, Trash2 } from "../icons";
 import type { KeyValue } from "../api";
 
 interface Props {
@@ -22,34 +23,37 @@ export function KVEditor({ rows, onChange, keyPlaceholder = "Key", valuePlacehol
 
   return (
     <table className="kv-edit" aria-label={label}>
+      <thead>
+        <tr>
+          <th className="kv-check" aria-label="Included" />
+          <th>{keyPlaceholder}</th>
+          <th>{valuePlaceholder}</th>
+          <th className="kv-actions" aria-label="Actions" />
+        </tr>
+      </thead>
       <tbody>
         {all.map((r, i) => {
           const blank = i === rows.length;
           return (
             <tr key={i} className={r.disabled ? "is-off" : undefined}>
               <td className="kv-check">
-                {!blank && (
-                  <input
-                    type="checkbox"
-                    checked={!r.disabled}
-                    onChange={(e) => update(i, { disabled: !e.target.checked })}
-                    aria-label={`Include ${r.key || "row"}`}
-                  />
-                )}
+                {!blank && <Checkbox checked={!r.disabled} onChange={(e) => update(i, { disabled: !e.target.checked })} aria-label={`Include ${r.key || "row"}`} />}
               </td>
               <td>
-                <input
-                  className="cell mono"
+                <Input
+                  variant="borderless"
+                  className="mono"
                   value={r.key}
-                  placeholder={keyPlaceholder}
+                  placeholder={blank ? `Add ${keyPlaceholder.toLowerCase()}` : keyPlaceholder}
                   onChange={(e) => update(i, { key: e.target.value })}
                   aria-label={`${label} key ${i + 1}`}
                   spellCheck={false}
                 />
               </td>
               <td>
-                <input
-                  className="cell mono"
+                <Input
+                  variant="borderless"
+                  className="mono"
                   value={r.value}
                   placeholder={r.file ? "path/to/file" : valuePlaceholder}
                   onChange={(e) => update(i, { value: e.target.value })}
@@ -59,21 +63,19 @@ export function KVEditor({ rows, onChange, keyPlaceholder = "Key", valuePlacehol
               </td>
               <td className="kv-actions">
                 {!blank && allowFiles && (
-                  <button
-                    className={`icon-btn ${r.file ? "is-on" : ""}`}
-                    onClick={() => update(i, { file: !r.file })}
-                    aria-pressed={!!r.file}
-                    title={r.file ? "Value is a file path" : "Send value as text"}
-                    aria-label="Toggle file field"
-                  >
-                    <FileUp size={14} />
-                  </button>
+                  <Tooltip title={r.file ? "Value is a file path" : "Send value as text"}>
+                    <Button
+                      type="text"
+                      size="small"
+                      className={r.file ? "is-on" : undefined}
+                      icon={<FileUp size={13} />}
+                      onClick={() => update(i, { file: !r.file })}
+                      aria-pressed={!!r.file}
+                      aria-label="Toggle file field"
+                    />
+                  </Tooltip>
                 )}
-                {!blank && (
-                  <button className="icon-btn" onClick={() => remove(i)} aria-label={`Remove ${r.key || "row"}`} title="Remove">
-                    <X size={14} />
-                  </button>
-                )}
+                {!blank && <Button type="text" size="small" icon={<Trash2 size={13} />} onClick={() => remove(i)} aria-label={`Remove ${r.key || "row"}`} title="Remove" />}
               </td>
             </tr>
           );

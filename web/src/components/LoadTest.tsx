@@ -1,16 +1,28 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  Alert,
+  AutoComplete,
+  Button,
+  Checkbox,
+  Empty,
+  Input,
+  InputNumber,
+  Radio,
+  Select,
+  Table,
+  Tabs,
+} from "antd";
+import {
   ArrowDown,
   ArrowUp,
   GitCompareArrows,
   Play,
   Plus,
-  Save,
   ShieldAlert,
   Trash2,
   X,
-} from "lucide-react";
+} from "../icons";
 import YAML, { isMap, isSeq, type Document, type YAMLMap } from "yaml";
 import { api, ApiError, type TreeNode } from "../api";
 import { formatMs, heatOf } from "../heat";
@@ -22,6 +34,7 @@ import {
 } from "../loadProfiles";
 import { useApp } from "../store";
 import { LineChart, clock } from "./LineChart";
+import { SaveButton } from "./RequestEditor";
 
 const EXECUTORS = [
   { id: "constant-vus", label: "Constant VUs" },
@@ -47,6 +60,29 @@ export function useRequestPaths() {
 
 type Tab = "designer" | "yaml" | "runs";
 
+/** Counts shown in the stat tiles; null when the YAML doesn't parse. */
+function planCounts(text: string) {
+  const doc = YAML.parseDocument(text);
+  if (doc.errors.length > 0) return null;
+  const scenarios = doc.get("scenarios");
+  const thresholds = doc.get("thresholds");
+  let steps = 0;
+  if (isMap(scenarios))
+    for (const p of scenarios.items) {
+      const flow = isMap(p.value) ? p.value.get("flow") : undefined;
+      if (isSeq(flow)) steps += flow.items.length;
+    }
+  let conds = 0;
+  if (isMap(thresholds))
+    for (const p of thresholds.items)
+      if (isSeq(p.value)) conds += p.value.items.length;
+  return {
+    scenarios: isMap(scenarios) ? scenarios.items.length : 0,
+    steps,
+    thresholds: conds,
+  };
+}
+
 export function LoadTestPage({ name }: { name: string }) {
   const qc = useQueryClient();
   const select = useApp((s) => s.select);
@@ -70,6 +106,7 @@ export function LoadTestPage({ name }: { name: string }) {
   const distributed = where === "agents" && agentCount > 0;
   const yamlText = text ?? q.data?.yaml ?? "";
   const dirty = text !== null && text !== q.data?.yaml;
+  const counts = useMemo(() => planCounts(yamlText), [yamlText]);
 
   const save = useMutation({
     mutationFn: () => api.saveLoadTest(name, yamlText),
@@ -117,138 +154,176 @@ export function LoadTestPage({ name }: { name: string }) {
   });
 
   if (q.isPending) return <div className="pad muted">Loading…</div>;
-  if (q.error) return <div className="pad inline-error">{q.error.message}</div>;
+  if (q.error)
+    return (
+      <div className="page">
+        <Alert type="error" showIcon title={q.error.message} />
+      </div>
+    );
   const v = q.data;
 
   return (
-    <section className="loadtest">
-      <header className="lt-head">
-        <div>
-          <h1>{v.title || name}</h1>
-          <p className="muted small mono">
-            loadtests/{name}.load.yaml
-            {dirty && <span className="dirty"> · unsaved</span>}
-            {v.peakVUs ? <span> · up to {v.peakVUs} VUs</span> : null}
-          </p>
-        </div>
-        <div className="lt-actions">
-          <button
-            className="btn ghost"
-            onClick={() => save.mutate()}
-            disabled={!dirty || save.isPending}
-            title="Save (Ctrl+S)"
-          >
-            <Save size={14} />{" "}
-            {save.isPending ? "Saving…" : dirty ? "Save" : "Saved"}
-          </button>
-          {agentCount > 0 && (
-            <select
-              className="run-on"
-              value={where}
-              onChange={(e) => {
-                setWhere(e.target.value as "local" | "agents");
-                agents.refetch();
-              }}
-              aria-label="Run on"
-            >
-              <option value="local">This machine</option>
-              <option value="agents">
-                {agentCount} agent{agentCount === 1 ? "" : "s"}
-              </option>
-            </select>
-          )}
-          <button
-            className="btn primary"
-            onClick={() => start(false)}
-            disabled={!!v.error && !dirty}
-          >
-            <Play size={14} /> Start
-          </button>
-        </div>
-      </header>
-      <p className="muted small">
-        Environment:{" "}
-        {environment ? <code>{environment}</code> : "none selected"} (from the
-        top bar). Only load test systems you own or are allowed to test.
-      </p>
-      {distributed && agents.data && (
-        <ul className="agent-list small" aria-label="Agents">
-          {agents.data.map((a) => (
-            <li key={a.address}>
-              <span className="mono">{a.info?.name ?? a.address}</span>
-              {a.info ? (
-                <span className="muted">
-                  {a.address} · {a.info.cpus} CPUs ·{" "}
-                  {a.info.busy ? "busy with another test" : "ready"}
-                </span>
-              ) : (
-                <span className="fail-text">{a.error}</span>
-              )}
-            </li>
-          ))}
-          <li className="muted">
-            The plan's VUs and arrival rates are split evenly between them;
-            results are merged here.
-          </li>
-        </ul>
-      )}
-      {save.error && <p className="inline-error">{save.error.message}</p>}
-      {!dirty && v.error && (
-        <pre className="inline-error mono pre-wrap">{v.error}</pre>
-      )}
-      {startError && <p className="inline-error">{startError}</p>}
-      {confirm && (
-        <div className="confirm-hosts" role="alert">
-          <ShieldAlert size={18} />
-          <div>
-            <p>
-              <strong>This test will send traffic to:</strong>{" "}
-              {confirm.join(", ")}
+    <div className="page lt-page">
+      <section className="card lt-header">
+        <header className="lt-top">
+          <div className="lt-title">
+            <h1>{v.title || name}</h1>
+            <p className="lt-target">
+              <span className="lt-target-label">Target</span>
+              <span className="mono">
+                {environment ? environment : "no environment"} · loadtests/
+                {name}.load.yaml
+              </span>
+              {dirty && <span className="dirty">unsaved</span>}
             </p>
-            <p className="muted small">
-              These hosts aren't on this machine or in{" "}
-              <code>loadAllowHosts</code> in pyro.yaml. Make sure you're allowed
-              to load test them.
+            <p className="muted small lt-note">
+              Environment from the top bar. Only load test systems you own or
+              are allowed to test.
             </p>
-            <div className="confirm-actions">
-              <button className="btn primary" onClick={() => start(true)}>
-                Send traffic to{" "}
-                {confirm.length === 1 ? "this host" : "these hosts"}
-              </button>
-              <button className="btn ghost" onClick={() => setConfirm(null)}>
-                Cancel
-              </button>
-            </div>
           </div>
-        </div>
-      )}
-
-      <div className="tabs" role="tablist">
-        {(["designer", "yaml", "runs"] as Tab[]).map((t) => (
-          <button
-            key={t}
-            role="tab"
-            aria-selected={tab === t}
-            className="tab"
-            onClick={() => setTab(t)}
-          >
-            {t === "yaml" ? "YAML" : t[0].toUpperCase() + t.slice(1)}
-          </button>
-        ))}
-      </div>
-      <div className="tab-panel">
-        {tab === "designer" && <Designer text={yamlText} onChange={setText} />}
-        {tab === "yaml" && (
-          <textarea
-            className="code-input mono yaml-editor"
-            value={yamlText}
-            onChange={(e) => setText(e.target.value)}
-            spellCheck={false}
-            aria-label="Load test YAML"
+          <div className="lt-head-actions">
+            <SaveButton
+              dirty={dirty}
+              saving={save.isPending}
+              onSave={() => save.mutate()}
+            />
+            {agentCount > 0 && (
+              <Select
+                className="run-on"
+                value={where}
+                onChange={(w) => {
+                  setWhere(w);
+                  agents.refetch();
+                }}
+                aria-label="Run on"
+                popupMatchSelectWidth={false}
+                options={[
+                  { value: "local", label: "This machine" },
+                  {
+                    value: "agents",
+                    label: `${agentCount} agent${agentCount === 1 ? "" : "s"}`,
+                  },
+                ]}
+              />
+            )}
+            <Button
+              type="primary"
+              size="large"
+              className="lt-run"
+              icon={<Play size={16} />}
+              onClick={() => start(false)}
+              disabled={!!v.error && !dirty}
+            >
+              Start
+            </Button>
+          </div>
+        </header>
+        {distributed && agents.data && (
+          <ul className="agent-list small" aria-label="Agents">
+            {agents.data.map((a) => (
+              <li key={a.address}>
+                <span className="mono">{a.info?.name ?? a.address}</span>
+                {a.info ? (
+                  <span className="muted">
+                    {a.address} · {a.info.cpus} CPUs ·{" "}
+                    {a.info.busy ? "busy with another test" : "ready"}
+                  </span>
+                ) : (
+                  <span className="fail-text">{a.error}</span>
+                )}
+              </li>
+            ))}
+            <li className="muted">
+              The plan's VUs and arrival rates are split evenly between them;
+              results are merged here.
+            </li>
+          </ul>
+        )}
+        {save.error && (
+          <Alert type="error" showIcon title={save.error.message} />
+        )}
+        {!dirty && v.error && (
+          <Alert
+            type="error"
+            showIcon
+            title="The plan isn't valid"
+            description={<pre className="mono pre-wrap lt-pre">{v.error}</pre>}
           />
         )}
-        {tab === "runs" && <RunsList test={name} />}
+        {startError && <Alert type="error" showIcon title={startError} />}
+        {confirm && (
+          <Alert
+            type="warning"
+            showIcon
+            icon={<ShieldAlert size={18} />}
+            title={
+              <>
+                <strong>This test will send traffic to:</strong>{" "}
+                {confirm.join(", ")}
+              </>
+            }
+            description={
+              <>
+                <p className="lt-confirm-text">
+                  These hosts aren't on this machine or in{" "}
+                  <code>loadAllowHosts</code> in pyro.yaml. Make sure you're
+                  allowed to load test them.
+                </p>
+                <div className="lt-confirm-actions">
+                  <Button type="primary" onClick={() => start(true)}>
+                    Send traffic to{" "}
+                    {confirm.length === 1 ? "this host" : "these hosts"}
+                  </Button>
+                  <Button onClick={() => setConfirm(null)}>Cancel</Button>
+                </div>
+              </>
+            }
+          />
+        )}
+      </section>
+
+      <div className="lt-stats">
+        <StatTile label="Peak VUs" value={v.peakVUs ? v.peakVUs : "–"} />
+        <StatTile label="Scenarios" value={counts?.scenarios ?? "–"} />
+        <StatTile label="Flow steps" value={counts?.steps ?? "–"} />
+        <StatTile label="Thresholds" value={counts?.thresholds ?? "–"} />
       </div>
+
+      <section className="card lt-body">
+        <Tabs
+          className="lt-tabs"
+          activeKey={tab}
+          onChange={(k) => setTab(k as Tab)}
+          items={(["designer", "yaml", "runs"] as Tab[]).map((t) => ({
+            key: t,
+            label: t === "yaml" ? "YAML" : t[0].toUpperCase() + t.slice(1),
+          }))}
+        />
+        <div className="tab-panel" role="tabpanel">
+          {tab === "designer" && (
+            <Designer text={yamlText} onChange={setText} />
+          )}
+          {tab === "yaml" && (
+            <Input.TextArea
+              className="code-input mono yaml-editor"
+              value={yamlText}
+              onChange={(e) => setText(e.target.value)}
+              spellCheck={false}
+              aria-label="Load test YAML"
+            />
+          )}
+          {tab === "runs" && <RunsList test={name} />}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function StatTile({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <section className="card lt-stat">
+      <span className="lt-stat-label">{label}</span>
+      <span className="lt-stat-value">{value}</span>
     </section>
   );
 }
@@ -266,10 +341,11 @@ function Designer({
   const doc = useMemo(() => YAML.parseDocument(text), [text]);
   if (doc.errors.length > 0) {
     return (
-      <p className="inline-error">
-        The YAML doesn't parse ({doc.errors[0].message}). Fix it in the YAML
-        tab.
-      </p>
+      <Alert
+        type="error"
+        showIcon
+        title={`The YAML doesn't parse (${doc.errors[0].message}). Fix it in the YAML tab.`}
+      />
     );
   }
   const update = (fn: (d: Document) => void) => {
@@ -286,32 +362,43 @@ function Designer({
 
   return (
     <div className="designer">
-      <label className="field-row">
-        <span className="field-label">Name</span>
-        <input
-          className="cell wide"
-          value={String(doc.get("name") ?? "")}
-          onChange={(e) => update((d) => d.set("name", e.target.value))}
-        />
-      </label>
-      <label className="field-row">
-        <span className="field-label">Max requests/s</span>
-        <input
-          className="cell mono"
-          inputMode="decimal"
-          value={doc.get("maxRPS") === undefined ? "" : String(doc.get("maxRPS"))}
-          placeholder="no cap"
-          aria-label="Max requests per second"
-          onChange={(e) =>
-            update((d) => {
-              const n = Number(e.target.value);
-              if (e.target.value.trim() === "" || !Number.isFinite(n) || n <= 0) d.delete("maxRPS");
-              else d.set("maxRPS", n);
-            })
-          }
-        />
-        <span className="muted small">Spaces request starts across all VUs; waiting isn't counted as response time.</span>
-      </label>
+      <div className="lt-fields">
+        <label className="lt-field span-2">
+          <span className="lt-label">Name</span>
+          <Input
+            value={String(doc.get("name") ?? "")}
+            onChange={(e) => update((d) => d.set("name", e.target.value))}
+          />
+        </label>
+        <label className="lt-field">
+          <span className="lt-label">Max requests/s</span>
+          <Input
+            className="mono"
+            inputMode="decimal"
+            value={
+              doc.get("maxRPS") === undefined ? "" : String(doc.get("maxRPS"))
+            }
+            placeholder="no cap"
+            aria-label="Max requests per second"
+            onChange={(e) =>
+              update((d) => {
+                const n = Number(e.target.value);
+                if (
+                  e.target.value.trim() === "" ||
+                  !Number.isFinite(n) ||
+                  n <= 0
+                )
+                  d.delete("maxRPS");
+                else d.set("maxRPS", n);
+              })
+            }
+          />
+        </label>
+        <p className="lt-hint lt-field-hint">
+          Max requests/s spaces request starts across all VUs; waiting isn't
+          counted as response time.
+        </p>
+      </div>
 
       {names.map((sn) => (
         <ScenarioEditor
@@ -322,24 +409,26 @@ function Designer({
           requests={requests}
         />
       ))}
-      <button
-        className="btn ghost small"
-        onClick={() =>
-          update((d) =>
-            d.setIn(
-              ["scenarios", `scenario-${names.length + 1}`],
-              d.createNode({
-                executor: "constant-vus",
-                vus: 10,
-                duration: "1m",
-                flow: [{ request: requests[0]?.path ?? "" }],
-              }),
-            ),
-          )
-        }
-      >
-        <Plus size={13} /> Add scenario
-      </button>
+      <div>
+        <Button
+          icon={<Plus size={13} />}
+          onClick={() =>
+            update((d) =>
+              d.setIn(
+                ["scenarios", `scenario-${names.length + 1}`],
+                d.createNode({
+                  executor: "constant-vus",
+                  vus: 10,
+                  duration: "1m",
+                  flow: [{ request: requests[0]?.path ?? "" }],
+                }),
+              ),
+            )
+          }
+        >
+          Add scenario
+        </Button>
+      </div>
 
       <ThresholdsEditor doc={doc} update={update} />
     </div>
@@ -374,10 +463,10 @@ function ScenarioEditor({
     kind: "int" | "dur" | "num",
     placeholder = "",
   ) => (
-    <label className="sc-field">
-      <span className="field-label">{label}</span>
-      <input
-        className="cell mono"
+    <label className="lt-field">
+      <span className="lt-label">{label}</span>
+      <Input
+        className="mono"
         value={num(get(k))}
         placeholder={placeholder}
         onChange={(e) => {
@@ -422,7 +511,7 @@ function ScenarioEditor({
   return (
     <section className="scenario">
       <header className="sc-head">
-        <input
+        <Input
           className="sc-name mono"
           defaultValue={name}
           aria-label="Scenario name"
@@ -436,28 +525,25 @@ function ScenarioEditor({
             });
           }}
         />
-        <select
+        <Select
+          className="sc-executor"
           value={executor}
-          onChange={(e) => set("executor", e.target.value)}
+          onChange={(x) => set("executor", x)}
           aria-label="Executor"
-        >
-          {EXECUTORS.map((x) => (
-            <option key={x.id} value={x.id}>
-              {x.label}
-            </option>
-          ))}
-        </select>
-        <button
-          className="icon-btn"
+          popupMatchSelectWidth={false}
+          options={EXECUTORS.map((x) => ({ value: x.id, label: x.label }))}
+        />
+        <Button
+          type="text"
+          className="sc-remove"
+          icon={<Trash2 size={14} />}
           onClick={() => update((d) => d.deleteIn(["scenarios", name]))}
           aria-label={`Remove scenario ${name}`}
           title="Remove scenario"
-        >
-          <Trash2 size={14} />
-        </button>
+        />
       </header>
 
-      <div className="sc-fields">
+      <div className="lt-fields">
         {executor === "constant-vus" && (
           <>
             {field("vus", "VUs", "int")}
@@ -497,22 +583,22 @@ function ScenarioEditor({
 
       {ramping && (
         <div className="stages">
-          <table className="rule-table stage-table">
+          <table className="lt-table">
             <thead>
               <tr>
                 <th>Duration</th>
                 <th>
                   {executor === "ramping-vus" ? "Target VUs" : "Target rate"}
                 </th>
-                <th aria-label="Actions" />
+                <th className="lt-table-actions" aria-label="Actions" />
               </tr>
             </thead>
             <tbody>
               {stages.map((s, i) => (
                 <tr key={i}>
                   <td>
-                    <input
-                      className="cell mono"
+                    <Input
+                      className="mono"
                       value={s.duration}
                       onChange={(e) =>
                         update((d) =>
@@ -526,8 +612,8 @@ function ScenarioEditor({
                     />
                   </td>
                   <td>
-                    <input
-                      className="cell mono"
+                    <Input
+                      className="mono"
                       value={String(s.target)}
                       onChange={(e) =>
                         update((d) =>
@@ -540,41 +626,44 @@ function ScenarioEditor({
                       aria-label={`Stage ${i + 1} target`}
                     />
                   </td>
-                  <td className="kv-actions">
-                    <button
-                      className="icon-btn"
+                  <td className="lt-table-actions">
+                    <Button
+                      type="text"
+                      size="small"
+                      icon={<X size={14} />}
                       onClick={() =>
                         update((d) => d.deleteIn([...base, "stages", i]))
                       }
                       aria-label={`Remove stage ${i + 1}`}
-                    >
-                      <X size={14} />
-                    </button>
+                    />
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
-          <button
-            className="btn ghost small"
-            onClick={() =>
-              update((d) => {
-                const node = d.createNode({
-                  duration: "1m",
-                  target: stages[stages.length - 1]?.target ?? 10,
-                });
-                if (isSeq(d.getIn([...base, "stages"])))
-                  d.addIn([...base, "stages"], node);
-                else
-                  d.setIn(
-                    [...base, "stages"],
-                    d.createNode([{ duration: "1m", target: 10 }]),
-                  );
-              })
-            }
-          >
-            <Plus size={13} /> Add stage
-          </button>
+          <div>
+            <Button
+              size="small"
+              icon={<Plus size={13} />}
+              onClick={() =>
+                update((d) => {
+                  const node = d.createNode({
+                    duration: "1m",
+                    target: stages[stages.length - 1]?.target ?? 10,
+                  });
+                  if (isSeq(d.getIn([...base, "stages"])))
+                    d.addIn([...base, "stages"], node);
+                  else
+                    d.setIn(
+                      [...base, "stages"],
+                      d.createNode([{ duration: "1m", target: 10 }]),
+                    );
+                })
+              }
+            >
+              Add stage
+            </Button>
+          </div>
           {preview && preview.x.length > 1 && (
             <LineChart
               title={
@@ -657,17 +746,27 @@ function FlowEditor({
             body = (
               <div className="script-step">
                 <span className="step-kind">Script</span>
-                <textarea
+                <Input.TextArea
                   className="code-input mono"
                   value={script}
-                  onChange={(e) => update((d) => d.setIn([...path, i, "script"], e.target.value))}
+                  onChange={(e) =>
+                    update((d) =>
+                      d.setIn([...path, i, "script"], e.target.value),
+                    )
+                  }
                   spellCheck={false}
-                  rows={Math.min(14, Math.max(4, script.split("\n").length + 1))}
+                  rows={Math.min(
+                    14,
+                    Math.max(4, script.split("\n").length + 1),
+                  )}
                   aria-label="Script"
                 />
                 <span className="muted small">
-                  <code>pyro.request(path)</code>, <code>pyro.http.get/post(url)</code>, <code>pyro.check</code>, <code>pyro.sleep</code>,{" "}
-                  <code>pyro.group</code>, <code>pyro.metrics</code>, <code>pyro.vars</code>; see docs/load-engine.md.
+                  <code>pyro.request(path)</code>,{" "}
+                  <code>pyro.http.get/post(url)</code>,{" "}
+                  <code>pyro.check</code>, <code>pyro.sleep</code>,{" "}
+                  <code>pyro.group</code>, <code>pyro.metrics</code>,{" "}
+                  <code>pyro.vars</code>; see docs/load-engine.md.
                 </span>
               </div>
             );
@@ -675,10 +774,14 @@ function FlowEditor({
             body = (
               <>
                 <span className="step-kind">Script</span>
-                <input
-                  className="cell mono wide"
+                <Input
+                  className="mono step-file"
                   value={scriptFile}
-                  onChange={(e) => update((d) => d.setIn([...path, i, "scriptFile"], e.target.value))}
+                  onChange={(e) =>
+                    update((d) =>
+                      d.setIn([...path, i, "scriptFile"], e.target.value),
+                    )
+                  }
                   aria-label="Script file"
                 />
                 <span className="muted small">file in the workspace</span>
@@ -689,41 +792,42 @@ function FlowEditor({
             body = (
               <>
                 <span className="step-kind">Request</span>
-                <select
+                <Select
+                  className="step-request mono"
                   value={request}
-                  onChange={(e) =>
-                    update((d) =>
-                      d.setIn([...path, i, "request"], e.target.value),
-                    )
+                  onChange={(r) =>
+                    update((d) => d.setIn([...path, i, "request"], r))
                   }
                   aria-label="Request"
+                  showSearch
+                  popupMatchSelectWidth={false}
+                  options={[
+                    ...(known
+                      ? []
+                      : [
+                          {
+                            value: request,
+                            label: `${request || "Choose a request"} (missing)`,
+                          },
+                        ]),
+                    ...requests.map((r) => ({
+                      value: r.path,
+                      label: `${r.path}${r.kind && r.kind !== "http" ? ` (${r.kind})` : ""}`,
+                    })),
+                  ]}
+                />
+                <Checkbox
+                  checked={!!m.get("once")}
+                  onChange={(e) =>
+                    update((d) =>
+                      e.target.checked
+                        ? d.setIn([...path, i, "once"], true)
+                        : d.deleteIn([...path, i, "once"]),
+                    )
+                  }
                 >
-                  {!known && (
-                    <option value={request}>
-                      {request || "Choose a request"} (missing)
-                    </option>
-                  )}
-                  {requests.map((r) => (
-                    <option key={r.path} value={r.path}>
-                      {r.path}
-                      {r.kind && r.kind !== "http" ? ` (${r.kind})` : ""}
-                    </option>
-                  ))}
-                </select>
-                <label className="check">
-                  <input
-                    type="checkbox"
-                    checked={!!m.get("once")}
-                    onChange={(e) =>
-                      update((d) =>
-                        e.target.checked
-                          ? d.setIn([...path, i, "once"], true)
-                          : d.deleteIn([...path, i, "once"]),
-                      )
-                    }
-                  />
                   Once per VU
-                </label>
+                </Checkbox>
                 {m.get("hold") !== undefined && (
                   <span className="muted small">
                     holds {String(m.get("hold"))}
@@ -741,8 +845,8 @@ function FlowEditor({
             body = (
               <>
                 <span className="step-kind">Think</span>
-                <input
-                  className="cell mono dur"
+                <Input
+                  className="mono step-dur"
                   value={min}
                   onChange={(e) =>
                     update((d) =>
@@ -755,8 +859,8 @@ function FlowEditor({
                   aria-label="Think min"
                 />
                 <span className="muted">to</span>
-                <input
-                  className="cell mono dur"
+                <Input
+                  className="mono step-dur"
                   value={max}
                   onChange={(e) =>
                     update((d) =>
@@ -788,41 +892,42 @@ function FlowEditor({
             );
           }
           return (
-            <li key={i} className="flow-step">
+            <li key={i} className="flow-step" data-request={request}>
               <span className="step-no">{i + 1}</span>
               {body}
               <span className="step-actions">
-                <button
-                  className="icon-btn"
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<ArrowUp size={13} />}
                   onClick={() => move(i, -1)}
                   aria-label="Move up"
                   disabled={i === 0}
-                >
-                  <ArrowUp size={13} />
-                </button>
-                <button
-                  className="icon-btn"
+                />
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<ArrowDown size={13} />}
                   onClick={() => move(i, 1)}
                   aria-label="Move down"
                   disabled={i === items.length - 1}
-                >
-                  <ArrowDown size={13} />
-                </button>
-                <button
-                  className="icon-btn"
+                />
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<X size={13} />}
                   onClick={() => update((d) => d.deleteIn([...path, i]))}
                   aria-label="Remove step"
-                >
-                  <X size={13} />
-                </button>
+                />
               </span>
             </li>
           );
         })}
       </ol>
       <div className="flow-add">
-        <button
-          className="btn ghost small"
+        <Button
+          size="small"
+          icon={<Plus size={13} />}
           onClick={() =>
             update((d) =>
               isSeq(d.getIn(path))
@@ -837,10 +942,11 @@ function FlowEditor({
             )
           }
         >
-          <Plus size={13} /> Request
-        </button>
-        <button
-          className="btn ghost small"
+          Request
+        </Button>
+        <Button
+          size="small"
+          icon={<Plus size={13} />}
           onClick={() =>
             update((d) =>
               d.addIn(
@@ -850,10 +956,11 @@ function FlowEditor({
             )
           }
         >
-          <Plus size={13} /> Think time
-        </button>
-        <button
-          className="btn ghost small"
+          Think time
+        </Button>
+        <Button
+          size="small"
+          icon={<Plus size={13} />}
           onClick={() =>
             update((d) => {
               const step = d.createNode({
@@ -864,8 +971,8 @@ function FlowEditor({
             })
           }
         >
-          <Plus size={13} /> Script
-        </button>
+          Script
+        </Button>
       </div>
     </div>
   );
@@ -917,21 +1024,29 @@ function ThresholdsEditor({
       <h3 className="sub-head">
         Thresholds (the test fails if any is false at the end)
       </h3>
-      <p className="muted small">
+      <p className="lt-hint">
         Examples: <code>http_req_duration</code> · <code>p(95)&lt;500</code>,{" "}
         <code>http_req_failed</code> · <code>rate&lt;0.01</code>,{" "}
         <code>{"http_req_duration{request:shop/login}"}</code> ·{" "}
         <code>p(99)&lt;800</code>.
       </p>
       {rows.length > 0 && (
-        <table className="rule-table">
+        <table className="lt-table">
+          <thead>
+            <tr>
+              <th>Metric</th>
+              <th>Condition</th>
+              <th aria-label="Abort on fail" />
+              <th className="lt-table-actions" aria-label="Actions" />
+            </tr>
+          </thead>
           <tbody>
             {rows.map((r) => (
               <tr key={`${r.key}-${r.i}`}>
-                <td className="mono">{r.key}</td>
+                <td className="mono lt-metric">{r.key}</td>
                 <td>
-                  <input
-                    className="cell mono"
+                  <Input
+                    className="mono"
                     value={r.cond}
                     onChange={(e) =>
                       setCond(r.key, r.i, e.target.value, r.abort)
@@ -939,21 +1054,21 @@ function ThresholdsEditor({
                     aria-label={`Condition for ${r.key}`}
                   />
                 </td>
-                <td>
-                  <label className="check">
-                    <input
-                      type="checkbox"
-                      checked={r.abort}
-                      onChange={(e) =>
-                        setCond(r.key, r.i, r.cond, e.target.checked)
-                      }
-                    />
+                <td className="lt-nowrap">
+                  <Checkbox
+                    checked={r.abort}
+                    onChange={(e) =>
+                      setCond(r.key, r.i, r.cond, e.target.checked)
+                    }
+                  >
                     Abort on fail
-                  </label>
+                  </Checkbox>
                 </td>
-                <td className="kv-actions">
-                  <button
-                    className="icon-btn"
+                <td className="lt-table-actions">
+                  <Button
+                    type="text"
+                    size="small"
+                    icon={<X size={14} />}
                     aria-label="Remove threshold"
                     onClick={() =>
                       update((d) => {
@@ -963,9 +1078,7 @@ function ThresholdsEditor({
                           d.deleteIn(["thresholds", r.key]);
                       })
                     }
-                  >
-                    <X size={14} />
-                  </button>
+                  />
                 </td>
               </tr>
             ))}
@@ -985,6 +1098,18 @@ function ThresholdsEditor({
   );
 }
 
+const METRIC_NAMES = [
+  "http_req_duration",
+  "http_req_failed",
+  "http_reqs",
+  "checks",
+  "iteration_duration",
+  "ws_connecting",
+  "ws_errors",
+  "sio_event_rtt",
+  "dropped_iterations",
+];
+
 function NewThreshold({
   onAdd,
 }: {
@@ -994,42 +1119,31 @@ function NewThreshold({
   const [cond, setCond] = useState("p(95)<500");
   return (
     <div className="new-threshold">
-      <input
-        className="cell mono"
+      <AutoComplete
+        className="nt-metric"
         value={key}
-        onChange={(e) => setKey(e.target.value)}
-        aria-label="Metric"
-        list="metric-names"
-      />
-      <datalist id="metric-names">
-        {[
-          "http_req_duration",
-          "http_req_failed",
-          "http_reqs",
-          "checks",
-          "iteration_duration",
-          "ws_connecting",
-          "ws_errors",
-          "sio_event_rtt",
-          "dropped_iterations",
-        ].map((m) => (
-          <option key={m} value={m} />
-        ))}
-      </datalist>
-      <input
-        className="cell mono"
+        onChange={(v) => setKey(v)}
+        options={METRIC_NAMES.map((m) => ({ value: m }))}
+        filterOption={(input, o) =>
+          String(o?.value ?? "").includes(input.trim())
+        }
+      >
+        <Input className="mono" aria-label="Metric" />
+      </AutoComplete>
+      <Input
+        className="mono nt-cond"
         value={cond}
         onChange={(e) => setCond(e.target.value)}
         aria-label="Condition"
       />
-      <button
-        className="btn ghost small"
+      <Button
+        icon={<Plus size={13} />}
         onClick={() =>
           key.trim() && cond.trim() && onAdd(key.trim(), cond.trim())
         }
       >
-        <Plus size={13} /> Add threshold
-      </button>
+        Add threshold
+      </Button>
     </div>
   );
 }
@@ -1044,6 +1158,8 @@ const STATUS_LABEL: Record<string, string> = {
   stopped: "Stopped",
 };
 
+type LoadRunRow = Awaited<ReturnType<typeof api.loadRuns>>[number];
+
 export function RunsList({ test }: { test?: string }) {
   const select = useApp((s) => s.select);
   const q = useQuery({
@@ -1054,12 +1170,13 @@ export function RunsList({ test }: { test?: string }) {
   // Picked runs for comparison, oldest first once two are picked.
   const [picked, setPicked] = useState<string[]>([]);
   if (q.isPending) return <p className="muted">Loading…</p>;
-  if (q.error) return <p className="inline-error">{q.error.message}</p>;
+  if (q.error) return <Alert type="error" showIcon title={q.error.message} />;
   if (q.data.length === 0)
     return (
-      <p className="muted">
-        No runs yet. Press Start to run this test; results are kept here.
-      </p>
+      <Empty
+        image={Empty.PRESENTED_IMAGE_SIMPLE}
+        description="No runs yet. Press Start to run this test; results are kept here."
+      />
     );
   const toggle = (id: string) =>
     setPicked((p) =>
@@ -1071,8 +1188,89 @@ export function RunsList({ test }: { test?: string }) {
     select(`compare:${a}:${b}`);
   };
   const finished = q.data.filter((r) => r.status !== "running").length;
+  const running = (r: LoadRunRow) => r.status === "running";
+  const columns = [
+    ...(finished >= 2
+      ? [
+          {
+            key: "pick",
+            title: <span className="sr-only">Compare</span>,
+            className: "pick-col",
+            width: 48,
+            onCell: () => ({
+              onClick: (e: React.MouseEvent) => e.stopPropagation(),
+            }),
+            render: (_: unknown, r: LoadRunRow) =>
+              !running(r) && (
+                <Checkbox
+                  checked={picked.includes(r.id)}
+                  onChange={() => toggle(r.id)}
+                  aria-label={`Compare run from ${new Date(r.startedAt).toLocaleString()}`}
+                />
+              ),
+          },
+        ]
+      : []),
+    {
+      key: "result",
+      title: "Result",
+      render: (_: unknown, r: LoadRunRow) => (
+        <span className={`verdict v-${r.status}`}>
+          {STATUS_LABEL[r.status] ?? r.status}
+        </span>
+      ),
+    },
+    {
+      key: "started",
+      title: "Started",
+      render: (_: unknown, r: LoadRunRow) =>
+        running(r) ? "now" : new Date(r.startedAt).toLocaleString(),
+    },
+    {
+      key: "duration",
+      title: "Duration",
+      align: "right" as const,
+      className: "mono",
+      render: (_: unknown, r: LoadRunRow) =>
+        running(r) ? "" : clock(r.duration),
+    },
+    {
+      key: "requests",
+      title: "Requests",
+      align: "right" as const,
+      render: (_: unknown, r: LoadRunRow) =>
+        running(r) ? "" : r.requests.toLocaleString(),
+    },
+    {
+      key: "p95",
+      title: "p95",
+      align: "right" as const,
+      className: "mono",
+      render: (_: unknown, r: LoadRunRow) =>
+        !running(r) &&
+        r.requests > 0 && (
+          <>
+            <span className={`swatch heat-${heatOf(r.p95)}`} aria-hidden />
+            {formatMs(r.p95)}
+          </>
+        ),
+    },
+    {
+      key: "failed",
+      title: "Failed",
+      align: "right" as const,
+      render: (_: unknown, r: LoadRunRow) =>
+        running(r) ? "" : `${(r.errorRate * 100).toFixed(2)}%`,
+    },
+    {
+      key: "maxVUs",
+      title: "Max VUs",
+      align: "right" as const,
+      render: (_: unknown, r: LoadRunRow) => (running(r) ? "" : r.maxVUs),
+    },
+  ];
   return (
-    <>
+    <div className="lt-runs">
       {finished >= 2 && (
         <div className="compare-bar">
           <span className="muted small">
@@ -1080,93 +1278,41 @@ export function RunsList({ test }: { test?: string }) {
               ? "Two runs picked."
               : "Pick two runs to compare them."}
           </span>
-          <button
-            className="btn ghost small"
+          <Button
             disabled={picked.length !== 2}
             onClick={compare}
+            icon={<GitCompareArrows size={13} />}
           >
-            <GitCompareArrows size={13} /> Compare
-          </button>
+            Compare
+          </Button>
         </div>
       )}
-      <table className="data-table run-table">
-        <thead>
-          <tr>
-            {finished >= 2 && (
-              <th className="pick-col">
-                <span className="sr-only">Compare</span>
-              </th>
-            )}
-            <th>Result</th>
-            <th>Started</th>
-            <th className="num">Duration</th>
-            <th className="num">Requests</th>
-            <th className="num">p95</th>
-            <th className="num">Failed</th>
-            <th className="num">Max VUs</th>
-          </tr>
-        </thead>
-        <tbody>
-          {q.data.map((r) => (
-            <tr
-              key={r.id}
-              className="run-row"
-              onClick={() => select(`loadrun:${r.id}`)}
-            >
-              {finished >= 2 && (
-                <td className="pick-col" onClick={(e) => e.stopPropagation()}>
-                  {r.status !== "running" && (
-                    <input
-                      type="checkbox"
-                      checked={picked.includes(r.id)}
-                      onChange={() => toggle(r.id)}
-                      aria-label={`Compare run from ${new Date(r.startedAt).toLocaleString()}`}
-                    />
-                  )}
-                </td>
-              )}
-              <td>
-                <span className={`verdict v-${r.status}`}>
-                  {STATUS_LABEL[r.status] ?? r.status}
-                </span>
-              </td>
-              <td>
-                {r.status === "running"
-                  ? "now"
-                  : new Date(r.startedAt).toLocaleString()}
-              </td>
-              <td className="num mono">
-                {r.status === "running" ? "" : clock(r.duration)}
-              </td>
-              <td className="num">
-                {r.status === "running" ? "" : r.requests.toLocaleString()}
-              </td>
-              <td className="num mono">
-                {r.status !== "running" && r.requests > 0 && (
-                  <>
-                    <span
-                      className={`swatch heat-${heatOf(r.p95)}`}
-                      aria-hidden
-                    />
-                    {formatMs(r.p95)}
-                  </>
-                )}
-              </td>
-              <td className="num">
-                {r.status === "running"
-                  ? ""
-                  : `${(r.errorRate * 100).toFixed(2)}%`}
-              </td>
-              <td className="num">{r.status === "running" ? "" : r.maxVUs}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </>
+      <Table
+        className="run-table"
+        size="middle"
+        rowKey="id"
+        dataSource={q.data}
+        columns={columns}
+        pagination={false}
+        scroll={{ x: "max-content" }}
+        rowClassName={() => "run-row"}
+        onRow={(r) => ({ onClick: () => select(`loadrun:${r.id}`) })}
+      />
+    </div>
   );
 }
 
 // --- New load test from a profile --------------------------------------------
+
+/** Mini curves of VUs (or rate) over time for the profile cards. */
+const PROFILE_CURVES: Record<ProfileId, string> = {
+  smoke: "0,32 8,24 112,24 120,32",
+  load: "0,32 30,8 96,8 120,32",
+  stress: "0,32 18,22 38,22 52,13 72,13 86,4 106,4 120,32",
+  spike: "0,28 46,28 52,4 62,4 68,28 120,28",
+  soak: "0,32 10,14 110,14 120,32",
+  breakpoint: "0,32 108,4 120,4",
+};
 
 export function NewLoadTest() {
   const qc = useQueryClient();
@@ -1201,70 +1347,108 @@ export function NewLoadTest() {
   };
 
   return (
-    <section className="loadtest">
-      <header className="lt-head">
-        <div>
-          <h1>New load test</h1>
-          <p className="muted small">
-            Pick the requests each virtual user runs and a profile. You can
-            change everything afterwards.
-          </p>
-        </div>
-      </header>
-      <div className="new-lt">
-        <div className="new-lt-form">
-          <label className="field-row">
-            <span className="field-label">Name</span>
-            <input
-              className="cell wide"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-            />
-          </label>
-          <fieldset className="profiles">
-            <legend className="field-label">Profile</legend>
-            {PROFILES.map((p) => (
-              <label
-                key={p.id}
-                className={`profile ${profile === p.id ? "is-on" : ""}`}
+    <div className="page lt-page">
+      <section className="card lt-header">
+        <header className="lt-top">
+          <div className="lt-title">
+            <h1>New load test</h1>
+            <p className="muted lt-note">
+              Pick the requests each virtual user runs and a profile. You can
+              change everything afterwards.
+            </p>
+          </div>
+          <div className="lt-head-actions">
+            <Button
+              type="primary"
+              size="large"
+              className="lt-run"
+              onClick={create}
+              disabled={!picked.length || !title.trim()}
+            >
+              Create load test
+            </Button>
+          </div>
+        </header>
+        {error && (
+          <Alert
+            type="error"
+            showIcon
+            title="Couldn't create the load test"
+            description={<pre className="mono pre-wrap lt-pre">{error}</pre>}
+          />
+        )}
+      </section>
+
+      <section className="card lt-section">
+        <h2 className="lt-h2" id="lt-profile-label">
+          Profile
+        </h2>
+        <Radio.Group
+          className="profiles"
+          value={profile}
+          aria-labelledby="lt-profile-label"
+          onChange={(e) => {
+            const id = e.target.value as ProfileId;
+            setProfile(id);
+            setTarget(PROFILES.find((p) => p.id === id)!.defaultTarget);
+          }}
+        >
+          {PROFILES.map((p) => (
+            <Radio
+              key={p.id}
+              value={p.id}
+              className={`profile-card ${profile === p.id ? "is-on" : ""}`}
+            >
+              <svg
+                className="profile-curve"
+                viewBox="0 0 120 36"
+                preserveAspectRatio="none"
+                aria-hidden
               >
-                <input
-                  type="radio"
-                  name="profile"
-                  checked={profile === p.id}
-                  onChange={() => {
-                    setProfile(p.id);
-                    setTarget(p.defaultTarget);
-                  }}
+                <polyline
+                  points={PROFILE_CURVES[p.id]}
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinejoin="round"
+                  vectorEffect="non-scaling-stroke"
                 />
-                <span>
-                  <strong>{p.name}</strong>
-                  <span className="muted small">{p.summary}</span>
-                </span>
-              </label>
-            ))}
-          </fieldset>
-          <label className="field-row">
-            <span className="field-label">{prof.targetLabel}</span>
-            <input
-              type="number"
+              </svg>
+              <span className="profile-name">{p.name}</span>
+              <span className="profile-desc">{p.summary}</span>
+            </Radio>
+          ))}
+        </Radio.Group>
+        <div className="lt-fields">
+          <label className="lt-field span-2">
+            <span className="lt-label">Name</span>
+            <Input value={title} onChange={(e) => setTitle(e.target.value)} />
+          </label>
+          <label className="lt-field">
+            <span className="lt-label">{prof.targetLabel}</span>
+            <InputNumber
               min={1}
-              className="cell num-input"
+              className="lt-number"
               value={target}
-              onChange={(e) =>
-                setTarget(Math.max(1, Number(e.target.value) || 1))
-              }
+              onChange={(n) => setTarget(Math.max(1, Number(n) || 1))}
             />
           </label>
-          <fieldset className="pick-requests">
-            <legend className="field-label">Requests, in order</legend>
-            {requests.length === 0 && (
-              <p className="muted small">No requests in the workspace yet.</p>
-            )}
-            {requests.map((r) => (
-              <label key={r.path} className="check">
-                <input
-                  type="checkbox"
+        </div>
+      </section>
+
+      <div className="new-lt">
+        <section className="card lt-section">
+          <h2 className="lt-h2">Requests, in order</h2>
+          {requests.length === 0 ? (
+            <Empty
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              description="No requests in the workspace yet."
+            />
+          ) : (
+            <div className="pick-requests" role="group" aria-label="Requests, in order">
+              {requests.map((r) => (
+                <Checkbox
+                  key={r.path}
                   checked={picked.includes(r.path)}
                   onChange={(e) =>
                     setPicked(
@@ -1273,27 +1457,18 @@ export function NewLoadTest() {
                         : picked.filter((p) => p !== r.path),
                     )
                   }
-                />
-                <span className="mono small">{r.path}</span>
-              </label>
-            ))}
-          </fieldset>
-          {error && <pre className="inline-error mono pre-wrap">{error}</pre>}
-          <button
-            className="btn primary"
-            onClick={create}
-            disabled={!picked.length || !title.trim()}
-          >
-            Create load test
-          </button>
-        </div>
-        <div className="new-lt-preview">
-          <span className="field-label">
-            loadtests/{slugify(title)}.load.yaml
-          </span>
+                >
+                  <span className="mono small">{r.path}</span>
+                </Checkbox>
+              ))}
+            </div>
+          )}
+        </section>
+        <section className="card lt-section new-lt-preview">
+          <h2 className="lt-h2 mono">loadtests/{slugify(title)}.load.yaml</h2>
           <pre className="code-view mono">{yamlPreview}</pre>
-        </div>
+        </section>
       </div>
-    </section>
+    </div>
   );
 }
