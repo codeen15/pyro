@@ -6,7 +6,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 test("send a request and see its tests pass", async ({ page }) => {
-  await page.getByRole("button", { name: "List items" }).click();
+  await page.getByRole("button", { name: "GET List items", exact: true }).click();
   await page.getByRole("button", { name: "Send" }).click();
   await expect(page.locator(".response")).toContainText("200");
   await expect(page.locator(".response")).toContainText('"page"');
@@ -15,7 +15,7 @@ test("send a request and see its tests pass", async ({ page }) => {
 });
 
 test("pre and post processors and think time", async ({ page }) => {
-  await page.getByRole("button", { name: "List items" }).click();
+  await page.getByRole("button", { name: "GET List items", exact: true }).click();
 
   // Pre: a variable used by the query string, and a think time for load tests.
   await page.getByRole("tab", { name: /Pre-processors/ }).click();
@@ -70,7 +70,7 @@ test("paste a cURL command into an existing collection", async ({ page }) => {
   await page.getByRole("button", { name: "Import", exact: true }).last().click();
   await expect(page.getByRole("heading", { name: "Added 1 request to shop" })).toBeVisible();
   await page.getByRole("button", { name: "Done" }).click();
-  await page.getByRole("button", { name: /POST 127\.0\.0\.1:7891\/orders/ }).click();
+  await page.getByRole("button", { name: "POST POST 127.0.0.1:7891/orders", exact: true }).click();
   await page.getByRole("button", { name: "Send" }).click();
   await expect(page.locator(".response")).toContainText("201");
 });
@@ -142,7 +142,7 @@ test("edit globals and environments with current values", async ({ page }) => {
 });
 
 test("OAuth 2.0: client credentials and authorization code with PKCE", async ({ page }) => {
-  await page.getByRole("button", { name: "Who am I" }).click();
+  await page.getByRole("button", { name: "GET Who am I", exact: true }).click();
   await page.getByRole("tab", { name: "Auth" }).click();
   await pickOption(page, page.locator("#auth-type"), "OAuth 2.0");
   await pickOption(page, page.getByLabel("Grant type"), "Client credentials");
@@ -166,7 +166,7 @@ test("OAuth 2.0: client credentials and authorization code with PKCE", async ({ 
 });
 
 test("cookies set by responses can be viewed, edited and deleted", async ({ page }) => {
-  await page.getByRole("button", { name: "Log in" }).click();
+  await page.getByRole("button", { name: "POST Log in", exact: true }).click();
   await page.getByRole("button", { name: "Send" }).click();
   await expect(page.locator(".response")).toContainText("200");
   await page.getByRole("button", { name: "Manage cookies" }).click();
@@ -183,7 +183,7 @@ test("cookies set by responses can be viewed, edited and deleted", async ({ page
 });
 
 test("save a response as an example", async ({ page }) => {
-  await page.getByRole("button", { name: "Create order" }).click();
+  await page.getByRole("button", { name: "POST Create order", exact: true }).click();
   await page.getByRole("button", { name: "Send" }).click();
   await expect(page.locator(".response")).toContainText("201");
   await page.getByRole("button", { name: "Save as example" }).click();
@@ -280,4 +280,35 @@ test("a new request's type is chosen once, when it is created", async ({ page })
   await expect(page.locator(".kind-label")).toHaveText("Socket.IO");
   await expect(page.getByRole("button", { name: "Connect" }).first()).toBeVisible();
   await expect(page.locator(".tree")).toContainText("Chat room");
+});
+
+test("add a folder, then delete a request and the folder", async ({ page }) => {
+  const shop = page.locator(".row-wrap").filter({ has: page.getByText("Shop", { exact: true }) });
+  await shop.hover();
+  await shop.getByRole("button", { name: "More actions for Shop" }).click();
+  await page.getByRole("menuitem", { name: "New folder in Shop" }).click();
+  await page.getByLabel("Folder name").fill("Refunds");
+  await page.getByRole("button", { name: "Create folder" }).click();
+  const folder = page.locator(".row-wrap").filter({ has: page.getByText("Refunds", { exact: true }) });
+  await expect(folder).toBeVisible();
+
+  await folder.hover();
+  await folder.getByRole("button", { name: "New request in Refunds" }).click();
+  await page.getByRole("dialog").getByLabel("Request name").fill("Issue refund");
+  await page.getByRole("button", { name: "Create request" }).click();
+  await expect(page.locator(".req-path")).toContainText("shop/refunds/issue-refund");
+
+  // Delete from the request header.
+  await page.getByRole("button", { name: "Delete request Issue refund" }).click();
+  await page.getByRole("button", { name: "Delete", exact: true }).click();
+  await expect(page.locator(".tree")).not.toContainText("Issue refund");
+  await expect(page.locator(".req-path")).toHaveCount(0);
+
+  // Delete the folder from its menu.
+  await folder.hover();
+  await folder.getByRole("button", { name: "More actions for Refunds" }).click();
+  await page.getByRole("menuitem", { name: "Delete Refunds" }).click();
+  await page.getByRole("button", { name: "Delete", exact: true }).click();
+  await expect(page.locator(".tree")).not.toContainText("Refunds");
+  await expect(page.locator(".tree")).toContainText("List items");
 });

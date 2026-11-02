@@ -1,8 +1,7 @@
 import { useRef, useState } from "react";
 import { Alert, App as AntApp, Button, Dropdown, Result, Select, Skeleton, Table, Tag, Tooltip } from "antd";
-import { DownOutlined } from "@ant-design/icons";
 import { useQuery } from "@tanstack/react-query";
-import { CircleCheck, Cookie, FileInput, Layers, SlidersHorizontal, X } from "./icons";
+import { Briefcase, ChevronDown, CircleCheck, Cookie, FileInput, SlidersHorizontal, X } from "./icons";
 import logo from "./assets/pyro-logo.png";
 import { api, ApiError, decodeBody, type ImportReport, type PyroResponse } from "./api";
 import { useApp, type Theme } from "./store";
@@ -119,7 +118,7 @@ function TopBar({ workspace }: { workspace?: string }) {
         <>
           <span className="topbar-divider" aria-hidden />
           <span className="ws-name" title="Workspace">
-            <Layers size={14} />
+            <Briefcase size={16} />
             {workspace}
           </span>
         </>
@@ -459,7 +458,7 @@ function ThemeSelect() {
     >
       <Button type="text" size="small" className="theme-switch" aria-label="Theme">
         {THEMES.find((t) => t.value === theme)?.label}
-        <DownOutlined />
+        <ChevronDown size={12} />
       </Button>
     </Dropdown>
   );

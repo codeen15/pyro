@@ -125,6 +125,7 @@ func (s *Server) Handler() http.Handler {
 		r.Post("/collections", s.createCollection)
 		r.Get("/collections/{slug}", s.getCollection)
 		r.Put("/collections/{slug}", s.putCollection)
+		r.Delete("/collections/{slug}", s.deleteCollection)
 		r.Get("/collections/{slug}/export", s.exportCollection)
 		r.Get("/collections/{slug}/docs", s.collectionDocs)
 		r.Get("/mocks", s.listMocks)
@@ -133,6 +134,8 @@ func (s *Server) Handler() http.Handler {
 		r.Delete("/mocks/{slug}", s.stopMock)
 		r.Get("/folders/*", s.getFolder)
 		r.Put("/folders/*", s.putFolder)
+		r.Post("/folders/*", s.createFolder)
+		r.Delete("/folders/*", s.deleteFolder)
 
 		r.Get("/requests/*", s.getRequest)
 		r.Put("/requests/*", s.putRequest)
@@ -438,6 +441,36 @@ func (s *Server) getFolder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, f)
+}
+
+func (s *Server) createFolder(w http.ResponseWriter, r *http.Request) {
+	var f model.Collection
+	if !decode(w, r, &f) {
+		return
+	}
+	if err := s.ws.CreateFolder(reqPath(r), f); err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, f)
+}
+
+func (s *Server) deleteFolder(w http.ResponseWriter, r *http.Request) {
+	if err := s.ws.DeleteFolder(reqPath(r)); err != nil {
+		s.fail(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) deleteCollection(w http.ResponseWriter, r *http.Request) {
+	slug := chi.URLParam(r, "slug")
+	if err := s.ws.DeleteCollection(slug); err != nil {
+		s.fail(w, err)
+		return
+	}
+	s.stopMockFor(slug)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) putFolder(w http.ResponseWriter, r *http.Request) {

@@ -25,6 +25,9 @@ TypeScript client in `web/src/api.ts`.
 | GET | `/api/v1/workspace` | `{name, root, collections: Node[]}`, where Node = `{type, name, path, kind?, method?, children?}` |
 | POST | `/api/v1/collections` | Body `{slug, name?, description?, variables?, auth?, scripts?}` → `201` |
 | GET | `/api/v1/collections/{slug}` | Collection settings |
+| DELETE | `/api/v1/collections/{slug}` | Delete the collection and everything in it (stops its mock server) → `204` |
+| POST | `/api/v1/folders/{path}` | Create an empty folder inside a collection or folder; body is its settings (`{name?, …}`) → `201`, `409` if it exists |
+| DELETE | `/api/v1/folders/{path}` | Delete the folder and everything in it → `204` |
 | GET | `/api/v1/requests/{path…}` | A request |
 | PUT | `/api/v1/requests/{path…}` | Create or replace; folders are created as needed; `kind` defaults to `http` |
 | DELETE | `/api/v1/requests/{path…}` | `204` |

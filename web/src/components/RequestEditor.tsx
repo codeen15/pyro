@@ -1,8 +1,7 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Alert, Button, Input, Segmented, Select, Space, Tabs } from "antd";
-import { EditOutlined } from "@ant-design/icons";
-import { Check, Save, SendHorizontal } from "../icons";
+import { Alert, Button, Input, Segmented, Select, Space, Tabs, Tooltip } from "antd";
+import { Check, Pencil, Save, SendHorizontal, Trash2 } from "../icons";
 import { OAuth2Form, TokenPanel, type TokenContext } from "./OAuth2";
 import { api, type Auth, type Body, type KeyValue, type PyroRequest } from "../api";
 import { useApp } from "../store";
@@ -10,6 +9,7 @@ import { KVEditor } from "./KVEditor";
 import { ProcessorList, TimerEditor, postList, preList, setPost, setPre } from "./Processors";
 import { FieldsForm, KindLabel, usePluginTypes } from "./Plugins";
 import { ExamplesEditor } from "./Examples";
+import { useDeleteNode } from "./Sidebar";
 
 const METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];
 type Tab = "params" | "headers" | "body" | "options" | "auth" | "pre" | "post" | "examples";
@@ -112,6 +112,7 @@ export function RequestEditor({ path, saved }: { path: string; saved: PyroReques
       <RequestTitle req={req} path={path} dirty={dirty} onName={(name) => edit({ name })}>
         <KindLabel value={req.kind} />
         <SaveButton dirty={dirty} saving={save.isPending} onSave={() => save.mutate()} />
+        <DeleteRequestButton path={path} name={saved.name} />
       </RequestTitle>
       {save.error && <Alert type="error" showIcon title={`Couldn't save: ${save.error.message}`} />}
       {pluginId && !provider && (
@@ -252,7 +253,7 @@ export function RequestTitle({
       <div className="req-head-text">
         <label className="req-name-wrap">
           <input className="req-name" value={req.name} onChange={(e) => onName(e.target.value)} aria-label="Request name" />
-          <EditOutlined className="req-name-pen" aria-hidden />
+          <Pencil className="req-name-pen" />
         </label>
         <span className="req-path mono">
           {path}
@@ -261,6 +262,16 @@ export function RequestTitle({
       </div>
       <div className="req-head-actions">{children}</div>
     </header>
+  );
+}
+
+/** Deletes the open request (after confirming). */
+export function DeleteRequestButton({ path, name }: { path: string; name: string }) {
+  const del = useDeleteNode();
+  return (
+    <Tooltip title="Delete request">
+      <Button icon={<Trash2 size={14} />} onClick={() => del({ type: "request", path, name })} aria-label={`Delete request ${name}`} />
+    </Tooltip>
   );
 }
 

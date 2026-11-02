@@ -195,6 +195,46 @@ func TestCollectionAndFolderSettings(t *testing.T) {
 	}
 }
 
+func TestCreateAndDeleteFoldersAndCollections(t *testing.T) {
+	ts := newTestServer(t)
+	if res, body := do(t, ts, "POST", "/api/v1/folders/demo/orders", `{"name":"Orders"}`, true); res.StatusCode != 201 {
+		t.Fatalf("create folder: %d %s", res.StatusCode, body)
+	}
+	if res, _ := do(t, ts, "POST", "/api/v1/folders/demo/orders/refunds", `{}`, true); res.StatusCode != 201 {
+		t.Fatalf("nested folder: %d", res.StatusCode)
+	}
+	_, body := do(t, ts, "GET", "/api/v1/workspace", "", true)
+	if !strings.Contains(body, `"name":"Orders"`) || !strings.Contains(body, `"path":"demo/orders/refunds"`) {
+		t.Fatalf("empty folders show in the tree: %s", body)
+	}
+	for path, want := range map[string]int{
+		"/api/v1/folders/demo/orders": 409, // exists
+		"/api/v1/folders/demo/nope/x": 404, // no parent
+		"/api/v1/folders/demo":        400, // a collection
+		"/api/v1/folders/demo/../etc": 400,
+	} {
+		if res, _ := do(t, ts, "POST", path, `{}`, true); res.StatusCode != want {
+			t.Errorf("POST %s: %d, want %d", path, res.StatusCode, want)
+		}
+	}
+	do(t, ts, "PUT", "/api/v1/requests/demo/orders/refunds/list", `{"name":"List","url":"http://x"}`, true)
+	if res, _ := do(t, ts, "DELETE", "/api/v1/requests/demo/orders/refunds/list", "", true); res.StatusCode != 204 {
+		t.Fatalf("delete request: %d", res.StatusCode)
+	}
+	if res, _ := do(t, ts, "DELETE", "/api/v1/folders/demo/orders", "", true); res.StatusCode != 204 {
+		t.Fatalf("delete folder: %d", res.StatusCode)
+	}
+	if res, _ := do(t, ts, "GET", "/api/v1/folders/demo/orders/refunds", "", true); res.StatusCode != 404 {
+		t.Fatalf("folder contents should be gone: %d", res.StatusCode)
+	}
+	if res, _ := do(t, ts, "DELETE", "/api/v1/collections/demo", "", true); res.StatusCode != 204 {
+		t.Fatalf("delete collection: %d", res.StatusCode)
+	}
+	if res, _ := do(t, ts, "DELETE", "/api/v1/collections/demo", "", true); res.StatusCode != 404 {
+		t.Fatalf("deleted twice: %d", res.StatusCode)
+	}
+}
+
 func TestMockServerAPI(t *testing.T) {
 	ts := newTestServer(t)
 	do(t, ts, "PUT", "/api/v1/collections/demo", `{"name":"Demo","variables":[{"key":"baseUrl","value":"https://api.test/v2"}]}`, true)

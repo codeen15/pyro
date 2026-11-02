@@ -1,8 +1,7 @@
 import { useMemo, useState } from "react";
-import { Alert, App, Button, Dropdown, Empty, Input, Modal, Skeleton, Tabs, Tooltip } from "antd";
-import { MoreOutlined, SearchOutlined } from "@ant-design/icons";
+import { Alert, App, Button, Dropdown, Empty, Input, Modal, Skeleton, Tabs, Tooltip, type MenuProps } from "antd";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Activity, BookOpen, ChevronRight, Download, Settings2, Folder, FolderOpen, Gauge, Layers, Play, Plus, RefreshCw, TriangleAlert } from "../icons";
+import { Activity, BookOpen, ChevronRight, Download, Folder, FolderOpen, FolderPlus, Gauge, Layers, MoreVertical, Play, Plus, RefreshCw, Search, Settings2, Trash2, TriangleAlert } from "../icons";
 import { PluginsRail, usePluginTypes } from "./Plugins";
 import { api, saveFile, type Kind, type PyroRequest, type TreeNode, type WorkspaceInfo } from "../api";
 import { formatMs, heatOf } from "../heat";
@@ -59,6 +58,7 @@ function Collections({ ws }: { ws: WorkspaceInfo | undefined }) {
   const [naming, setNaming] = useState(false);
   const [newName, setNewName] = useState("");
   const [newIn, setNewIn] = useState<TreeNode | null>(null);
+  const [folderIn, setFolderIn] = useState<TreeNode | null>(null);
 
   const createCollection = async (name: string) => {
     const taken = new Set(ws?.collections.map((c) => c.path));
@@ -127,7 +127,7 @@ function Collections({ ws }: { ws: WorkspaceInfo | undefined }) {
       <div className="rail-search">
         <Input
           allowClear
-          prefix={<SearchOutlined />}
+          prefix={<Search size={14} />}
           placeholder="Search requests"
           aria-label="Search requests"
           value={search}
@@ -148,11 +148,12 @@ function Collections({ ws }: { ws: WorkspaceInfo | undefined }) {
       ) : (
         <ul className="tree" role="tree" aria-label="Collections">
           {nodes.map((n) => (
-            <TreeItem key={n.path} node={n} depth={0} selected={selected} onSelect={select} onCreate={setNewIn} forceOpen={!!q} />
+            <TreeItem key={n.path} node={n} depth={0} selected={selected} onSelect={select} onCreate={setNewIn} onNewFolder={setFolderIn} forceOpen={!!q} />
           ))}
         </ul>
       )}
       <NewRequestModal parent={newIn} onClose={() => setNewIn(null)} />
+      <NewFolderModal parent={folderIn} onClose={() => setFolderIn(null)} />
       {nameModal}
     </div>
   );
@@ -251,6 +252,7 @@ function TreeItem({
   selected,
   onSelect,
   onCreate,
+  onNewFolder,
   forceOpen,
 }: {
   node: TreeNode;
@@ -258,6 +260,7 @@ function TreeItem({
   selected: string | null;
   onSelect: (p: string) => void;
   onCreate: (parent: TreeNode) => void;
+  onNewFolder: (parent: TreeNode) => void;
   forceOpen?: boolean;
 }) {
   const containsSelected = !!selected && selected.startsWith(node.path + "/");
@@ -268,10 +271,15 @@ function TreeItem({
   if (node.type === "request") {
     return (
       <li role="treeitem" aria-selected={selected === node.path}>
-        <button className={`row ${selected === node.path ? "is-active" : ""}`} style={{ paddingLeft: 8 + depth * 18 + 22 }} onClick={() => onSelect(node.path)}>
-          <KindBadge kind={node.kind} method={node.method} />
-          <span className="row-label">{node.name}</span>
-        </button>
+        <div className="row-wrap request-row">
+          <button className={`row ${selected === node.path ? "is-active" : ""}`} style={{ paddingLeft: 8 + depth * 18 + 22 }} onClick={() => onSelect(node.path)}>
+            <KindBadge kind={node.kind} method={node.method} />
+            <span className="row-label">{node.name}</span>
+          </button>
+          <span className="row-actions">
+            <NodeMenu node={node} onNewFolder={onNewFolder} />
+          </span>
+        </div>
       </li>
     );
   }
@@ -295,13 +303,13 @@ function TreeItem({
           <Tooltip title="Variables, auth and scripts">
             <Button type="text" size="small" icon={<Settings2 size={12} />} onClick={() => onSelect(`settings:${node.path}`)} aria-label={`Settings for ${node.name}`} />
           </Tooltip>
-          {node.type === "collection" && <CollectionMenu slug={node.path} name={node.name} />}
+          <NodeMenu node={node} onNewFolder={onNewFolder} />
         </span>
       </div>
       {expanded && node.children && node.children.length > 0 && (
         <ul role="group">
           {node.children.map((c) => (
-            <TreeItem key={c.path} node={c} depth={depth + 1} selected={selected} onSelect={onSelect} onCreate={onCreate} forceOpen={forceOpen} />
+            <TreeItem key={c.path} node={c} depth={depth + 1} selected={selected} onSelect={onSelect} onCreate={onCreate} onNewFolder={onNewFolder} forceOpen={forceOpen} />
           ))}
         </ul>
       )}
@@ -457,13 +465,55 @@ function TreeSkeleton() {
   );
 }
 
-/** Collection extras: generated API docs and Postman export. */
-function CollectionMenu({ slug, name }: { slug: string; name: string }) {
+function countIn(n: TreeNode): number {
+  return n.type === "request" ? 1 : (n.children ?? []).reduce((sum, c) => sum + countIn(c), 0);
+}
+
+/** Asks, then deletes a request, folder or collection from disk and tidies the UI. */
+export function useDeleteNode() {
+  const qc = useQueryClient();
+  const { modal, message } = App.useApp();
+  return (node: Pick<TreeNode, "type" | "path" | "name" | "children">) => {
+    const n = node.type === "request" ? 0 : countIn(node as TreeNode);
+    const what = node.type === "request" ? "request" : node.type;
+    modal.confirm({
+      title: `Delete ${what} “${node.name}”?`,
+      content:
+        node.type === "request"
+          ? `This deletes ${node.path}.req.yaml from the workspace.`
+          : `This deletes the ${what} folder and ${n === 0 ? "everything in it" : `its ${n} request${n === 1 ? "" : "s"}`} from the workspace.`,
+      okText: "Delete",
+      okButtonProps: { danger: true },
+      cancelText: "Keep it",
+      onOk: async () => {
+        try {
+          if (node.type === "request") await api.deleteRequest(node.path);
+          else if (node.type === "folder") await api.deleteFolder(node.path);
+          else await api.deleteCollection(node.path);
+        } catch (e) {
+          message.error((e as Error).message);
+          throw e;
+        }
+        const st = useApp.getState();
+        const gone = (p: string | null) => !!p && (p === node.path || p.startsWith(node.path + "/") || p.endsWith(":" + node.path) || p.includes(":" + node.path + "/"));
+        if (gone(st.selected)) st.select(null);
+        for (const p of Object.keys(st.drafts)) if (gone(p)) st.clearDraft(p);
+        qc.removeQueries({ queryKey: ["request", node.path] });
+        await qc.invalidateQueries({ queryKey: ["workspace"] });
+        message.success(`Deleted ${node.name}`);
+      },
+    });
+  };
+}
+
+/** Row menu: new folder, docs and export (collections), delete. */
+function NodeMenu({ node, onNewFolder }: { node: TreeNode; onNewFolder: (n: TreeNode) => void }) {
   const setReport = useApp((s) => s.setReport);
   const { message } = App.useApp();
+  const del = useDeleteNode();
   const openDocs = async () => {
     try {
-      const html = await api.collectionDocs(slug);
+      const html = await api.collectionDocs(node.path);
       const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
       window.open(url, "_blank", "noopener");
       setTimeout(() => URL.revokeObjectURL(url), 60_000);
@@ -473,25 +523,72 @@ function CollectionMenu({ slug, name }: { slug: string; name: string }) {
   };
   const exportPostman = async () => {
     try {
-      const ex = await api.exportCollection(slug);
+      const ex = await api.exportCollection(node.path);
       saveFile(ex.filename, JSON.stringify(ex.content, null, "\t"));
       if (ex.report && ex.report.warnings.length > 0) setReport({ mode: "export", data: ex.report });
     } catch (e) {
       message.error((e as Error).message);
     }
   };
+  const items: NonNullable<MenuProps["items"]> = [];
+  if (node.type !== "request") items.push({ key: "folder", icon: <FolderPlus size={14} />, label: `New folder in ${node.name}`, onClick: () => onNewFolder(node) });
+  if (node.type === "collection") {
+    items.push(
+      { key: "docs", icon: <BookOpen size={14} />, label: `API docs for ${node.name}`, onClick: openDocs },
+      { key: "export", icon: <Download size={14} />, label: `Export ${node.name} to Postman`, onClick: exportPostman },
+    );
+  }
+  if (items.length) items.push({ type: "divider" });
+  items.push({ key: "delete", icon: <Trash2 size={14} />, danger: true, label: `Delete ${node.name}`, onClick: () => del(node) });
   return (
-    <Dropdown
-      trigger={["click"]}
-      menu={{
-        items: [
-          { key: "docs", icon: <BookOpen size={13} />, label: `API docs for ${name}`, onClick: openDocs },
-          { key: "export", icon: <Download size={13} />, label: `Export ${name} to Postman`, onClick: exportPostman },
-        ],
-      }}
-    >
-      <Button type="text" size="small" icon={<MoreOutlined />} aria-label={`More actions for ${name}`} />
+    <Dropdown trigger={["click"]} menu={{ items }}>
+      <Button type="text" size="small" icon={<MoreVertical size={14} />} aria-label={`More actions for ${node.name}`} />
     </Dropdown>
+  );
+}
+
+/** Creates an empty folder inside a collection or folder. */
+function NewFolderModal({ parent, onClose }: { parent: TreeNode | null; onClose: () => void }) {
+  const qc = useQueryClient();
+  const [name, setName] = useState("");
+  const create = useMutation({
+    mutationFn: async () => {
+      const title = name.trim();
+      const taken = new Set((parent!.children ?? []).map((c) => c.path));
+      const base = slugify(title) || "folder";
+      let slug = base;
+      for (let i = 2; taken.has(`${parent!.path}/${slug}`); i++) slug = `${base}-${i}`;
+      await api.createFolder(`${parent!.path}/${slug}`, title);
+    },
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ["workspace"] });
+      onClose();
+    },
+  });
+  return (
+    <Modal
+      title={parent ? `New folder in ${parent.name}` : "New folder"}
+      open={!!parent}
+      okText="Create folder"
+      okButtonProps={{ disabled: !name.trim() }}
+      onOk={() => create.mutate()}
+      confirmLoading={create.isPending}
+      onCancel={onClose}
+      afterOpenChange={(open) => {
+        if (!open) {
+          setName("");
+          create.reset();
+        }
+      }}
+      destroyOnHidden
+    >
+      <label className="kind-name">
+        <span className="field-label">Name</span>
+        <Input autoFocus aria-label="Folder name" placeholder="Orders" value={name} onChange={(e) => setName(e.target.value)} onPressEnter={() => name.trim() && create.mutate()} />
+      </label>
+      <p className="muted small">Folders group requests and can carry their own variables, auth, think time and processors.</p>
+      {create.error && <Alert type="error" showIcon title={`Couldn't create the folder: ${create.error.message}`} />}
+    </Modal>
   );
 }
 
