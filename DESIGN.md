@@ -110,8 +110,10 @@ small swatch from one incandescence scale, from cold steel to white heat, beside
   6/8, system font, JetBrains Mono for code). It switches `defaultAlgorithm` / `darkAlgorithm`
   from the theme preference, and wraps the app in antd's `<App>` so `App.useApp()` gives
   `message` and `modal`. Never use `alert`, `confirm` or `prompt`.
-- **Icons:** `@ant-design/icons`. `web/src/icons.tsx` re-exports them under the names the
-  components use, with a `size` prop.
+- **Icons:** [Hugeicons](https://hugeicons.com) free set (`@hugeicons/react` +
+  `@hugeicons/core-free-icons`, MIT), stroke 1.75. `web/src/icons.tsx` re-exports them under
+  the names the components use, sized 1em by default (or a `size` prop) with class `hi`.
+  Icons inside antd components (select arrows, alert and modal icons) stay antd's own.
 - **Custom CSS:** `web/src/styles.css` holds layout and the few custom pieces, using tokens
   that mirror Ant's palette (`--iron-0` page, `--iron-1` card, `--iron-2` fill, `--rule`,
   `--rule-strong`, `--text*`, `--accent*`, `--ok/warn/error*`). Each token is redefined

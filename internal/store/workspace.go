@@ -407,6 +407,63 @@ func (w *Workspace) WriteFolder(p string, f *model.Collection) error {
 	return writeYAML(filepath.Join(dir, FolderFile), f)
 }
 
+// CreateFolder makes a new, empty folder at p (inside an existing
+// collection or folder) with its settings in folder.yaml.
+func (w *Workspace) CreateFolder(p string, f model.Collection) error {
+	p = strings.Trim(p, "/")
+	if !strings.Contains(p, "/") {
+		return fmt.Errorf("%q is a collection, not a folder: %w", p, ErrInvalidPath)
+	}
+	dir, err := w.resolve(collectionsDir, p)
+	if err != nil {
+		return err
+	}
+	if st, err := os.Stat(filepath.Dir(dir)); err != nil || !st.IsDir() {
+		return fmt.Errorf("parent of %q: %w", p, ErrNotFound)
+	}
+	if _, err := os.Stat(dir); err == nil {
+		return fmt.Errorf("folder %q: %w", p, ErrExists)
+	}
+	if _, err := os.Stat(dir + RequestExt); err == nil {
+		return fmt.Errorf("a request named %q: %w", path.Base(p), ErrExists)
+	}
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		return err
+	}
+	if f.Name == "" {
+		f.Name = path.Base(p)
+	}
+	return writeYAML(filepath.Join(dir, FolderFile), &f)
+}
+
+// DeleteFolder removes a folder and everything in it.
+func (w *Workspace) DeleteFolder(p string) error {
+	p = strings.Trim(p, "/")
+	if !strings.Contains(p, "/") {
+		return fmt.Errorf("%q is a collection, not a folder: %w", p, ErrInvalidPath)
+	}
+	return w.removeDir(p)
+}
+
+// DeleteCollection removes a collection and everything in it.
+func (w *Workspace) DeleteCollection(slug string) error {
+	if slug == "" || strings.Contains(slug, "/") {
+		return fmt.Errorf("%w: collection %q", ErrInvalidPath, slug)
+	}
+	return w.removeDir(slug)
+}
+
+func (w *Workspace) removeDir(p string) error {
+	dir, err := w.resolve(collectionsDir, p)
+	if err != nil {
+		return err
+	}
+	if st, err := os.Stat(dir); err != nil || !st.IsDir() {
+		return fmt.Errorf("%q: %w", p, ErrNotFound)
+	}
+	return os.RemoveAll(dir)
+}
+
 // ReadGlobals loads globals.yaml (workspace-wide variables). A missing
 // file means no globals.
 func (w *Workspace) ReadGlobals() (*model.Environment, error) {

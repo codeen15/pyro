@@ -1,14 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Alert, Button, Checkbox, Input, Select, Space, Tabs, Tag, Tooltip } from "antd";
-import { SearchOutlined } from "@ant-design/icons";
-import { ArrowDownLeft, ArrowLeftRight, ArrowUpRight, Bookmark, Plug, PlugZap, SendHorizontal, Trash2, Unplug } from "../icons";
+import { ArrowDownLeft, ArrowLeftRight, ArrowUpRight, Bookmark, Plug, PlugZap, Search, SendHorizontal, Trash2, Unplug } from "../icons";
 import { api, type PyroRequest, type SavedMessage, type SessionMessage, type SessionState, type SocketIOConfig } from "../api";
 import { subscribe } from "../events";
 import { formatMs, heatOf } from "../heat";
 import { useApp } from "../store";
 import { KVEditor } from "./KVEditor";
-import { AuthEditor, RequestTitle, SaveButton } from "./RequestEditor";
+import { AuthEditor, DeleteRequestButton, RequestTitle, SaveButton } from "./RequestEditor";
 import { EmptyState } from "./ResponseView";
 import { KindLabel } from "./Plugins";
 
@@ -161,6 +160,7 @@ export function SessionConsole({ path, saved }: { path: string; saved: PyroReque
         <RequestTitle req={req} path={path} dirty={dirty} onName={(name) => edit({ name })}>
           <KindLabel value={req.kind} />
           <SaveButton dirty={dirty} saving={save.isPending} onSave={() => save.mutate()} />
+          <DeleteRequestButton path={path} name={saved.name} />
         </RequestTitle>
 
         <form
@@ -400,7 +400,7 @@ function Timeline({
           <Input
             className="filter"
             allowClear
-            prefix={<SearchOutlined />}
+            prefix={<Search size={14} />}
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
             placeholder="Filter messages"

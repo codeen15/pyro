@@ -201,6 +201,13 @@ h2 {
   text-wrap: balance;
 }
 
+/* Hugeicons sit on the text baseline like antd's own icons. */
+.hi {
+  display: inline-block;
+  flex: none;
+  vertical-align: -0.125em;
+}
+
 code,
 kbd,
 .mono {
@@ -569,6 +576,9 @@ input[type="checkbox"] {
 }
 .row-wrap .row {
   padding-right: 92px;
+}
+.row-wrap.request-row .row {
+  padding-right: 32px;
 }
 .row:hover {
   background: rgba(0, 0, 0, 0.04);
@@ -1090,7 +1100,7 @@ input[type="checkbox"] {
   color: var(--text);
 }
 .notice svg,
-.notice .anticon {
+.notice .hi {
   flex: none;
   margin-top: 4px;
 }
@@ -1098,14 +1108,14 @@ input[type="checkbox"] {
   background: var(--error-soft);
   border-color: var(--error-border);
 }
-.notice.error > .anticon {
+.notice.error > .hi {
   color: var(--error);
 }
 .notice.warn {
   background: var(--warn-soft);
   border-color: var(--warn-border);
 }
-.notice.warn > .anticon {
+.notice.warn > .hi {
   color: var(--warn);
 }
 .notice + .notice {
@@ -2399,14 +2409,14 @@ input[type="checkbox"] {
   border-radius: var(--r);
   overflow-wrap: anywhere;
 }
-.th.is-pass > .anticon {
+.th.is-pass > .hi {
   color: var(--ok);
 }
-.th.is-fail > .anticon,
+.th.is-fail > .hi,
 .th.is-fail > .mono {
   color: var(--error);
 }
-.th.is-nodata > .anticon {
+.th.is-nodata > .hi {
   color: var(--text-faint);
 }
 .th.is-lit {
@@ -2730,7 +2740,7 @@ input[type="checkbox"] {
   gap: 6px;
   margin-top: 6px;
 }
-.caps-approved .anticon {
+.caps-approved .hi {
   color: var(--ok);
 }
 .plugin-settings .dash-title {
@@ -2758,7 +2768,7 @@ input[type="checkbox"] {
   border-radius: var(--r-lg);
   background: var(--iron-2);
 }
-.install-box > .anticon {
+.install-box > .hi {
   flex: none;
   color: var(--text-muted);
 }
@@ -2918,7 +2928,7 @@ input[type="checkbox"] {
   font-size: 12px;
   color: var(--text-muted);
 }
-.theme-switch .anticon {
+.theme-switch .hi {
   font-size: 10px;
 }
 

@@ -147,6 +147,17 @@ func (s *Server) stopMock(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// stopMockFor stops a collection's mock server, if one is running.
+func (s *Server) stopMockFor(slug string) {
+	s.mocks.mu.Lock()
+	m := s.mocks.bySlg[slug]
+	delete(s.mocks.bySlg, slug)
+	s.mocks.mu.Unlock()
+	if m != nil {
+		m.srv.Close()
+	}
+}
+
 func (s *Server) closeMocks() {
 	s.mocks.mu.Lock()
 	defer s.mocks.mu.Unlock()

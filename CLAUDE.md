@@ -57,7 +57,7 @@ cd web && npm run e2e   # browser tests (needs bin/pyro and npx playwright insta
   `-race` takes ~100 s because wazero compiles slowly with race instrumentation.
 - UI: Ant Design 6 (`antd`, `@ant-design/icons`); follow `DESIGN.md` (antd components first, brand red `#cf1920`
   as `colorPrimary` in `web/src/theme.tsx`, heat swatches only on measured data). Use `App.useApp()` for
-  message/modal, never alert/confirm/prompt. Icons via `web/src/icons.tsx`. Custom CSS tokens live in
+  message/modal, never alert/confirm/prompt. Icons are Hugeicons via `web/src/icons.tsx` (don't import icon packages directly). Custom CSS tokens live in
   `web/src/styles.css` (light in `:root`, dark under `:root[data-theme="dark"]`; every new colour needs both);
   heat thresholds in `web/src/heat.ts`. The impeccable design hook checks UI edits. e2e helper `pickOption`
   (`web/e2e/fixtures.ts`) drives antd Selects.
