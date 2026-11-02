@@ -1,13 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowDownLeft, ArrowUpRight, Bookmark, Circle, Plug, PlugZap, Save, SendHorizontal, Trash2, X } from "lucide-react";
+import { Alert, Button, Checkbox, Input, Select, Space, Tabs, Tag, Tooltip } from "antd";
+import { SearchOutlined } from "@ant-design/icons";
+import { ArrowDownLeft, ArrowLeftRight, ArrowUpRight, Bookmark, Plug, PlugZap, SendHorizontal, Trash2, Unplug } from "../icons";
 import { api, type PyroRequest, type SavedMessage, type SessionMessage, type SessionState, type SocketIOConfig } from "../api";
 import { subscribe } from "../events";
 import { formatMs, heatOf } from "../heat";
 import { useApp } from "../store";
 import { KVEditor } from "./KVEditor";
-import { AuthEditor, RequestTitle } from "./RequestEditor";
-import { KindSelect } from "./Plugins";
+import { AuthEditor, RequestTitle, SaveButton } from "./RequestEditor";
+import { EmptyState } from "./ResponseView";
+import { KindLabel } from "./Plugins";
 
 type Tab = "message" | "saved" | "headers" | "auth" | "settings";
 
@@ -154,13 +157,10 @@ export function SessionConsole({ path, saved }: { path: string; saved: PyroReque
 
   return (
     <div className="work session">
-      <section className="editor">
+      <section className="card editor">
         <RequestTitle req={req} path={path} dirty={dirty} onName={(name) => edit({ name })}>
-          <KindSelect value={req.kind} onChange={(kind) => edit({ kind })} />
-          <button className="btn ghost" onClick={() => save.mutate()} disabled={!dirty || save.isPending} title="Save (Ctrl+S)">
-            <Save size={14} />
-            {save.isPending ? "Saving…" : dirty ? "Save" : "Saved"}
-          </button>
+          <KindLabel value={req.kind} />
+          <SaveButton dirty={dirty} saving={save.isPending} onSave={() => save.mutate()} />
         </RequestTitle>
 
         <form
@@ -171,43 +171,45 @@ export function SessionConsole({ path, saved }: { path: string; saved: PyroReque
             else connect();
           }}
         >
-          <span className={`kind-tag ${connected ? "is-live" : ""}`}>
-            {sio ? "SIO" : "WS"}
-          </span>
-          <input
-            className="url-input mono"
-            value={req.url}
-            onChange={(e) => edit({ url: e.target.value })}
-            placeholder={sio ? "http://localhost:3000" : "wss://echo.example.com/socket"}
-            aria-label="URL"
-            spellCheck={false}
-            disabled={connected}
-          />
-          {connected ? (
-            <button className="btn ghost connect" type="submit">
-              <X size={15} /> Disconnect
-            </button>
-          ) : (
-            <button className="btn primary send" type="submit" disabled={connecting || !req.url.trim()} title="Connect (Ctrl+Enter)">
-              <PlugZap size={15} />
-              {connecting ? "Connecting…" : "Connect"}
-            </button>
-          )}
+          <Space.Compact block size="large">
+            <span className={`kind-tag ${sio ? "m-sio" : "m-ws"} ${connected ? "is-live" : ""}`}>{sio ? "SIO" : "WS"}</span>
+            <Input
+              className="url-input mono"
+              value={req.url}
+              onChange={(e) => edit({ url: e.target.value })}
+              placeholder={sio ? "http://localhost:3000" : "wss://echo.example.com/socket"}
+              aria-label="URL"
+              spellCheck={false}
+              disabled={connected}
+            />
+            {connected ? (
+              <Button className="send" htmlType="submit" danger icon={<Unplug size={15} />}>
+                Disconnect
+              </Button>
+            ) : (
+              <Button className="send" type="primary" htmlType="submit" loading={connecting} disabled={!req.url.trim()} icon={<PlugZap size={15} />} title="Connect (Ctrl+Enter)">
+                {connecting ? "Connecting" : "Connect"}
+              </Button>
+            )}
+          </Space.Compact>
         </form>
-        {connectError && (
-          <p className="inline-error" role="alert">
-            {connectError}
-          </p>
-        )}
+        {connectError && <Alert type="error" showIcon role="alert" title={connectError} />}
 
-        <div className="tabs" role="tablist" aria-label="Session parts">
-          {tabs.map((t) => (
-            <button key={t.id} role="tab" aria-selected={tab === t.id} className="tab" onClick={() => setTab(t.id)}>
-              {t.label}
-              {!!t.count && <span className="count">{t.count}</span>}
-            </button>
-          ))}
-        </div>
+        <Tabs
+          className="part-tabs"
+          activeKey={tab}
+          onChange={(k) => setTab(k as Tab)}
+          aria-label="Session parts"
+          items={tabs.map((t) => ({
+            key: t.id,
+            label: (
+              <>
+                {t.label}
+                {!!t.count && <span className="count">{t.count}</span>}
+              </>
+            ),
+          }))}
+        />
 
         <div className="tab-panel" role="tabpanel">
           {tab === "message" && (
@@ -217,37 +219,36 @@ export function SessionConsole({ path, saved }: { path: string; saved: PyroReque
                   <label className="field-label" htmlFor="sio-event">
                     Event
                   </label>
-                  <input id="sio-event" className="cell mono event-input" value={compose.event ?? ""} onChange={(e) => setCompose({ ...compose, event: e.target.value })} spellCheck={false} />
-                  <label className="check">
-                    <input type="checkbox" checked={!!compose.ack} onChange={(e) => setCompose({ ...compose, ack: e.target.checked })} />
+                  <Input id="sio-event" className="mono event-input" value={compose.event ?? ""} onChange={(e) => setCompose({ ...compose, event: e.target.value })} spellCheck={false} />
+                  <Checkbox checked={!!compose.ack} onChange={(e) => setCompose({ ...compose, ack: e.target.checked })}>
                     Ask for an ack
-                  </label>
+                  </Checkbox>
                 </div>
               )}
-              <textarea
+              <Input.TextArea
                 className="code-input mono"
                 value={compose.content}
                 onChange={(e) => setCompose({ ...compose, content: e.target.value })}
                 spellCheck={false}
                 aria-label="Message"
+                autoSize={{ minRows: 5 }}
                 placeholder={sio ? '["hello", {"room": "{{room}}"}]   (a JSON array of arguments)' : '{"op": "subscribe", "channel": "{{channel}}"}'}
               />
               <div className="composer-actions">
-                <button className="btn primary" onClick={send} disabled={!connected} title={connected ? "Send (Ctrl+Enter)" : "Connect first"}>
-                  <SendHorizontal size={14} /> Send
-                </button>
+                <Button type="primary" icon={<SendHorizontal size={14} />} onClick={send} disabled={!connected} title={connected ? "Send (Ctrl+Enter)" : "Connect first"}>
+                  Send
+                </Button>
+                <Button icon={<Bookmark size={13} />} onClick={saveTemplate} disabled={!compose.content.trim() && !compose.event}>
+                  Save message
+                </Button>
                 {!sio && (
-                  <label className="check">
-                    <input type="checkbox" checked={!!compose.binary} onChange={(e) => setCompose({ ...compose, binary: e.target.checked })} />
+                  <Checkbox checked={!!compose.binary} onChange={(e) => setCompose({ ...compose, binary: e.target.checked })}>
                     Binary (base64)
-                  </label>
+                  </Checkbox>
                 )}
-                <button className="btn ghost small" onClick={saveTemplate} disabled={!compose.content.trim() && !compose.event}>
-                  <Bookmark size={13} /> Save to request
-                </button>
                 {!connected && <span className="muted small">Connect to send. Variables like {"{{name}}"} are filled in when sent.</span>}
               </div>
-              {sendError && <p className="inline-error">{sendError}</p>}
+              {sendError && <Alert type="error" showIcon title={sendError} />}
             </div>
           )}
           {tab === "saved" && (
@@ -266,28 +267,32 @@ export function SessionConsole({ path, saved }: { path: string; saved: PyroReque
         </div>
       </section>
 
-      <div className="splitter static" aria-hidden />
-
-      <Timeline live={live} unresolved={unresolved} onClear={() => setLive((cur) => (cur ? { ...cur, messages: [] } : cur))} />
+      <Timeline
+        live={live}
+        unresolved={unresolved}
+        connecting={connecting}
+        canConnect={!!req.url.trim()}
+        onConnect={connect}
+        onClear={() => setLive((cur) => (cur ? { ...cur, messages: [] } : cur))}
+      />
     </div>
   );
 }
 
 function SavedMessages({ messages, onUse, onChange }: { messages: SavedMessage[]; onUse: (m: SavedMessage) => void; onChange: (m: SavedMessage[]) => void }) {
   if (messages.length === 0) {
-    return <p className="muted">No saved messages. Compose one in the Message tab and choose “Save to request”.</p>;
+    return <p className="muted">No saved messages. Compose one in the Message tab and choose “Save message”.</p>;
   }
   return (
     <ul className="saved-list">
       {messages.map((m, i) => (
         <li key={i}>
-          <button className="saved-item" onClick={() => onUse(m)} title="Load into the composer">
-            {m.event && <span className="event">{m.event}</span>}
-            <span className="mono saved-preview">{m.content || "(no payload)"}</span>
-          </button>
-          <button className="icon-btn" onClick={() => onChange(messages.filter((_, j) => j !== i))} aria-label="Delete saved message">
-            <Trash2 size={13} />
-          </button>
+          {m.event && <span className="event-tag">{m.event}</span>}
+          <span className="mono saved-preview">{m.content || "(no payload)"}</span>
+          <Button type="link" size="small" onClick={() => onUse(m)} title="Load into the composer">
+            Load
+          </Button>
+          <Button type="text" size="small" icon={<Trash2 size={13} />} onClick={() => onChange(messages.filter((_, j) => j !== i))} aria-label="Delete saved message" />
         </li>
       ))}
     </ul>
@@ -298,25 +303,35 @@ function SocketIOSettings({ cfg, onChange }: { cfg: SocketIOConfig; onChange: (c
   return (
     <div className="auth-editor">
       <label className="field-row">
-        <span className="field-label">Path</span>
-        <input className="cell mono wide" value={cfg.path ?? ""} placeholder="/socket.io/" onChange={(e) => onChange({ ...cfg, path: e.target.value || undefined })} />
+        <span className="field-label">Namespace</span>
+        <Input className="mono wide" value={cfg.namespace ?? ""} placeholder="/" onChange={(e) => onChange({ ...cfg, namespace: e.target.value || undefined })} />
       </label>
       <label className="field-row">
-        <span className="field-label">Namespace</span>
-        <input className="cell mono wide" value={cfg.namespace ?? ""} placeholder="/" onChange={(e) => onChange({ ...cfg, namespace: e.target.value || undefined })} />
+        <span className="field-label">Path</span>
+        <Input className="mono wide" value={cfg.path ?? ""} placeholder="/socket.io/" onChange={(e) => onChange({ ...cfg, path: e.target.value || undefined })} />
       </label>
       <label className="field-row">
         <span className="field-label">Auth (JSON)</span>
-        <input className="cell mono wide" value={cfg.auth ?? ""} placeholder='{"token": "{{token}}"}' onChange={(e) => onChange({ ...cfg, auth: e.target.value || undefined })} />
+        <Input className="mono wide" value={cfg.auth ?? ""} placeholder='{"token": "{{token}}"}' onChange={(e) => onChange({ ...cfg, auth: e.target.value || undefined })} />
       </label>
-      <label className="field-row">
+      <div className="field-row">
         <span className="field-label">Transport</span>
-        <select value={cfg.transport ?? "auto"} onChange={(e) => onChange({ ...cfg, transport: e.target.value === "auto" ? undefined : (e.target.value as SocketIOConfig["transport"]) })}>
-          <option value="auto">WebSocket, falling back to long-polling</option>
-          <option value="websocket">WebSocket only</option>
-          <option value="polling">Long-polling only</option>
-        </select>
-      </label>
+        <Select
+          aria-label="Transport"
+          className="wide"
+          value={cfg.transport ?? "auto"}
+          onChange={(v) => onChange({ ...cfg, transport: v === "auto" ? undefined : (v as SocketIOConfig["transport"]) })}
+          options={[
+            { value: "auto", label: "WebSocket, falling back to long-polling" },
+            { value: "websocket", label: "WebSocket only" },
+            { value: "polling", label: "Long-polling only" },
+          ]}
+        />
+      </div>
+      <div className="field-row">
+        <span className="field-label">Version</span>
+        <Tag>v4 (EIO 4)</Tag>
+      </div>
       <p className="muted small">
         Auth is sent with the CONNECT packet (Socket.IO v3/v4). Binary values appear as <code>{'{"$binary": "<base64>"}'}</code> in messages; send one the same way inside your arguments.
       </p>
@@ -324,7 +339,21 @@ function SocketIOSettings({ cfg, onChange }: { cfg: SocketIOConfig; onChange: (c
   );
 }
 
-function Timeline({ live, unresolved, onClear }: { live: Live | null; unresolved: string[]; onClear: () => void }) {
+function Timeline({
+  live,
+  unresolved,
+  connecting,
+  canConnect,
+  onConnect,
+  onClear,
+}: {
+  live: Live | null;
+  unresolved: string[];
+  connecting: boolean;
+  canConnect: boolean;
+  onConnect: () => void;
+  onClear: () => void;
+}) {
   const [filter, setFilter] = useState("");
   const [follow, setFollow] = useState(true);
   const scroller = useRef<HTMLDivElement>(null);
@@ -343,50 +372,65 @@ function Timeline({ live, unresolved, onClear }: { live: Live | null; unresolved
     return { sent: all.filter((m) => m.direction === "sent").length, received: all.filter((m) => m.direction === "received").length };
   }, [live]);
 
+  const state = !live ? "idle" : live.state.closed ? (live.state.error ? "error" : "closed") : "live";
   return (
-    <section className="response timeline" aria-label="Messages">
-      <div className="status-line">
-        {live ? (
-          live.state.closed ? (
-            <span className={`conn ${live.state.error ? "is-error" : ""}`}>
-              <Circle size={9} /> {live.state.error ? live.state.error : "Disconnected"}
-            </span>
-          ) : (
-            <span className="conn is-live">
-              <Plug size={13} /> Connected{live.state.info.sid ? ` · sid ${live.state.info.sid}` : ""}
-              {live.state.info.subprotocol ? ` · ${live.state.info.subprotocol}` : ""}
-              {live.state.info.transport ? ` · ${live.state.info.transport}` : ""}
-            </span>
-          )
-        ) : (
-          <span className="conn">
-            <Circle size={9} /> Not connected
-          </span>
-        )}
+    <section className="card response timeline" aria-label="Messages">
+      <header className="timeline-head">
+        <span className={`conn-dot is-${connecting ? "connecting" : state}`} aria-hidden />
+        <span className="conn-label">
+          {connecting
+            ? "Connecting"
+            : state === "live"
+              ? "Connected"
+              : state === "error"
+                ? live!.state.error
+                : state === "closed"
+                  ? "Disconnected"
+                  : "Not connected"}
+        </span>
         {live && (
           <span className="meta">
+            {state === "live" && live.state.info.sid ? `sid ${live.state.info.sid} · ` : ""}
+            {state === "live" && live.state.info.subprotocol ? `${live.state.info.subprotocol} · ` : ""}
+            {state === "live" && live.state.info.transport ? `${live.state.info.transport} · ` : ""}
             {counts.sent} sent · {counts.received} received
           </span>
         )}
-        <input className="cell filter" value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Filter messages" aria-label="Filter messages" />
-        <label className="check small">
-          <input type="checkbox" checked={follow} onChange={(e) => setFollow(e.target.checked)} />
-          Follow
-        </label>
-        <button className="icon-btn" onClick={onClear} aria-label="Clear timeline" title="Clear timeline">
-          <Trash2 size={13} />
-        </button>
-      </div>
-      {unresolved.length > 0 && (
-        <p className="inline-warn">
-          Not defined: {unresolved.map((v) => `{{${v}}}`).join(", ")}. Sent as written.
-        </p>
-      )}
+        <span className="timeline-tools">
+          <Input
+            className="filter"
+            allowClear
+            prefix={<SearchOutlined />}
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            placeholder="Filter messages"
+            aria-label="Filter messages"
+          />
+          <Checkbox checked={follow} onChange={(e) => setFollow(e.target.checked)}>
+            Follow
+          </Checkbox>
+          <Tooltip title="Clear timeline">
+            <Button type="text" icon={<Trash2 size={14} />} onClick={onClear} aria-label="Clear timeline" />
+          </Tooltip>
+        </span>
+      </header>
+      {unresolved.length > 0 && <Alert type="warning" showIcon banner title={`Not defined: ${unresolved.map((v) => `{{${v}}}`).join(", ")}. Sent as written.`} />}
       <div className="timeline-scroll" ref={scroller}>
         {messages.length === 0 ? (
-          <p className="muted pad">
-            {live ? (filter ? "No messages match the filter." : "No messages yet.") : "Connect to start the session. Messages in both directions appear here."}
-          </p>
+          live ? (
+            <p className="muted pad">{filter ? "No messages match the filter." : "No messages yet."}</p>
+          ) : (
+            <EmptyState
+              icon={<ArrowLeftRight size={22} />}
+              action={
+                <Button className="connect-outline" icon={<PlugZap size={14} />} onClick={onConnect} loading={connecting} disabled={!canConnect}>
+                  Connect
+                </Button>
+              }
+            >
+              Connect to start the session. Messages in both directions appear here.
+            </EmptyState>
+          )
         ) : (
           <ol className="msg-list">
             {messages.map((m) => (
@@ -414,22 +458,35 @@ function MessageRow({ m }: { m: SessionMessage }) {
   if (m.direction === "system") {
     return (
       <li className={`msg system ${m.kind === "error" ? "is-error" : ""}`}>
+        <span className="msg-icon">
+          <Plug size={13} />
+        </span>
         <time>{time}</time>
-        <span>{m.data}</span>
+        <span className="msg-system mono">{m.data}</span>
       </li>
     );
   }
   return (
     <li className={`msg ${m.direction}`}>
       <button className="msg-head" onClick={() => setOpen(!open)} aria-expanded={open}>
+        <span className="msg-icon">{m.direction === "sent" ? <ArrowUpRight size={13} aria-label="sent" /> : <ArrowDownLeft size={13} aria-label="received" />}</span>
         <time>{time}</time>
-        {m.direction === "sent" ? <ArrowUpRight size={14} aria-label="sent" /> : <ArrowDownLeft size={14} aria-label="received" />}
-        {m.kind === "ack" ? <span className="event">ack #{m.ackId}</span> : m.event && <span className="event">{m.event}</span>}
-        {m.ackId !== undefined && m.kind !== "ack" && <span className="meta">ack #{m.ackId}</span>}
-        {m.kind === "binary" && <span className="meta">binary</span>}
-        <span className="msg-data mono">{m.data}</span>
-        {m.rttMs !== undefined && m.rttMs > 0 && <span className={`heat-chip small heat-${heatOf(m.rttMs)}`} title="Ack round trip">{formatMs(m.rttMs)}</span>}
-        <span className="meta">{m.size} B</span>
+        <span className="msg-event">
+          {m.kind === "ack" ? <span className="event-tag">ack #{m.ackId}</span> : m.event ? <span className="event-tag">{m.event}</span> : m.kind === "binary" ? <span className="meta">binary</span> : null}
+        </span>
+        <span className="msg-data mono">
+          {m.ackId !== undefined && m.kind !== "ack" && <span className="meta">ack #{m.ackId} </span>}
+          {m.data}
+        </span>
+        <span className="msg-size">
+          {m.rttMs !== undefined && m.rttMs > 0 && (
+            <span className="rtt" title="Ack round trip">
+              <span className={`swatch heat-${heatOf(m.rttMs)}`} aria-hidden />
+              {formatMs(m.rttMs)}
+            </span>
+          )}
+          {m.size} B
+        </span>
       </button>
       {open && <pre className="code-view mono msg-body">{pretty}</pre>}
     </li>

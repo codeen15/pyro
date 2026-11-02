@@ -91,7 +91,7 @@ type Session interface {
 |---|---|
 | **Go engine** | Cheap goroutines run 10k+ VUs, it ships as one static binary per OS, and it has strong network libraries. k6 uses the same approach. See [ADR 0001](adr/0001-go-engine.md). |
 | **Local server + browser UI** | Works on every OS with no per-OS GUI code. The same binary runs headless on servers and in CI. |
-| **React + Vite + TanStack Query** | Mature ecosystem. Monaco is available for editors, and uPlot handles high-frequency live charts. |
+| **React + Vite + TanStack Query + Ant Design** | Mature ecosystem. antd (MIT) supplies the components, themed with the brand red; charts are hand-drawn SVG (`LineChart.tsx`) under the dataviz rules. |
 | **goja** | Pure-Go JS engine. One runtime per VU keeps scripts isolated. |
 | **wazero** | Pure-Go WASM runtime: sandboxed, cross-platform plugins with no CGO. See [ADR 0002](adr/0002-wasm-plugins.md) and [ADR 0005](adr/0005-json-abi-and-go-sdk.md). |
 | **In-house Socket.IO client** | Go's third-party clients are weak, and owning the protocol keeps load mode efficient. See [ADR 0003](adr/0003-socketio-in-house.md). |

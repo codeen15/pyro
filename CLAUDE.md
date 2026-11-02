@@ -55,12 +55,15 @@ cd web && npm run e2e   # browser tests (needs bin/pyro and npx playwright insta
   rejects non-loopback Host headers unless `AnyHost`; plugin index URLs must be https except on loopback.
 - Plugin tests build the example plugins with `GOOS=wasip1` (needs only the Go toolchain); the plugin package under
   `-race` takes ~100 s because wazero compiles slowly with race instrumentation.
-- UI: follow `DESIGN.md` (Pyrometry: heat colours only on measured data, flame accent for chrome). Tokens live in
-  `web/src/styles.css` (dark in `:root`, light under `:root[data-theme="light"]`; every new colour needs both);
-  heat thresholds in `web/src/heat.ts`. The impeccable design hook checks UI edits.
+- UI: Ant Design 6 (`antd`, `@ant-design/icons`); follow `DESIGN.md` (antd components first, brand red `#cf1920`
+  as `colorPrimary` in `web/src/theme.tsx`, heat swatches only on measured data). Use `App.useApp()` for
+  message/modal, never alert/confirm/prompt. Icons via `web/src/icons.tsx`. Custom CSS tokens live in
+  `web/src/styles.css` (light in `:root`, dark under `:root[data-theme="dark"]`; every new colour needs both);
+  heat thresholds in `web/src/heat.ts`. The impeccable design hook checks UI edits. e2e helper `pickOption`
+  (`web/e2e/fixtures.ts`) drives antd Selects.
 - Charts: `web/src/components/LineChart.tsx` (and the Go report) follow the dataviz rules: no dual axes, text never
   in data colours (heat shows as a swatch beside neutral text), hover readout + table view, colours `--viz-*`
-  validated with the dataviz palette script against `--iron-0`.
+  validated with the dataviz palette script against the card surface (`--iron-1`).
 
 ## Docs
 - `docs/PRD.md`: goals, users, non-goals

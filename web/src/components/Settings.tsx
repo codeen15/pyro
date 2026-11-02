@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Eye, EyeOff, Plus, Save, Trash2 } from "lucide-react";
+import { Alert, Button, Checkbox, Input, Skeleton, Tabs, Tooltip } from "antd";
+import { Check, Eye, EyeOff, Plus, Save, Trash2 } from "../icons";
 import { api, type CollectionSettings, type Variable } from "../api";
 import { AuthEditor } from "./RequestEditor";
 import { ScriptsEditor } from "./TestsEditor";
@@ -22,8 +23,22 @@ export function SettingsPage({ path }: { path: string }) {
   const [error, setError] = useState<string | null>(null);
   useEffect(() => setDraft(null), [path]);
 
-  if (q.isPending) return <div className="pad muted">Loading…</div>;
-  if (q.error) return <div className="pad inline-error">{q.error.message}</div>;
+  if (q.isPending)
+    return (
+      <div className="page">
+        <section className="card settings-page">
+          <Skeleton active paragraph={{ rows: 4 }} />
+        </section>
+      </div>
+    );
+  if (q.error)
+    return (
+      <div className="page">
+        <section className="card settings-page">
+          <Alert type="error" showIcon title={q.error.message} />
+        </section>
+      </div>
+    );
   const c = draft ?? q.data;
   const dirty = draft !== null && JSON.stringify(draft) !== JSON.stringify(q.data);
   const edit = (patch: Partial<CollectionSettings>) => setDraft({ ...c, ...patch });
@@ -53,53 +68,70 @@ export function SettingsPage({ path }: { path: string }) {
   if (isCollection) tabs.push({ id: "mock", label: "Mock server" });
 
   return (
-    <section className="loadtest settings-page">
-      <header className="lt-head">
-        <div>
-          <input className="title-input" value={c.name} onChange={(e) => edit({ name: e.target.value })} aria-label={isCollection ? "Collection name" : "Folder name"} />
-          <p className="muted small">
-            <code>collections/{path}/{isCollection ? "collection.yaml" : "folder.yaml"}</code>
-            {dirty && <span className="dirty"> · unsaved</span>} · {isCollection ? "every request in this collection" : "every request in this folder"} inherits these settings
-          </p>
+    <div className="page">
+      <section className="card settings-page">
+        <header className="page-head">
+          <div>
+            <Input
+              variant="borderless"
+              className="title-input"
+              value={c.name}
+              onChange={(e) => edit({ name: e.target.value })}
+              aria-label={isCollection ? "Collection name" : "Folder name"}
+            />
+            <p className="muted small">
+              <code>
+                collections/{path}/{isCollection ? "collection.yaml" : "folder.yaml"}
+              </code>
+              {dirty && <span className="dirty"> · unsaved</span>} · {isCollection ? "every request in this collection" : "every request in this folder"} inherits
+              these settings
+            </p>
+          </div>
+          <div className="page-actions">
+            <Button type="primary" disabled={!dirty || saving} loading={saving} icon={dirty ? <Save size={14} /> : <Check size={14} />} onClick={save}>
+              {saving ? "Saving" : dirty ? "Save" : "Saved"}
+            </Button>
+          </div>
+        </header>
+        {error && <Alert type="error" showIcon title={error} />}
+        <Tabs
+          className="settings-tabs"
+          activeKey={tab}
+          onChange={(k) => setTab(k as Tab)}
+          items={tabs.map((t) => ({
+            key: t.id,
+            label: (
+              <>
+                {t.label}
+                {(t.count ?? 0) > 0 && <span className="count">{t.count}</span>}
+              </>
+            ),
+          }))}
+        />
+        <div className="tab-panel settings-panel" role="tabpanel">
+          {tab === "overview" && (
+            <label className="paste">
+              <span className="field-label">Description (Markdown, shown in generated docs)</span>
+              <Input.TextArea className="code-input" value={c.description ?? ""} onChange={(e) => edit({ description: e.target.value || undefined })} rows={10} />
+            </label>
+          )}
+          {tab === "variables" && <VarsTable vars={c.variables ?? []} onChange={(variables) => edit({ variables: variables.length ? variables : undefined })} />}
+          {tab === "auth" && (
+            <>
+              {isCollection && <p className="muted small">"Inherit" at the collection level means no auth.</p>}
+              <AuthEditor auth={c.auth} onChange={(auth) => edit({ auth })} />
+            </>
+          )}
+          {tab === "scripts" && (
+            <>
+              <p className="muted small">Run before (pre-request) and after (tests) every request below, outermost first.</p>
+              <ScriptsEditor scripts={c.scripts} onChange={(scripts) => edit({ scripts })} />
+            </>
+          )}
+          {tab === "mock" && <MockPanel slug={path} />}
         </div>
-        <div className="lt-actions">
-          <button className="btn primary" disabled={!dirty || saving} onClick={save}>
-            <Save size={14} /> {saving ? "Saving…" : dirty ? "Save" : "Saved"}
-          </button>
-        </div>
-      </header>
-      {error && <p className="inline-error">{error}</p>}
-      <div className="tabs" role="tablist">
-        {tabs.map((t) => (
-          <button key={t.id} role="tab" aria-selected={tab === t.id} className="tab" onClick={() => setTab(t.id)}>
-            {t.label}
-            {(t.count ?? 0) > 0 && <span className="count">{t.count}</span>}
-          </button>
-        ))}
-      </div>
-      <div className="tab-panel">
-        {tab === "overview" && (
-          <label className="paste">
-            <span className="field-label">Description (Markdown, shown in generated docs)</span>
-            <textarea className="code-input" value={c.description ?? ""} onChange={(e) => edit({ description: e.target.value || undefined })} rows={10} />
-          </label>
-        )}
-        {tab === "variables" && <VarsTable vars={c.variables ?? []} onChange={(variables) => edit({ variables: variables.length ? variables : undefined })} />}
-        {tab === "auth" && (
-          <>
-            {isCollection && <p className="muted small">"Inherit" at the collection level means no auth.</p>}
-            <AuthEditor auth={c.auth} onChange={(auth) => edit({ auth })} />
-          </>
-        )}
-        {tab === "scripts" && (
-          <>
-            <p className="muted small">Run before (pre-request) and after (tests) every request below, outermost first.</p>
-            <ScriptsEditor scripts={c.scripts} onChange={(scripts) => edit({ scripts })} />
-          </>
-        )}
-        {tab === "mock" && <MockPanel slug={path} />}
-      </div>
-    </section>
+      </section>
+    </div>
   );
 }
 
@@ -109,52 +141,70 @@ function VarsTable({ vars, onChange }: { vars: Variable[]; onChange: (v: Variabl
   return (
     <>
       <div className="scroll-x">
-        <table className="data-table vars-table">
+        <table className="kv-edit vars-table settings-vars">
           <thead>
             <tr>
-              <th className="pick-col">
+              <th className="kv-check">
                 <span className="sr-only">Enabled</span>
               </th>
               <th>Variable</th>
               <th>Value</th>
-              <th className="pick-col">
+              <th className="kv-actions">
                 <span className="sr-only">Actions</span>
               </th>
             </tr>
           </thead>
           <tbody>
+            {vars.length === 0 && (
+              <tr>
+                <td colSpan={4} className="vars-empty muted">
+                  No variables yet.
+                </td>
+              </tr>
+            )}
             {vars.map((v, i) => {
               const masked = v.secret && !shown.has(i);
               return (
-                <tr key={i} className={v.disabled ? "is-disabled" : ""}>
-                  <td className="pick-col">
-                    <input type="checkbox" checked={!v.disabled} onChange={(e) => update(i, { disabled: !e.target.checked || undefined })} aria-label={`Enable ${v.key || "variable"}`} />
+                <tr key={i} className={v.disabled ? "is-off" : ""}>
+                  <td className="kv-check">
+                    <Checkbox checked={!v.disabled} onChange={(e) => update(i, { disabled: !e.target.checked || undefined })} aria-label={`Enable ${v.key || "variable"}`} />
                   </td>
                   <td>
-                    <input className="cell mono" value={v.key} onChange={(e) => update(i, { key: e.target.value })} placeholder="name" aria-label="Variable name" />
+                    <Input variant="borderless" className="mono" value={v.key} onChange={(e) => update(i, { key: e.target.value })} placeholder="name" aria-label="Variable name" spellCheck={false} />
                   </td>
                   <td>
-                    <input className="cell mono" type={masked ? "password" : "text"} value={v.value} onChange={(e) => update(i, { value: e.target.value })} aria-label={`Value of ${v.key}`} autoComplete="off" />
+                    <Input
+                      variant="borderless"
+                      className="mono"
+                      type={masked ? "password" : "text"}
+                      value={v.value}
+                      onChange={(e) => update(i, { value: e.target.value })}
+                      aria-label={`Value of ${v.key}`}
+                      autoComplete="off"
+                      spellCheck={false}
+                    />
                   </td>
-                  <td className="pick-col row-tools">
-                    <button
-                      className="icon-btn"
-                      title={v.secret ? "Secret (double-click to unmark)" : "Mark as secret"}
-                      aria-label={v.secret ? `Show or hide ${v.key}` : `Mark ${v.key} as secret`}
-                      onClick={() => {
-                        if (!v.secret) return update(i, { secret: true });
-                        const next = new Set(shown);
-                        if (next.has(i)) next.delete(i);
-                        else next.add(i);
-                        setShown(next);
-                      }}
-                      onDoubleClick={() => v.secret && update(i, { secret: undefined })}
-                    >
-                      {masked ? <EyeOff size={13} /> : <Eye size={13} />}
-                    </button>
-                    <button className="icon-btn" aria-label={`Remove ${v.key}`} onClick={() => onChange(vars.filter((_, j) => j !== i))}>
-                      <Trash2 size={13} />
-                    </button>
+                  <td className="kv-actions">
+                    <Tooltip title={v.secret ? "Secret (double-click to unmark)" : "Mark as secret"}>
+                      <Button
+                        type="text"
+                        size="small"
+                        className={v.secret ? "is-on" : undefined}
+                        icon={masked ? <EyeOff size={13} /> : <Eye size={13} />}
+                        aria-label={v.secret ? `Show or hide ${v.key}` : `Mark ${v.key} as secret`}
+                        onClick={() => {
+                          if (!v.secret) return update(i, { secret: true });
+                          const next = new Set(shown);
+                          if (next.has(i)) next.delete(i);
+                          else next.add(i);
+                          setShown(next);
+                        }}
+                        onDoubleClick={() => v.secret && update(i, { secret: undefined })}
+                      />
+                    </Tooltip>
+                    <Tooltip title="Remove">
+                      <Button type="text" size="small" icon={<Trash2 size={13} />} aria-label={`Remove ${v.key}`} onClick={() => onChange(vars.filter((_, j) => j !== i))} />
+                    </Tooltip>
                   </td>
                 </tr>
               );
@@ -162,9 +212,9 @@ function VarsTable({ vars, onChange }: { vars: Variable[]; onChange: (v: Variabl
           </tbody>
         </table>
       </div>
-      <button className="btn ghost small add-var" onClick={() => onChange([...vars, { key: "", value: "" }])}>
-        <Plus size={13} /> Add variable
-      </button>
+      <Button className="add-var" type="dashed" icon={<Plus size={13} />} onClick={() => onChange([...vars, { key: "", value: "" }])}>
+        Add variable
+      </Button>
     </>
   );
 }

@@ -71,7 +71,7 @@ Licensed under [Apache-2.0](LICENSE).
 | `internal/store` | Workspace persistence as git-friendly YAML |
 | `internal/history` | Request history (SQLite) |
 | `internal/server` | REST API under `/api/v1`, embedded SPA |
-| `web` | React + TypeScript UI (Vite), embedded via `web/embed.go` |
+| `web` | React + TypeScript UI (Vite, Ant Design), embedded via `web/embed.go` |
 | `plugins` | Go plugin SDK and example plugins (raw TCP, HMAC auth) |
 | `scripts/dist` | Release builder (`make dist`) |
 | `web/e2e` | Playwright end-to-end tests against the real binary |

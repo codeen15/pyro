@@ -1,8 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
+import { Alert, App as AntApp, Button, Dropdown, Result, Select, Skeleton, Table, Tag, Tooltip } from "antd";
+import { DownOutlined } from "@ant-design/icons";
 import { useQuery } from "@tanstack/react-query";
-import { CircleCheck, Cookie, FileInput, SlidersHorizontal, TriangleAlert, X } from "lucide-react";
+import { CircleCheck, Cookie, FileInput, Layers, SlidersHorizontal, X } from "./icons";
+import logo from "./assets/pyro-logo.png";
 import { api, ApiError, decodeBody, type ImportReport, type PyroResponse } from "./api";
-import { applyTheme, useApp, type Theme } from "./store";
+import { useApp, type Theme } from "./store";
 import { Sidebar, KindBadge } from "./components/Sidebar";
 import { RequestEditor } from "./components/RequestEditor";
 import { ResponseView, HeatLegend } from "./components/ResponseView";
@@ -70,13 +73,26 @@ export function App() {
         )}
       </main>
       <footer className="statusbar">
-        <span className={`dot ${health.isSuccess ? "ok" : health.isError ? "bad" : ""}`} aria-hidden />
-        {health.isSuccess ? `Engine ${health.data.version}` : health.isError ? "Engine unreachable. Is pyro serve still running?" : "Connecting…"}
+        <span className="engine">
+          <span className={`dot ${health.isSuccess ? "ok" : health.isError ? "bad" : ""}`} aria-hidden />
+          {health.isSuccess ? `Engine ${health.data.version}` : health.isError ? "Engine unreachable. Is pyro serve still running?" : "Connecting…"}
+        </span>
+        <span className="status-host">{window.location.host}</span>
         {ws.data && <span className="path-hint mono">{ws.data.root}</span>}
         <ThemeSelect />
       </footer>
     </div>
   );
+}
+
+const ENV_DOTS = ["#52c41a", "#faad14", "#1677ff", "#722ed1", "#13c2c2", "#eb2f96"];
+
+/** A stable colour per environment name, so each one is easy to recognise. */
+function envDot(name: string) {
+  if (/prod/i.test(name)) return "#cf1920";
+  let h = 0;
+  for (const c of name) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  return ENV_DOTS[h % ENV_DOTS.length];
 }
 
 function TopBar({ workspace }: { workspace?: string }) {
@@ -88,57 +104,60 @@ function TopBar({ workspace }: { workspace?: string }) {
 
   // A remembered environment may have been deleted on disk since.
   const envValue = environment && envs.data?.includes(environment) ? environment : "";
+  const go = (where: string | null) => {
+    setReport(null);
+    select(where);
+  };
 
   return (
     <header className="topbar">
-      <span className="brand">Pyro</span>
-      {workspace && <span className="ws-name">{workspace}</span>}
+      <button className="brand" onClick={() => go(null)} aria-label="Pyro home">
+        <img src={logo} alt="" width={22} height={28} />
+        <span>Pyro</span>
+      </button>
+      {workspace && (
+        <>
+          <span className="topbar-divider" aria-hidden />
+          <span className="ws-name" title="Workspace">
+            <Layers size={14} />
+            {workspace}
+          </span>
+        </>
+      )}
       <div className="topbar-right">
         <label className="env-select">
-          <span>Environment</span>
-          <select value={envValue} onChange={(e) => setEnvironment(e.target.value || null)}>
-            <option value="">No environment</option>
-            {envs.data?.map((n) => (
-              <option key={n} value={n}>
-                {n}
-              </option>
-            ))}
-          </select>
+          <span className="env-label">Environment</span>
+          <Select
+            aria-label="Environment"
+            value={envValue}
+            onChange={(v) => setEnvironment(v || null)}
+            popupMatchSelectWidth={false}
+            options={[
+              { value: "", label: <EnvOption name="No environment" color="#d9d9d9" /> },
+              ...(envs.data ?? []).map((n) => ({ value: n, label: <EnvOption name={n} color={envDot(n)} /> })),
+            ]}
+          />
         </label>
-        <button
-          className="btn shell-btn icon-only"
-          onClick={() => {
-            setReport(null);
-            select(envValue ? `vars:env:${envValue}` : "vars:globals");
-          }}
-          title="Environments and globals"
-          aria-label="Edit environments and globals"
-        >
-          <SlidersHorizontal size={14} />
-        </button>
-        <button
-          className="btn shell-btn icon-only"
-          onClick={() => {
-            setReport(null);
-            select("cookies");
-          }}
-          title="Cookies"
-          aria-label="Manage cookies"
-        >
-          <Cookie size={14} />
-        </button>
-        <button
-          className="btn shell-btn"
-          onClick={() => {
-            setReport(null);
-            select("import");
-          }}
-        >
-          <FileInput size={14} />
+        <Tooltip title="Environments and globals">
+          <Button type="text" icon={<SlidersHorizontal size={16} />} onClick={() => go(envValue ? `vars:env:${envValue}` : "vars:globals")} aria-label="Edit environments and globals" />
+        </Tooltip>
+        <Tooltip title="Cookies">
+          <Button type="text" icon={<Cookie size={16} />} onClick={() => go("cookies")} aria-label="Manage cookies" />
+        </Tooltip>
+        <Button icon={<FileInput size={14} />} onClick={() => go("import")} aria-label="Import">
           Import
-        </button>
+        </Button>
       </div>
     </header>
+  );
+}
+
+function EnvOption({ name, color }: { name: string; color: string }) {
+  return (
+    <span className="env-option">
+      <span className="env-dot" style={{ background: color }} aria-hidden />
+      {name}
+    </span>
   );
 }
 
@@ -151,16 +170,25 @@ function Workspace({ path }: { path: string }) {
   const sending = useApp((s) => !!s.sending[path]);
   const select = useApp((s) => s.select);
   const split = useSplit();
+  const { message: notify } = AntApp.useApp();
 
-  if (q.isPending) return <div className="pad"><span className="skeleton line" style={{ width: "40%" }} /></div>;
+  if (q.isPending) {
+    return (
+      <div className="work-pad">
+        <section className="card">
+          <Skeleton active paragraph={{ rows: 3 }} />
+        </section>
+      </div>
+    );
+  }
   if (q.error) {
     const gone = q.error instanceof ApiError && q.error.status === 404;
     return (
       <Blocker title={gone ? "This request no longer exists" : "Couldn't open the request"}>
-        {gone ? "It may have been renamed or deleted on disk." : q.error.message}{" "}
-        <button className="btn ghost small" onClick={() => select(null)}>
-          Close
-        </button>
+        {gone ? "It may have been renamed or deleted on disk." : q.error.message}
+        <div>
+          <Button onClick={() => select(null)}>Close</Button>
+        </div>
       </Blocker>
     );
   }
@@ -170,7 +198,7 @@ function Workspace({ path }: { path: string }) {
     try {
       body = new TextDecoder("utf-8", { fatal: true }).decode(decodeBody(res.body));
     } catch {
-      alert("This response isn't text, so it can't be saved as an example.");
+      notify.warning("This response isn't text, so it can't be saved as an example.");
       return;
     }
     // Examples live in git: leave out per-response noise and session cookies,
@@ -193,7 +221,7 @@ function Workspace({ path }: { path: string }) {
     return <SessionConsole key={path} path={path} saved={q.data} />;
   }
   return (
-    <div className="work" style={{ gridTemplateRows: `${split.top}fr 6px ${100 - split.top}fr` }} ref={split.ref}>
+    <div className="work" style={{ gridTemplateRows: `${split.top}fr 16px ${100 - split.top}fr` }} ref={split.ref}>
       <RequestEditor key={path} path={path} saved={q.data} />
       <div className="splitter" role="separator" aria-orientation="horizontal" aria-label="Resize response panel" tabIndex={0} {...split.handlers} />
       <ResponseView key={`r-${path}`} result={result} sending={sending} onSaveExample={result?.response ? () => saveExample(result.response!) : undefined} />
@@ -250,7 +278,7 @@ function HistoryReplay({ id }: { id: string }) {
   const sent = result?.sent;
   return (
     <div className="work replay">
-      <section className="editor">
+      <section className="card editor">
         <header className="req-head">
           <div className="req-head-text">
             <h1 className="req-name static">Sent request</h1>
@@ -273,70 +301,80 @@ function ImportResult({ report, mode, onClose }: { report: ImportReport; mode: "
   const select = useApp((s) => s.select);
   const setTab = useApp((s) => s.setSidebarTab);
   return (
-    <section className="report" aria-label="Import result">
-      <header className="report-head">
-        <CircleCheck size={20} className="ok-icon" />
-        <div>
-          <h1>
-            {mode === "export"
-              ? `Exported “${report.collection}” to Postman`
-              : report.into
-                ? `Added ${report.requests} request${report.requests === 1 ? "" : "s"} to ${report.slug}`
-                : `Imported ${report.collection ? `“${report.collection}”` : "environment"}`}
-          </h1>
-          <p className="muted">
-            {report.format}
-            {report.slug && mode === "export" && (
-              <>
-                {" "}· {plural(report.requests, "request")} in {plural(report.folders, "folder")}, downloaded as <code>{report.slug}.postman_collection.json</code>
-              </>
-            )}
-            {report.slug && mode === "import" && (
-              <>
-                {" "}· {report.into ? "" : `${plural(report.requests, "request")} in ${plural(report.folders, "folder")}, `}saved to <code>collections/{report.slug}</code>
-              </>
-            )}
-            {report.environments?.map((e) => (
-              <span key={e}>
-                {" "}· environment <code>{e}</code>
-              </span>
-            ))}
-            {report.loadTests?.map((l) => (
-              <span key={l}>
-                {" "}· load test{" "}
-                <button className="link" onClick={() => { onClose(); select(`load:${l}`); }}>
-                  {l}
-                </button>
-              </span>
-            ))}
-          </p>
-        </div>
-        <button className="icon-btn" onClick={onClose} aria-label="Close import result">
-          <X size={16} />
-        </button>
-      </header>
+    <div className="page">
+      <section className="card report" aria-label="Import result">
+        <header className="report-head">
+          <CircleCheck size={22} className="ok-icon" />
+          <div>
+            <h1>
+              {mode === "export"
+                ? `Exported “${report.collection}” to Postman`
+                : report.into
+                  ? `Added ${report.requests} request${report.requests === 1 ? "" : "s"} to ${report.slug}`
+                  : `Imported ${report.collection ? `“${report.collection}”` : "environment"}`}
+            </h1>
+            <p className="muted">
+              <Tag>{report.format}</Tag>
+              {report.slug && mode === "export" && (
+                <>
+                  {plural(report.requests, "request")} in {plural(report.folders, "folder")}, downloaded as <code>{report.slug}.postman_collection.json</code>
+                </>
+              )}
+              {report.slug && mode === "import" && (
+                <>
+                  {report.into ? "" : `${plural(report.requests, "request")} in ${plural(report.folders, "folder")}, `}saved to <code>collections/{report.slug}</code>
+                </>
+              )}
+              {report.environments?.map((e) => (
+                <span key={e}>
+                  {" "}· environment <code>{e}</code>
+                </span>
+              ))}
+              {report.loadTests?.map((l) => (
+                <span key={l}>
+                  {" "}· load test{" "}
+                  <Button
+                    type="link"
+                    size="small"
+                    className="inline-link"
+                    onClick={() => {
+                      onClose();
+                      select(`load:${l}`);
+                    }}
+                  >
+                    {l}
+                  </Button>
+                </span>
+              ))}
+            </p>
+          </div>
+          <Button type="text" icon={<X size={16} />} onClick={onClose} aria-label="Close import result" />
+        </header>
 
-      {report.warnings.length === 0 ? (
-        <p>{mode === "export" ? "Everything converted." : "Everything converted. Nothing needs your attention."}</p>
-      ) : (
-        <>
-          <h2>
-            {report.warnings.length} thing{report.warnings.length > 1 ? "s" : ""} to check
-          </h2>
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Where</th>
-                <th>What happened</th>
-              </tr>
-            </thead>
-            <tbody>
-              {report.warnings.map((w, i) => (
-                <tr key={i}>
-                  <td className="mono key">
-                    {w.path && report.slug ? (
-                      <button
-                        className="link"
+        {report.warnings.length === 0 ? (
+          <Alert type="success" showIcon title={mode === "export" ? "Everything converted." : "Everything converted. Nothing needs your attention."} />
+        ) : (
+          <>
+            <h2>
+              {report.warnings.length} thing{report.warnings.length > 1 ? "s" : ""} to check
+            </h2>
+            <Table
+              size="small"
+              bordered
+              pagination={false}
+              rowKey={(_, i) => String(i)}
+              dataSource={report.warnings}
+              columns={[
+                {
+                  title: "Where",
+                  key: "where",
+                  width: "34%",
+                  render: (_, w) =>
+                    w.path && report.slug ? (
+                      <Button
+                        type="link"
+                        size="small"
+                        className="inline-link mono"
                         onClick={() => {
                           setTab("collections");
                           select(`${report.slug}/${w.path}`);
@@ -344,52 +382,54 @@ function ImportResult({ report, mode, onClose }: { report: ImportReport; mode: "
                         }}
                       >
                         {w.path}
-                      </button>
+                      </Button>
                     ) : (
                       "Whole collection"
-                    )}
-                  </td>
-                  <td>{w.detail}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </>
-      )}
-      <div className="report-actions">
-        <button className="btn primary" onClick={onClose}>
-          Done
-        </button>
-      </div>
-    </section>
+                    ),
+                },
+                { title: "What happened", dataIndex: "detail", key: "detail" },
+              ]}
+            />
+          </>
+        )}
+        <div className="report-actions">
+          <Button type="primary" onClick={onClose}>
+            Done
+          </Button>
+        </div>
+      </section>
+    </div>
   );
 }
 
 function Welcome({ hasCollections }: { hasCollections: boolean }) {
   return (
-    <section className="welcome">
-      <h1>{hasCollections ? "Pick a request to start" : "Bring your API in"}</h1>
-      <p className="muted">
-        {hasCollections
-          ? "Choose a request in the sidebar, or press + on a collection to add one. Send with Ctrl + Enter, save with Ctrl + S."
-          : "Import a Postman collection or environment with Import in the top bar. Pyro writes it as YAML files you can commit."}
-      </p>
-      <div className="welcome-legend">
-        <h2>Reading response times</h2>
-        <p className="muted">Times glow hotter as they get slower, from cold steel to white heat.</p>
-        <HeatLegend />
-      </div>
-    </section>
+    <div className="page">
+      <section className="card welcome">
+        <img src={logo} alt="" width={44} height={56} />
+        <h1>{hasCollections ? "Pick a request to start" : "Bring your API in"}</h1>
+        <p className="muted">
+          {hasCollections
+            ? "Choose a request in the sidebar, or press + on a collection to add one. Send with Ctrl + Enter, save with Ctrl + S."
+            : "Import a Postman collection or environment with Import in the top bar. Pyro writes it as YAML files you can commit."}
+        </p>
+        <div className="welcome-legend">
+          <h2>Reading response times</h2>
+          <p className="muted">Each measured time carries a swatch that glows hotter as it gets slower, from cold steel to white heat.</p>
+          <HeatLegend />
+        </div>
+      </section>
+    </div>
   );
 }
 
 function Blocker({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="blocker" role="alert">
-      <TriangleAlert size={20} />
-      <h1>{title}</h1>
-      <p>{children}</p>
-    </section>
+    <div className="page">
+      <section className="card blocker" role="alert">
+        <Result status="warning" title={<h1>{title}</h1>} subTitle={<div className="blocker-body">{children}</div>} />
+      </section>
+    </div>
   );
 }
 
@@ -397,25 +437,30 @@ function plural(n: number, word: string) {
   return `${n} ${word}${n === 1 ? "" : "s"}`;
 }
 
+const THEMES: { value: Theme; label: string }[] = [
+  { value: "system", label: "System theme" },
+  { value: "light", label: "Light" },
+  { value: "dark", label: "Dark" },
+];
+
 function ThemeSelect() {
   const theme = useApp((s) => s.theme);
   const setTheme = useApp((s) => s.setTheme);
-  // Follow the system setting live when the preference is "system".
-  useEffect(() => {
-    if (theme !== "system") return;
-    const mq = window.matchMedia("(prefers-color-scheme: light)");
-    const on = () => applyTheme("system");
-    mq.addEventListener("change", on);
-    return () => mq.removeEventListener("change", on);
-  }, [theme]);
   return (
-    <label className="theme-select">
-      <span className="sr-only">Theme</span>
-      <select value={theme} onChange={(e) => setTheme(e.target.value as Theme)} aria-label="Theme">
-        <option value="system">System theme</option>
-        <option value="dark">Dark</option>
-        <option value="light">Light</option>
-      </select>
-    </label>
+    <Dropdown
+      trigger={["click"]}
+      placement="topRight"
+      menu={{
+        selectable: true,
+        selectedKeys: [theme],
+        items: THEMES.map((t) => ({ key: t.value, label: t.label })),
+        onClick: ({ key }) => setTheme(key as Theme),
+      }}
+    >
+      <Button type="text" size="small" className="theme-switch" aria-label="Theme">
+        {THEMES.find((t) => t.value === theme)?.label}
+        <DownOutlined />
+      </Button>
+    </Dropdown>
   );
 }

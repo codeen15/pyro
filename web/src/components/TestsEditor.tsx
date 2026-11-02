@@ -1,4 +1,5 @@
-import { Plus, X } from "lucide-react";
+import { Button, Input, Select } from "antd";
+import { Plus, X } from "../icons";
 import type { Assertion, Extractor, PyroRequest } from "../api";
 
 const ASSERT_TYPES = [
@@ -50,7 +51,7 @@ export function TestsEditor({
         <h3 className="sub-head">Assertions</h3>
         <p className="muted small">Checked after every send and in collection runs. Faster than scripts under load.</p>
         {assertions.length > 0 && (
-          <table className="rule-table">
+          <table className="rule-table tests-rules">
             <tbody>
               {assertions.map((a, i) => {
                 const t = ASSERT_TYPES.find((x) => x.value === a.type) ?? ASSERT_TYPES[0];
@@ -59,37 +60,29 @@ export function TestsEditor({
                 return (
                   <tr key={i}>
                     <td>
-                      <select value={a.type} onChange={(e) => setA(i, { type: e.target.value, path: undefined })} aria-label="Check">
-                        {ASSERT_TYPES.map((x) => (
-                          <option key={x.value} value={x.value}>
-                            {x.label}
-                          </option>
-                        ))}
-                      </select>
+                      <Select
+                        value={a.type}
+                        onChange={(v) => setA(i, { type: v, path: undefined })}
+                        aria-label="Check"
+                        popupMatchSelectWidth={false}
+                        options={ASSERT_TYPES.map((x) => ({ value: x.value, label: x.label }))}
+                      />
                     </td>
                     <td>
                       {t.needsPath && (
-                        <input className="cell mono" value={a.path ?? ""} placeholder={t.placeholder} onChange={(e) => setA(i, { path: e.target.value })} aria-label="Path" spellCheck={false} />
+                        <Input className="mono" value={a.path ?? ""} placeholder={t.placeholder} onChange={(e) => setA(i, { path: e.target.value })} aria-label="Path" spellCheck={false} />
                       )}
                     </td>
                     <td>
-                      <select value={op} onChange={(e) => setA(i, { op: e.target.value })} aria-label="Operator">
-                        {OPS.map((o) => (
-                          <option key={o.value} value={o.value}>
-                            {o.label}
-                          </option>
-                        ))}
-                      </select>
+                      <Select value={op} onChange={(v) => setA(i, { op: v })} aria-label="Operator" popupMatchSelectWidth={false} options={OPS} />
                     </td>
                     <td>
                       {!noValue && (
-                        <input className="cell mono" value={a.value ?? ""} onChange={(e) => setA(i, { value: e.target.value })} aria-label="Expected value" spellCheck={false} />
+                        <Input className="mono" value={a.value ?? ""} onChange={(e) => setA(i, { value: e.target.value })} aria-label="Expected value" spellCheck={false} />
                       )}
                     </td>
                     <td className="kv-actions">
-                      <button className="icon-btn" onClick={() => onAssertions(orUndef(assertions.filter((_, j) => j !== i)))} aria-label="Remove assertion">
-                        <X size={14} />
-                      </button>
+                      <Button type="text" icon={<X size={14} />} onClick={() => onAssertions(orUndef(assertions.filter((_, j) => j !== i)))} aria-label="Remove assertion" title="Remove" />
                     </td>
                   </tr>
                 );
@@ -97,9 +90,9 @@ export function TestsEditor({
             </tbody>
           </table>
         )}
-        <button className="btn ghost small" onClick={() => onAssertions([...assertions, { type: "status", op: "eq", value: "200" }])}>
-          <Plus size={13} /> Add assertion
-        </button>
+        <Button type="dashed" icon={<Plus size={13} />} onClick={() => onAssertions([...assertions, { type: "status", op: "eq", value: "200" }])}>
+          Add assertion
+        </Button>
       </section>
 
       <section>
@@ -108,33 +101,31 @@ export function TestsEditor({
           Saves part of the response as a variable, e.g. a login token for the next request. Use it as <code>{"{{name}}"}</code>.
         </p>
         {extract.length > 0 && (
-          <table className="rule-table">
+          <table className="rule-table tests-rules">
             <tbody>
               {extract.map((x, i) => {
                 const src = EXTRACT_FROM.find((f) => f.value === x.from) ?? EXTRACT_FROM[0];
                 return (
                   <tr key={i}>
                     <td>
-                      <input className="cell mono" value={x.var} placeholder="variable" onChange={(e) => setE(i, { var: e.target.value })} aria-label="Variable name" spellCheck={false} />
+                      <Input className="mono" value={x.var} placeholder="variable" onChange={(e) => setE(i, { var: e.target.value })} aria-label="Variable name" spellCheck={false} />
                     </td>
                     <td>
-                      <select value={x.from} onChange={(e) => setE(i, { from: e.target.value })} aria-label="From">
-                        {EXTRACT_FROM.map((f) => (
-                          <option key={f.value} value={f.value}>
-                            {f.label}
-                          </option>
-                        ))}
-                      </select>
+                      <Select
+                        value={x.from}
+                        onChange={(v) => setE(i, { from: v })}
+                        aria-label="From"
+                        popupMatchSelectWidth={false}
+                        options={EXTRACT_FROM.map((f) => ({ value: f.value, label: f.label }))}
+                      />
                     </td>
                     <td colSpan={2}>
                       {x.from !== "status" && (
-                        <input className="cell mono" value={x.path ?? ""} placeholder={src.placeholder} onChange={(e) => setE(i, { path: e.target.value })} aria-label="Path" spellCheck={false} />
+                        <Input className="mono" value={x.path ?? ""} placeholder={src.placeholder} onChange={(e) => setE(i, { path: e.target.value })} aria-label="Path" spellCheck={false} />
                       )}
                     </td>
                     <td className="kv-actions">
-                      <button className="icon-btn" onClick={() => onExtract(orUndef(extract.filter((_, j) => j !== i)))} aria-label="Remove extractor">
-                        <X size={14} />
-                      </button>
+                      <Button type="text" icon={<X size={14} />} onClick={() => onExtract(orUndef(extract.filter((_, j) => j !== i)))} aria-label="Remove extractor" title="Remove" />
                     </td>
                   </tr>
                 );
@@ -142,9 +133,9 @@ export function TestsEditor({
             </tbody>
           </table>
         )}
-        <button className="btn ghost small" onClick={() => onExtract([...extract, { var: "", from: "jsonpath", path: "" }])}>
-          <Plus size={13} /> Add extractor
-        </button>
+        <Button type="dashed" icon={<Plus size={13} />} onClick={() => onExtract([...extract, { var: "", from: "jsonpath", path: "" }])}>
+          Add extractor
+        </Button>
       </section>
     </div>
   );
@@ -159,8 +150,9 @@ export function ScriptsEditor({ scripts, onChange }: { scripts: PyroRequest["scr
     <div className="split-2 scripts-editor">
       <label>
         <span className="field-label">Pre-request</span>
-        <textarea
-          className="code-input mono"
+        <Input.TextArea
+          className="code-input"
+          autoSize={{ minRows: 8 }}
           value={scripts?.pre ?? ""}
           onChange={(e) => set("pre", e.target.value)}
           spellCheck={false}
@@ -169,8 +161,9 @@ export function ScriptsEditor({ scripts, onChange }: { scripts: PyroRequest["scr
       </label>
       <label>
         <span className="field-label">Post-response</span>
-        <textarea
-          className="code-input mono"
+        <Input.TextArea
+          className="code-input"
+          autoSize={{ minRows: 8 }}
           value={scripts?.post ?? ""}
           onChange={(e) => set("post", e.target.value)}
           spellCheck={false}

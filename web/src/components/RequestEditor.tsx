@@ -1,12 +1,14 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { CircleAlert, Save, SendHorizontal } from "lucide-react";
+import { Alert, Button, Input, Segmented, Select, Space, Tabs } from "antd";
+import { EditOutlined } from "@ant-design/icons";
+import { Check, Save, SendHorizontal } from "../icons";
 import { OAuth2Form, TokenPanel, type TokenContext } from "./OAuth2";
 import { api, type Auth, type Body, type KeyValue, type PyroRequest } from "../api";
 import { useApp } from "../store";
 import { KVEditor } from "./KVEditor";
 import { ScriptsEditor, TestsEditor } from "./TestsEditor";
-import { FieldsForm, KindSelect, usePluginTypes } from "./Plugins";
+import { FieldsForm, KindLabel, usePluginTypes } from "./Plugins";
 import { ExamplesEditor } from "./Examples";
 
 const METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];
@@ -90,11 +92,7 @@ export function RequestEditor({ path, saved }: { path: string; saved: PyroReques
   const provider = pluginId ? protocols.find((p) => p.id === pluginId) : undefined;
   const tabs = pluginId ? PLUGIN_TABS : TABS;
   const activeTab = tabs.some((t) => t.id === tab) ? tab : tabs[0].id;
-  const changeKind = (kind: PyroRequest["kind"]) => {
-    const next: PyroRequest = { ...req, kind };
-    if (kind.startsWith("plugin:") && !next.body) next.body = { type: "text", content: "" };
-    setDraft(path, next);
-  };
+
 
   const counts: Record<Tab, number> = {
     params: (req.query ?? []).filter((q) => !q.disabled).length,
@@ -108,30 +106,29 @@ export function RequestEditor({ path, saved }: { path: string; saved: PyroReques
   };
 
   return (
-    <section className="editor">
+    <section className="card editor">
       <RequestTitle req={req} path={path} dirty={dirty} onName={(name) => edit({ name })}>
-        <KindSelect value={req.kind} onChange={changeKind} />
-        <button className="btn ghost" onClick={() => save.mutate()} disabled={!dirty || save.isPending} title="Save (Ctrl+S)">
-          <Save size={14} />
-          {save.isPending ? "Saving…" : dirty ? "Save" : "Saved"}
-        </button>
+        <KindLabel value={req.kind} />
+        <SaveButton dirty={dirty} saving={save.isPending} onSave={() => save.mutate()} />
       </RequestTitle>
-      {save.error && <p className="inline-error">Couldn't save: {save.error.message}</p>}
+      {save.error && <Alert type="error" showIcon title={`Couldn't save: ${save.error.message}`} />}
       {pluginId && !provider && (
-        <div className="notice warn">
-          <CircleAlert size={15} />
-          <span>
-            No installed plugin provides <code>{req.kind}</code>. Install it from the Plugins tab; the request is kept as written.
-          </span>
-        </div>
+        <Alert
+          type="warning"
+          showIcon
+          title={
+            <>
+              No installed plugin provides <code>{req.kind}</code>. Install it from the Plugins tab; the request is kept as written.
+            </>
+          }
+        />
       )}
       {provider && !provider.plugin.ready && (
-        <div className="notice warn">
-          <CircleAlert size={15} />
-          <span>
-            The {provider.plugin.title || provider.plugin.name} plugin is {provider.plugin.approved ? "disabled" : "waiting for approval"}. Open it in the Plugins tab.
-          </span>
-        </div>
+        <Alert
+          type="warning"
+          showIcon
+          title={`The ${provider.plugin.title || provider.plugin.name} plugin is ${provider.plugin.approved ? "disabled" : "waiting for approval"}. Open it in the Plugins tab.`}
+        />
       )}
 
       <form
@@ -141,57 +138,64 @@ export function RequestEditor({ path, saved }: { path: string; saved: PyroReques
           send();
         }}
       >
-        {pluginId ? (
-          <span className="kind-tag plugin-tag" title={provider?.plugin.title}>
-            {(provider?.title || pluginId).toUpperCase().slice(0, 8)}
-          </span>
-        ) : (
-          <select
-            className={`method m-${(req.method ?? "GET").toLowerCase()}`}
-            value={req.method ?? "GET"}
-            onChange={(e) => edit({ method: e.target.value })}
-            aria-label="Method"
-          >
-            {METHODS.map((m) => (
-              <option key={m}>{m}</option>
-            ))}
-          </select>
-        )}
-        <input
-          className="url-input mono"
-          value={req.url}
-          onChange={(e) => edit({ url: e.target.value })}
-          placeholder={provider?.urlPlaceholder ?? (pluginId ? `${pluginId}://host:port` : "https://api.example.com/resource or {{baseUrl}}/path")}
-          aria-label="URL"
-          spellCheck={false}
-          autoComplete="off"
-        />
-        <button className="btn primary send" type="submit" disabled={sending || !req.url.trim()} title="Send (Ctrl+Enter)">
-          <SendHorizontal size={15} />
-          {sending ? "Sending…" : "Send"}
-        </button>
+        <Space.Compact block size="large">
+          {pluginId ? (
+            <span className="kind-tag plugin-tag" title={provider?.plugin.title}>
+              {(provider?.title || pluginId).toUpperCase().slice(0, 8)}
+            </span>
+          ) : (
+            <Select
+              className={`method-select m-${(req.method ?? "GET").toLowerCase()}`}
+              value={req.method ?? "GET"}
+              onChange={(method) => edit({ method })}
+              aria-label="Method"
+              popupMatchSelectWidth={false}
+              options={METHODS.map((m) => ({ value: m, label: <span className={`method-opt m-${m.toLowerCase()}`}>{m}</span> }))}
+            />
+          )}
+          <Input
+            className="url-input mono"
+            value={req.url}
+            onChange={(e) => edit({ url: e.target.value })}
+            placeholder={provider?.urlPlaceholder ?? (pluginId ? `${pluginId}://host:port` : "https://api.example.com/resource or {{baseUrl}}/path")}
+            aria-label="URL"
+            spellCheck={false}
+            autoComplete="off"
+          />
+          <Button className="send" type="primary" htmlType="submit" loading={sending} disabled={!req.url.trim()} icon={<SendHorizontal size={15} />} title="Send (Ctrl+Enter)">
+            {sending ? "Sending" : "Send"}
+          </Button>
+        </Space.Compact>
       </form>
 
-      <div className="tabs" role="tablist" aria-label="Request parts">
-        {tabs.map(({ id: t, label }) => (
-          <button key={t} role="tab" aria-selected={activeTab === t} className="tab" onClick={() => setTab(t)}>
-            {label}
-            {counts[t] > 0 && !(pluginId && t === "body") && <span className="count">{t === "body" ? req.body!.type : t === "auth" ? req.auth!.type : counts[t]}</span>}
-          </button>
-        ))}
-      </div>
+      <Tabs
+        className="part-tabs"
+        activeKey={activeTab}
+        onChange={(k) => setTab(k as Tab)}
+        aria-label="Request parts"
+        items={tabs.map(({ id: t, label }) => ({
+          key: t,
+          label: (
+            <>
+              {label}
+              {counts[t] > 0 && !(pluginId && t === "body") && <span className="count">{t === "body" ? req.body!.type : t === "auth" ? req.auth!.type : counts[t]}</span>}
+            </>
+          ),
+        }))}
+      />
 
       <div className="tab-panel" role="tabpanel">
         {activeTab === "params" && <KVEditor label="Query parameters" rows={req.query ?? []} onChange={(query) => edit({ query })} />}
         {activeTab === "headers" && <KVEditor label="Headers" rows={req.headers ?? []} onChange={(headers) => edit({ headers })} keyPlaceholder="Header" />}
         {activeTab === "body" &&
           (pluginId ? (
-            <textarea
+            <Input.TextArea
               className="code-input mono"
               value={req.body?.content ?? ""}
               onChange={(e) => edit({ body: { type: "text", content: e.target.value } })}
               spellCheck={false}
               aria-label="Payload"
+              autoSize={{ minRows: 6 }}
               placeholder="Payload sent by the plugin. Variables like {{name}} are filled in."
             />
           ) : (
@@ -232,14 +236,33 @@ export function RequestTitle({
   return (
     <header className="req-head">
       <div className="req-head-text">
-        <input className="req-name" value={req.name} onChange={(e) => onName(e.target.value)} aria-label="Request name" />
+        <label className="req-name-wrap">
+          <input className="req-name" value={req.name} onChange={(e) => onName(e.target.value)} aria-label="Request name" />
+          <EditOutlined className="req-name-pen" aria-hidden />
+        </label>
         <span className="req-path mono">
           {path}
           {dirty && <span className="dirty" title="Unsaved changes"> · unsaved</span>}
         </span>
       </div>
-      {children}
+      <div className="req-head-actions">{children}</div>
     </header>
+  );
+}
+
+/** Save / Saved, as in the reference design: red outline while there are unsaved edits. */
+export function SaveButton({ dirty, saving, onSave }: { dirty: boolean; saving: boolean; onSave: () => void }) {
+  return (
+    <Button
+      className={dirty ? "save-btn is-dirty" : "save-btn"}
+      onClick={onSave}
+      disabled={!dirty || saving}
+      loading={saving}
+      icon={dirty ? <Save size={14} /> : <Check size={14} />}
+      title="Save (Ctrl+S)"
+    >
+      {saving ? "Saving" : dirty ? "Save" : "Saved"}
+    </Button>
   );
 }
 
@@ -261,36 +284,35 @@ function BodyEditor({ body, onChange }: { body?: Body; onChange: (b: Body | unde
 
   return (
     <div className="body-editor">
-      <div className="field-row">
-        <label className="field-label" htmlFor="body-type">
-          Type
-        </label>
-        <select id="body-type" value={type} onChange={(e) => onChange(e.target.value === "none" ? undefined : { ...body, type: e.target.value })}>
-          {BODY_TYPES.map((t) => (
-            <option key={t.value} value={t.value}>
-              {t.label}
-            </option>
-          ))}
-        </select>
+      <div className="body-type-row">
+        <div className="seg-scroll">
+          <Segmented
+            aria-label="Body type"
+            value={type}
+            onChange={(v) => onChange(v === "none" ? undefined : { ...body, type: v as string })}
+            options={BODY_TYPES.map((t) => ({ value: t.value, label: t.label }))}
+          />
+        </div>
         {type === "json" && body?.content && !jsonError && (
-          <button className="btn ghost small" onClick={() => set({ content: JSON.stringify(JSON.parse(body.content!), null, 2) })}>
+          <Button size="small" onClick={() => set({ content: JSON.stringify(JSON.parse(body.content!), null, 2) })}>
             Format
-          </button>
+          </Button>
         )}
       </div>
 
       {type === "none" && <p className="muted">This request sends no body.</p>}
       {(type === "json" || type === "text" || type === "xml") && (
         <>
-          <textarea
+          <Input.TextArea
             className="code-input mono"
             value={body?.content ?? ""}
             onChange={(e) => set({ content: e.target.value })}
             spellCheck={false}
             aria-label="Body"
+            autoSize={{ minRows: 8 }}
             placeholder={type === "json" ? '{\n  "key": "{{value}}"\n}' : ""}
           />
-          {jsonError && <p className="inline-warn">Not valid JSON yet: {jsonError}. It will be sent as written.</p>}
+          {jsonError && <Alert type="warning" showIcon title={`Not valid JSON yet: ${jsonError}. It will be sent as written.`} />}
         </>
       )}
       {(type === "form" || type === "multipart") && (
@@ -300,18 +322,18 @@ function BodyEditor({ body, onChange }: { body?: Body; onChange: (b: Body | unde
         <div className="split-2">
           <label>
             <span className="field-label">Query</span>
-            <textarea className="code-input mono" value={body?.content ?? ""} onChange={(e) => set({ content: e.target.value })} spellCheck={false} />
+            <Input.TextArea className="code-input mono" value={body?.content ?? ""} onChange={(e) => set({ content: e.target.value })} spellCheck={false} autoSize={{ minRows: 8 }} />
           </label>
           <label>
             <span className="field-label">Variables (JSON)</span>
-            <textarea className="code-input mono" value={body?.variables ?? ""} onChange={(e) => set({ variables: e.target.value })} spellCheck={false} />
+            <Input.TextArea className="code-input mono" value={body?.variables ?? ""} onChange={(e) => set({ variables: e.target.value })} spellCheck={false} autoSize={{ minRows: 8 }} />
           </label>
         </div>
       )}
       {type === "file" && (
         <label className="field-row">
           <span className="field-label">File path</span>
-          <input className="cell mono wide" value={body?.file ?? ""} onChange={(e) => set({ file: e.target.value })} placeholder="data/payload.bin (relative to the workspace)" />
+          <Input className="mono wide" value={body?.file ?? ""} onChange={(e) => set({ file: e.target.value })} placeholder="data/payload.bin (relative to the workspace)" />
         </label>
       )}
     </div>
@@ -346,12 +368,23 @@ const AUTH_FIELDS: Record<string, { key: string; label: string; secret?: boolean
   oauth2: [], // OAuth2Form
 };
 
+const AUTH_TYPES = [
+  { value: "inherit", label: "Inherit from folder / collection" },
+  { value: "none", label: "No auth" },
+  { value: "basic", label: "Basic" },
+  { value: "bearer", label: "Bearer token" },
+  { value: "apikey", label: "API key" },
+  { value: "digest", label: "Digest" },
+  { value: "oauth2", label: "OAuth 2.0" },
+];
+
 export function AuthEditor({ auth, onChange, context }: { auth?: Auth; onChange: (a: Auth | undefined) => void; context?: TokenContext }) {
   const type = auth?.type ?? "inherit";
   const params = auth?.params ?? {};
   const fields = AUTH_FIELDS[type];
   const pluginAuths = usePluginTypes("auth");
   const pluginAuth = type.startsWith("plugin:") ? pluginAuths.find((a) => `plugin:${a.id}` === type) : undefined;
+  const unknown = !AUTH_FIELDS[type] && !["inherit", "none"].includes(type) && !pluginAuth;
 
   return (
     <div className="auth-editor">
@@ -359,29 +392,21 @@ export function AuthEditor({ auth, onChange, context }: { auth?: Auth; onChange:
         <label className="field-label" htmlFor="auth-type">
           Type
         </label>
-        <select id="auth-type" value={type} onChange={(e) => onChange(e.target.value === "inherit" ? undefined : { type: e.target.value, params: {} })}>
-          <option value="inherit">Inherit from folder / collection</option>
-          <option value="none">No auth</option>
-          <option value="basic">Basic</option>
-          <option value="bearer">Bearer token</option>
-          <option value="apikey">API key</option>
-          <option value="digest">Digest</option>
-          <option value="oauth2">OAuth 2.0</option>
-          {pluginAuths.length > 0 && (
-            <optgroup label="Plugins">
-              {pluginAuths.map((a) => (
-                <option key={a.id} value={`plugin:${a.id}`}>
-                  {a.title || a.id}
-                </option>
-              ))}
-            </optgroup>
-          )}
-          {!AUTH_FIELDS[type] && !["inherit", "none"].includes(type) && !pluginAuth && <option value={type}>{type} (not available)</option>}
-        </select>
+        <Select
+          id="auth-type"
+          className="auth-type"
+          value={type}
+          onChange={(v) => onChange(v === "inherit" ? undefined : { type: v, params: {} })}
+          options={[
+            ...AUTH_TYPES,
+            ...(pluginAuths.length > 0 ? [{ label: "Plugins", options: pluginAuths.map((a) => ({ value: `plugin:${a.id}`, label: a.title || a.id })) }] : []),
+            ...(unknown ? [{ value: type, label: `${type} (not available)` }] : []),
+          ]}
+        />
       </div>
       {pluginAuth && (
         <>
-          {!pluginAuth.plugin.ready && <p className="inline-warn">The {pluginAuth.plugin.title || pluginAuth.plugin.name} plugin isn't ready (see the Plugins tab).</p>}
+          {!pluginAuth.plugin.ready && <Alert type="warning" showIcon title={`The ${pluginAuth.plugin.title || pluginAuth.plugin.name} plugin isn't ready (see the Plugins tab).`} />}
           <FieldsForm fields={pluginAuth.fields ?? []} values={params} onChange={(p) => onChange({ type, params: p })} label="auth type" />
         </>
       )}
@@ -389,28 +414,35 @@ export function AuthEditor({ auth, onChange, context }: { auth?: Auth; onChange:
       {type === "digest" && <p className="muted small">Answers the server's digest challenge (MD5 or SHA-256, qop auth); later requests to the same host reuse it without an extra round trip.</p>}
       {type === "inherit" && context?.path && <TokenPanel context={context} inheritedOnly />}
       {type === "oauth2" && <OAuth2Form params={params} onChange={(p) => onChange({ type, params: p })} context={context} />}
-      {fields?.map((f) => (
-        <label key={f.key} className="field-row">
-          <span className="field-label">{f.label}</span>
-          <input
-            className="cell mono wide"
-            type={f.secret ? "password" : "text"}
-            value={params[f.key] ?? ""}
-            onChange={(e) => onChange({ type, params: { ...params, [f.key]: e.target.value } })}
-            placeholder={f.secret ? "{{secret}}" : ""}
-            autoComplete="off"
-            spellCheck={false}
-          />
-        </label>
-      ))}
+      {fields?.map((f) => {
+        const Field = f.secret ? Input.Password : Input;
+        return (
+          <label key={f.key} className="field-row">
+            <span className="field-label">{f.label}</span>
+            <Field
+              className="mono wide"
+              value={params[f.key] ?? ""}
+              onChange={(e) => onChange({ type, params: { ...params, [f.key]: e.target.value } })}
+              placeholder={f.secret ? "{{secret}}" : ""}
+              autoComplete="off"
+              spellCheck={false}
+            />
+          </label>
+        );
+      })}
       {type === "apikey" && (
-        <label className="field-row">
+        <div className="field-row">
           <span className="field-label">Add to</span>
-          <select value={params.in ?? "header"} onChange={(e) => onChange({ type, params: { ...params, in: e.target.value } })}>
-            <option value="header">Header</option>
-            <option value="query">Query parameter</option>
-          </select>
-        </label>
+          <Select
+            aria-label="Add API key to"
+            value={params.in ?? "header"}
+            onChange={(v) => onChange({ type, params: { ...params, in: v } })}
+            options={[
+              { value: "header", label: "Header" },
+              { value: "query", label: "Query parameter" },
+            ]}
+          />
+        </div>
       )}
     </div>
   );

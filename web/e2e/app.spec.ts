@@ -1,4 +1,4 @@
-import { test, expect, noHorizontalScroll } from "./fixtures";
+import { test, expect, noHorizontalScroll, pickOption } from "./fixtures";
 
 test.beforeEach(async ({ page }) => {
   await page.goto("/");
@@ -26,7 +26,7 @@ test("run a collection", async ({ page }) => {
 
 test("paste a cURL command into an existing collection", async ({ page }) => {
   await page.getByRole("button", { name: "Import", exact: true }).click();
-  await page.selectOption('select[aria-label="Add to"]', "shop");
+  await pickOption(page, page.getByLabel("Add to"), "Shop");
   await page.fill(".paste textarea", "curl -X POST 'http://127.0.0.1:7891/orders' -H 'content-type: application/json' --data-raw '{\"sku\":\"B-2\"}'");
   await page.getByRole("button", { name: "Import", exact: true }).last().click();
   await expect(page.getByRole("heading", { name: "Added 1 request to shop" })).toBeVisible();
@@ -39,7 +39,8 @@ test("paste a cURL command into an existing collection", async ({ page }) => {
 test("export a collection to Postman", async ({ page }) => {
   const row = page.locator(".row-wrap", { hasText: "Shop" });
   await row.hover();
-  const [download] = await Promise.all([page.waitForEvent("download"), row.getByRole("button", { name: "Export Shop to Postman" }).click()]);
+  await row.getByRole("button", { name: "More actions for Shop" }).click();
+  const [download] = await Promise.all([page.waitForEvent("download"), page.getByRole("menuitem", { name: "Export Shop to Postman" }).click()]);
   expect(download.suggestedFilename()).toBe("shop.postman_collection.json");
 });
 
@@ -98,14 +99,14 @@ test("edit globals and environments with current values", async ({ page }) => {
   await page.getByRole("button", { name: "Create environment" }).click();
   await expect(page.getByLabel("Environment name", { exact: true })).toHaveValue("staging");
   await page.getByRole("button", { name: "Use this environment" }).click();
-  await expect(page.locator(".env-select select")).toHaveValue("staging");
+  await expect(page.locator(".env-select")).toContainText("staging");
 });
 
 test("OAuth 2.0: client credentials and authorization code with PKCE", async ({ page }) => {
   await page.getByRole("button", { name: "Who am I" }).click();
   await page.getByRole("tab", { name: "Auth" }).click();
-  await page.selectOption("#auth-type", "oauth2");
-  await page.getByLabel("Grant type").selectOption("client_credentials");
+  await pickOption(page, page.locator("#auth-type"), "OAuth 2.0");
+  await pickOption(page, page.getByLabel("Grant type"), "Client credentials");
   await page.getByLabel("Access token URL").fill("{{base}}/token");
   await page.getByLabel("Client ID").fill("app");
   await page.getByLabel("Client secret").fill("s3cret");
@@ -115,7 +116,7 @@ test("OAuth 2.0: client credentials and authorization code with PKCE", async ({ 
   await expect(page.locator(".response")).toContainText("Bearer client_credentials-token");
 
   // Browser sign-in: the provider's window redirects back to Pyro's callback.
-  await page.getByLabel("Grant type").selectOption("authorization_code_with_pkce");
+  await pickOption(page, page.getByLabel("Grant type"), "Authorization code (with PKCE)");
   await page.getByLabel("Auth URL").fill("{{base}}/authorize");
   const [popup] = await Promise.all([page.waitForEvent("popup"), page.getByRole("button", { name: "Get new access token" }).click()]);
   await expect(popup.getByRole("heading", { name: "Signed in" })).toBeVisible();
@@ -159,11 +160,13 @@ test("save a response as an example", async ({ page }) => {
 
 test("theme choice applies and persists", async ({ page }) => {
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark"); // the test browser prefers dark
-  await page.selectOption('select[aria-label="Theme"]', "light");
+  await page.getByRole("button", { name: "Theme" }).click();
+  await page.getByRole("menuitem", { name: "Light" }).click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
   await page.reload();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
-  await page.selectOption('select[aria-label="Theme"]', "system");
+  await page.getByRole("button", { name: "Theme" }).click();
+  await page.getByRole("menuitem", { name: "System theme" }).click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
 });
 
@@ -183,16 +186,18 @@ test("edit collection settings and create a collection", async ({ page }) => {
   await page.getByRole("tab", { name: /Variables/ }).click();
   await expect(page.getByLabel("Value of region")).toHaveValue("eu");
 
-  page.once("dialog", (d) => d.accept("Billing API"));
   await page.getByRole("button", { name: "New collection" }).click();
-  await expect(page.getByLabel("Collection name")).toHaveValue("Billing API");
+  await page.getByLabel("New collection name").fill("Billing API");
+  await page.getByRole("button", { name: "Create", exact: true }).click();
+  await expect(page.getByLabel("Collection name", { exact: true })).toHaveValue("Billing API");
   await expect(page.locator(".tree")).toContainText("Billing API");
 });
 
 test("API docs and mock server from examples", async ({ page, context }) => {
   const row = page.locator(".row-wrap", { hasText: "Shop" });
   await row.hover();
-  const [docs] = await Promise.all([context.waitForEvent("page"), row.getByRole("button", { name: "API docs for Shop" }).click()]);
+  await row.getByRole("button", { name: "More actions for Shop" }).click();
+  const [docs] = await Promise.all([context.waitForEvent("page"), page.getByRole("menuitem", { name: "API docs for Shop" }).click()]);
   await docs.waitForLoadState();
   await expect(docs).toHaveTitle("Shop · API reference");
   await expect(docs.locator("section.req", { hasText: "List items" })).toContainText("Two items");
@@ -220,7 +225,20 @@ test("import a JMeter test plan as requests and a load test", async ({ page }) =
   await page.locator(".report").getByRole("button", { name: "shop-checkout" }).click();
   await expect(page.locator(".designer")).toBeVisible();
   // One scenario per thread group; the shoppers' first step logs in once per VU.
-  const login = page.locator(".flow-step").filter({ has: page.locator("option:checked", { hasText: "shop-checkout/shoppers/log-in" }) });
+  const login = page.locator('.flow-step[data-request="shop-checkout/shoppers/log-in"]');
   await expect(login).toHaveCount(1);
   await expect(login.locator('input[type="checkbox"]')).toBeChecked();
+});
+
+test("a new request's type is chosen once, when it is created", async ({ page }) => {
+  const row = page.locator(".row-wrap").filter({ has: page.getByText("Shop", { exact: true }) });
+  await row.hover();
+  await row.getByRole("button", { name: "New request in Shop" }).click();
+  await page.getByRole("radio", { name: /Socket\.IO/ }).click();
+  await page.getByRole("dialog").getByLabel("Request name").fill("Chat room");
+  await page.getByRole("button", { name: "Create request" }).click();
+  await expect(page.locator(".req-path")).toContainText("shop/chat-room");
+  await expect(page.locator(".kind-label")).toHaveText("Socket.IO");
+  await expect(page.getByRole("button", { name: "Connect" }).first()).toBeVisible();
+  await expect(page.locator(".tree")).toContainText("Chat room");
 });

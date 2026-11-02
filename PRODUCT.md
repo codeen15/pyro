@@ -46,8 +46,8 @@ beside the code.
 - Undecided: license, distribution channels beyond GitHub releases.
 
 ## Brand Commitments
-- Name: **Pyro**. Free to establish its own identity; no inherited brand assets.
-  The flame mark in the current UI is a placeholder, not a commitment.
+- Name: **Pyro**. Logo: a red flame with a lightning bolt (`web/src/assets/pyro-logo.png`); its red
+  (`#cf1920`) is the brand and primary colour. The UI uses Ant Design's standard look (see `DESIGN.md`).
 - Open-source project: copy should be plain and technical, not marketing.
 
 ## Evidence on Hand

@@ -1,6 +1,7 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Check, ChevronRight, FileUp, Minus, Play, Square, X } from "lucide-react";
+import { Alert, Button, Checkbox, InputNumber, Progress, Table, type TableColumnsType } from "antd";
+import { Check, FileUp, Minus, Play, Square, X } from "../icons";
 import { api, type RunItem, type RunView as Run } from "../api";
 import { subscribe } from "../events";
 import { formatMs, heatOf } from "../heat";
@@ -76,167 +77,223 @@ export function RunnerView({ path }: { path: string }) {
 
   const running = run?.status === "running";
   const stats = useMemo(() => tally(run?.results ?? []), [run]);
+  const rows = useMemo(() => toRows(run?.results ?? []), [run]);
   const pct = !run ? 0 : run.status !== "running" ? 100 : run.total > 0 ? Math.min(100, (run.done / run.total) * 100) : 0;
 
   return (
-    <section className="runner">
-      <header className="runner-head">
-        <div>
-          <h1>Run {path}</h1>
-          <p className="muted small">
-            Sends every request in order with scripts, assertions and extractors. Values captured by one request feed the next.
-            {environment ? (
-              <>
-                {" "}Environment: <code>{environment}</code>.
-              </>
-            ) : (
-              " No environment selected."
-            )}
-          </p>
-        </div>
-      </header>
-
-      <div className="run-config">
-        <label>
-          <span className="field-label">Iterations</span>
-          <input type="number" min={1} max={10000} className="cell num-input" value={data ? data.rows.length : iterations} disabled={!!data || running} onChange={(e) => setIterations(Math.max(1, Number(e.target.value) || 1))} />
-        </label>
-        <label>
-          <span className="field-label">Delay (ms)</span>
-          <input type="number" min={0} className="cell num-input" value={delayMs} disabled={running} onChange={(e) => setDelayMs(Math.max(0, Number(e.target.value) || 0))} />
-        </label>
-        <div>
-          <span className="field-label">Data file</span>
-          {data ? (
-            <span className="data-chip">
-              {data.name} · {data.rows.length} rows
-              <button className="icon-btn" onClick={() => setData(null)} aria-label="Remove data file" disabled={running}>
-                <X size={12} />
-              </button>
-            </span>
-          ) : (
-            <button className="btn ghost small" onClick={() => fileRef.current?.click()} disabled={running}>
-              <FileUp size={13} /> CSV or JSON
-            </button>
-          )}
-          <input ref={fileRef} type="file" accept=".csv,.json,text/csv,application/json" hidden onChange={(e) => e.target.files?.[0] && onFile(e.target.files[0])} />
-        </div>
-        <label className="check">
-          <input type="checkbox" checked={bail} onChange={(e) => setBail(e.target.checked)} disabled={running} />
-          Stop at first failure
-        </label>
-        <div className="run-actions">
-          {running ? (
-            <button className="btn ghost" onClick={() => api.cancelRun(run!.id)}>
-              <Square size={13} /> Stop
-            </button>
-          ) : (
-            <button className="btn primary" onClick={start}>
-              <Play size={14} /> {run ? "Run again" : "Run"}
-            </button>
-          )}
-        </div>
-      </div>
-      {dataError && <p className="inline-error">{dataError}</p>}
-      {startError && <p className="inline-error">{startError}</p>}
-
-      {run && (
-        <>
-          <div className="run-progress" role="progressbar" aria-valuenow={run.done} aria-valuemin={0} aria-valuemax={run.total} aria-label="Run progress">
-            <span style={{ width: `${pct}%` }} />
-          </div>
-          <div className="run-stats">
-            <span className={stats.failed > 0 ? "tests-fail" : run.status === "running" ? "" : "tests-pass"}>
-              {run.status === "running" ? `Running… ${run.done} of ${run.total}` : stats.failed > 0 ? "Failed" : run.status === "cancelled" ? "Stopped" : "Passed"}
-            </span>
-            <span className="meta">
-              {stats.requests} requests · {stats.failed} failed
-            </span>
-            <span className="meta">
-              {stats.testsPassed + stats.testsFailed} tests · {stats.testsFailed} failed
-            </span>
-            {run.summary && <span className="meta">{formatMs(run.summary.durationMs)}</span>}
-            {run.summary?.stopped && <span className="inline-warn">{run.summary.stopped}</span>}
-          </div>
-          <table className="data-table run-table">
-            <thead>
-              <tr>
-                <th aria-label="Result" />
-                <th>#</th>
-                <th>Request</th>
-                <th>Status</th>
-                <th className="num">Time</th>
-                <th className="num">Tests</th>
-              </tr>
-            </thead>
-            <tbody>
-              {run.results.map((it, i) =>
-                it ? (
-                  <Fragment key={i}>
-                    <ResultRow item={it} open={open === i} onToggle={() => setOpen(open === i ? null : i)} />
-                    {open === i && it.result && (
-                      <tr className="run-detail">
-                        <td colSpan={6}>
-                          {it.result.error && <p className="inline-error">{it.result.error}</p>}
-                          {it.result.scriptErrors?.map((e, j) => (
-                            <p key={j} className="inline-error mono">
-                              {e}
-                            </p>
-                          ))}
-                          {it.result.sent && (
-                            <p className="mono small muted">
-                              {it.result.sent.method ?? "GET"} {it.result.sent.url}
-                            </p>
-                          )}
-                          <TestsView result={it.result} />
-                        </td>
-                      </tr>
-                    )}
-                  </Fragment>
-                ) : null,
+    <div className="page runner">
+      <div className="dash">
+        <section className="card dash-card">
+          <header className="runner-head">
+            <h1>Run {path}</h1>
+            <p className="muted">
+              Sends every request in order with scripts, assertions and extractors. Values captured by one request feed the next.
+              {environment ? (
+                <>
+                  {" "}Environment: <code>{environment}</code>.
+                </>
+              ) : (
+                " No environment selected."
               )}
-            </tbody>
-          </table>
-        </>
-      )}
-    </section>
+            </p>
+          </header>
+
+          <div className="run-config">
+            <label>
+              <span className="field-label">Iterations</span>
+              <InputNumber
+                className="num-input"
+                min={1}
+                max={10000}
+                value={data ? data.rows.length : iterations}
+                disabled={!!data || running}
+                onChange={(v) => setIterations(Math.max(1, Number(v) || 1))}
+              />
+            </label>
+            <label>
+              <span className="field-label">Delay (ms)</span>
+              <InputNumber className="num-input" min={0} value={delayMs} disabled={running} onChange={(v) => setDelayMs(Math.max(0, Number(v) || 0))} />
+            </label>
+            <div>
+              <span className="field-label">Data file</span>
+              {data ? (
+                <span className="data-chip">
+                  {data.name} · {data.rows.length} rows
+                  <Button type="text" size="small" icon={<X size={12} />} onClick={() => setData(null)} aria-label="Remove data file" disabled={running} />
+                </span>
+              ) : (
+                <Button icon={<FileUp size={13} />} onClick={() => fileRef.current?.click()} disabled={running}>
+                  CSV or JSON
+                </Button>
+              )}
+              <input ref={fileRef} type="file" accept=".csv,.json,text/csv,application/json" hidden onChange={(e) => e.target.files?.[0] && onFile(e.target.files[0])} />
+            </div>
+            <Checkbox className="run-bail" checked={bail} onChange={(e) => setBail(e.target.checked)} disabled={running}>
+              Stop at first failure
+            </Checkbox>
+            <div className="run-actions">
+              {running ? (
+                <Button icon={<Square size={13} />} onClick={() => api.cancelRun(run!.id)}>
+                  Stop
+                </Button>
+              ) : (
+                <Button type="primary" icon={<Play size={14} />} onClick={start}>
+                  {run ? "Run again" : "Run"}
+                </Button>
+              )}
+            </div>
+          </div>
+          {dataError && <Alert className="run-alert" type="error" showIcon title={dataError} />}
+          {startError && <Alert className="run-alert" type="error" showIcon title={startError} />}
+        </section>
+
+        {run && (
+          <section className="card dash-card">
+            <Progress
+              className="run-progress"
+              percent={pct}
+              showInfo={false}
+              size="small"
+              status={running ? "active" : stats.failed > 0 ? "exception" : "normal"}
+              aria-valuenow={run.done}
+              aria-valuemin={0}
+              aria-valuemax={run.total}
+              aria-label="Run progress"
+            />
+            <div className="run-stats">
+              <span className={stats.failed > 0 ? "tests-fail" : run.status === "running" ? "" : "tests-pass"}>
+                {run.status === "running" ? `Running… ${run.done} of ${run.total}` : stats.failed > 0 ? "Failed" : run.status === "cancelled" ? "Stopped" : "Passed"}
+              </span>
+              <span className="meta">
+                {stats.requests} requests · {stats.failed} failed
+              </span>
+              <span className="meta">
+                {stats.testsPassed + stats.testsFailed} tests · {stats.testsFailed} failed
+              </span>
+              {run.summary && <span className="meta">{formatMs(run.summary.durationMs)}</span>}
+              {run.summary?.stopped && <span className="inline-warn">{run.summary.stopped}</span>}
+            </div>
+            <Table<Row>
+              className="runner-table"
+              size="small"
+              pagination={false}
+              scroll={{ x: "max-content" }}
+              rowKey="index"
+              dataSource={rows}
+              rowClassName={(r) => `runner-row ${r.failed ? "is-fail" : ""}`}
+              expandable={{
+                expandedRowKeys: open === null ? [] : [open],
+                expandRowByClick: true,
+                rowExpandable: (r) => !r.item.note && !!r.item.result,
+                onExpand: (expanded, r) => setOpen(expanded ? r.index : null),
+                expandedRowRender: ({ item: it }) =>
+                  it.result && (
+                    <div className="run-detail">
+                      {it.result.error && <p className="inline-error">{it.result.error}</p>}
+                      {it.result.scriptErrors?.map((e, j) => (
+                        <p key={j} className="inline-error mono">
+                          {e}
+                        </p>
+                      ))}
+                      {it.result.sent && (
+                        <p className="mono small muted">
+                          {it.result.sent.method ?? "GET"} {it.result.sent.url}
+                        </p>
+                      )}
+                      <TestsView result={it.result} />
+                    </div>
+                  ),
+              }}
+              columns={columns}
+            />
+          </section>
+        )}
+      </div>
+    </div>
   );
 }
 
-function ResultRow({ item, open, onToggle }: { item: RunItem; open: boolean; onToggle: () => void }) {
-  const r = item.result;
-  const tests = r?.tests ?? [];
-  const failedTests = tests.filter((t) => !t.passed).length;
-  const failed = !item.note && (!r || !!r.error || (r.scriptErrors?.length ?? 0) > 0 || failedTests > 0);
-  const ms = r?.response?.timings.total;
-  return (
-    <tr className={`run-row ${failed ? "is-fail" : ""}`} onClick={item.note ? undefined : onToggle} aria-expanded={item.note ? undefined : open}>
-      <td className="mark">
-        {item.note ? <Minus size={14} aria-label="skipped" /> : failed ? <X size={14} aria-label="failed" /> : <Check size={14} aria-label="passed" />}
-      </td>
-      <td className="muted">{item.iteration + 1}</td>
-      <td>
+interface Row {
+  index: number;
+  item: RunItem;
+  failed: boolean;
+}
+
+function toRows(results: RunItem[]): Row[] {
+  const out: Row[] = [];
+  results.forEach((item, index) => {
+    if (!item) return;
+    const r = item.result;
+    const failedTests = (r?.tests ?? []).filter((t) => !t.passed).length;
+    const failed = !item.note && (!r || !!r.error || (r.scriptErrors?.length ?? 0) > 0 || failedTests > 0);
+    out.push({ index, item, failed });
+  });
+  return out;
+}
+
+const columns: TableColumnsType<Row> = [
+  {
+    title: <span className="sr-only">Result</span>,
+    key: "mark",
+    className: "run-mark",
+    render: (_, { item, failed }) =>
+      item.note ? <Minus size={14} aria-label="skipped" /> : failed ? <X size={14} aria-label="failed" /> : <Check size={14} aria-label="passed" />,
+  },
+  { title: "#", key: "iteration", className: "muted", render: (_, { item }) => item.iteration + 1 },
+  {
+    title: "Request",
+    key: "request",
+    render: (_, { item }) => (
+      <>
         <span className="run-req">
-          {!item.note && <ChevronRight size={12} className={`chev ${open ? "open" : ""}`} />}
-          <KindBadge kind={item.kind} method={r?.sent?.method} />
+          <KindBadge kind={item.kind} method={item.result?.sent?.method} />
           <span>{item.name}</span>
           <span className="muted mono small">{item.path}</span>
         </span>
         {item.note && <span className="muted small"> {item.note}</span>}
-      </td>
-      <td>{r?.response ? r.response.status : r?.skipped ? <span className="muted">skipped</span> : r?.error ? <span className="hist-err">error</span> : ""}</td>
-      <td className="num mono">
-        {ms !== undefined && (
-          <>
+      </>
+    ),
+  },
+  {
+    title: "Status",
+    key: "status",
+    render: (_, { item: { result: r } }) =>
+      r?.response ? r.response.status : r?.skipped ? <span className="muted">skipped</span> : r?.error ? <span className="hist-err">error</span> : "",
+  },
+  {
+    title: "Time",
+    key: "time",
+    align: "right",
+    className: "mono",
+    render: (_, { item }) => {
+      const ms = item.result?.response?.timings.total;
+      return (
+        ms !== undefined && (
+          <span className="heat-value">
             <span className={`swatch heat-${heatOf(ms)}`} aria-hidden />
             {formatMs(ms)}
-          </>
-        )}
-      </td>
-      <td className="num">{tests.length > 0 ? <span className={failedTests ? "tests-fail" : "tests-pass"}>{tests.length - failedTests}/{tests.length}</span> : ""}</td>
-    </tr>
-  );
-}
+          </span>
+        )
+      );
+    },
+  },
+  {
+    title: "Tests",
+    key: "tests",
+    align: "right",
+    render: (_, { item }) => {
+      const tests = item.result?.tests ?? [];
+      const failedTests = tests.filter((t) => !t.passed).length;
+      return tests.length > 0 ? (
+        <span className={failedTests ? "tests-fail" : "tests-pass"}>
+          {tests.length - failedTests}/{tests.length}
+        </span>
+      ) : (
+        ""
+      );
+    },
+  },
+];
 
 function tally(items: RunItem[]) {
   let requests = 0,

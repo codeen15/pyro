@@ -1,8 +1,10 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { Alert, App, Button, Dropdown, Empty, Input, Modal, Skeleton, Tabs, Tooltip } from "antd";
+import { MoreOutlined, SearchOutlined } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Activity, BookOpen, ChevronRight, Download, Settings2, Folder, FolderOpen, Gauge, Layers, Play, Plug, Plus, Puzzle, Radio, RefreshCw, Trash2, TriangleAlert } from "lucide-react";
-import { PluginsRail } from "./Plugins";
-import { api, saveFile, type TreeNode, type WorkspaceInfo } from "../api";
+import { Activity, BookOpen, ChevronRight, Download, Settings2, Folder, FolderOpen, Gauge, Layers, Play, Plus, RefreshCw, TriangleAlert } from "../icons";
+import { PluginsRail, usePluginTypes } from "./Plugins";
+import { api, saveFile, type Kind, type PyroRequest, type TreeNode, type WorkspaceInfo } from "../api";
 import { formatMs, heatOf } from "../heat";
 import { useApp } from "../store";
 import { slugify } from "../loadProfiles";
@@ -12,47 +14,53 @@ export function Sidebar({ ws }: { ws: WorkspaceInfo | undefined }) {
   const setTab = useApp((s) => s.setSidebarTab);
   return (
     <nav className="rail" aria-label="Workspace">
-      <div className="rail-tabs" role="tablist">
-        <button role="tab" aria-selected={tab === "collections"} onClick={() => setTab("collections")}>
-          Collections
-        </button>
-        <button role="tab" aria-selected={tab === "history"} onClick={() => setTab("history")}>
-          History
-        </button>
-        <button role="tab" aria-selected={tab === "load"} onClick={() => setTab("load")}>
-          Load
-        </button>
-        <button role="tab" aria-selected={tab === "plugins"} onClick={() => setTab("plugins")}>
-          Plugins
-        </button>
-      </div>
+      <Tabs
+        className="rail-tabs"
+        tabBarGutter={18}
+        activeKey={tab}
+        onChange={(k) => setTab(k as typeof tab)}
+        items={[
+          { key: "collections", label: "Collections" },
+          { key: "history", label: "History" },
+          { key: "load", label: "Load" },
+          { key: "plugins", label: "Plugins" },
+        ]}
+      />
       {tab === "collections" ? <Collections ws={ws} /> : tab === "history" ? <History /> : tab === "load" ? <LoadTests /> : <PluginsRail />}
     </nav>
   );
+}
+
+/** Keeps requests whose name or path matches, with their folders. */
+function filterTree(nodes: TreeNode[], q: string): TreeNode[] {
+  if (!q) return nodes;
+  const out: TreeNode[] = [];
+  for (const n of nodes) {
+    if (n.type === "request") {
+      if (n.name.toLowerCase().includes(q) || n.path.toLowerCase().includes(q)) out.push(n);
+      continue;
+    }
+    const children = filterTree(n.children ?? [], q);
+    if (children.length > 0 || n.name.toLowerCase().includes(q)) out.push({ ...n, children: children.length > 0 ? children : n.children });
+  }
+  return out;
+}
+
+function countRequests(nodes: TreeNode[]): number {
+  return nodes.reduce((sum, n) => sum + (n.type === "request" ? 1 : countRequests(n.children ?? [])), 0);
 }
 
 function Collections({ ws }: { ws: WorkspaceInfo | undefined }) {
   const qc = useQueryClient();
   const selected = useApp((s) => s.selected);
   const select = useApp((s) => s.select);
-  const create = useMutation({
-    mutationFn: async (parent: TreeNode) => {
-      const taken = new Set((parent.children ?? []).map((c) => c.path));
-      let slug = "new-request";
-      for (let i = 2; taken.has(`${parent.path}/${slug}`); i++) slug = `new-request-${i}`;
-      const path = `${parent.path}/${slug}`;
-      await api.saveRequest(path, { kind: "http", name: "New request", method: "GET", url: "" });
-      return path;
-    },
-    onSuccess: async (path) => {
-      await qc.invalidateQueries({ queryKey: ["workspace"] });
-      select(path);
-    },
-  });
+  const { message } = App.useApp();
+  const [search, setSearch] = useState("");
+  const [naming, setNaming] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newIn, setNewIn] = useState<TreeNode | null>(null);
 
-  const newCollection = async () => {
-    const name = prompt("Name of the new collection")?.trim();
-    if (!name) return;
+  const createCollection = async (name: string) => {
     const taken = new Set(ws?.collections.map((c) => c.path));
     let slug = slugify(name);
     for (let i = 2; taken.has(slug); i++) slug = `${slugify(name)}-${i}`;
@@ -61,42 +69,179 @@ function Collections({ ws }: { ws: WorkspaceInfo | undefined }) {
       await qc.invalidateQueries({ queryKey: ["workspace"] });
       select(`settings:${slug}`);
     } catch (e) {
-      alert((e as Error).message);
+      message.error((e as Error).message);
     }
   };
+  const newCollection = () => {
+    setNewName("");
+    setNaming(true);
+  };
+  const nameModal = (
+    <Modal
+      title="New collection"
+      open={naming}
+      okText="Create"
+      okButtonProps={{ disabled: !newName.trim() }}
+      onOk={async () => {
+        await createCollection(newName.trim());
+        setNaming(false);
+      }}
+      onCancel={() => setNaming(false)}
+      destroyOnHidden
+    >
+      <Input
+        autoFocus
+        aria-label="New collection name"
+        placeholder="Payments API"
+        value={newName}
+        onChange={(e) => setNewName(e.target.value)}
+        onPressEnter={async () => {
+          if (!newName.trim()) return;
+          await createCollection(newName.trim());
+          setNaming(false);
+        }}
+      />
+    </Modal>
+  );
+
+  const q = search.trim().toLowerCase();
+  const nodes = useMemo(() => filterTree(ws?.collections ?? [], q), [ws, q]);
 
   if (!ws) return <TreeSkeleton />;
   if (ws.collections.length === 0) {
     return (
       <div className="rail-empty">
-        <p>No collections yet.</p>
-        <p className="muted">Import one (Postman, OpenAPI, HAR or cURL) from the top bar, or start an empty one.</p>
-        <button className="btn ghost small" onClick={newCollection}>
-          <Plus size={13} /> New collection
-        </button>
+        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No collections yet">
+          <p className="muted">Import one (Postman, OpenAPI, HAR, cURL or JMeter) from the top bar, or start an empty one.</p>
+          <Button icon={<Plus size={13} />} onClick={newCollection}>
+            New collection
+          </Button>
+        </Empty>
+        {nameModal}
       </div>
     );
   }
+  const total = countRequests(ws.collections);
   return (
     <div className="rail-scroll">
-      <div className="rail-head">
-        <span className="muted small">{ws.collections.length} collection{ws.collections.length > 1 ? "s" : ""}</span>
-        <span className="rail-head-actions">
-          <button className="icon-btn" onClick={newCollection} aria-label="New collection" title="New collection">
-            <Plus size={14} />
-          </button>
-          <button className="icon-btn" onClick={() => qc.invalidateQueries({ queryKey: ["workspace"] })} aria-label="Reload from disk" title="Reload from disk">
-            <RefreshCw size={13} />
-          </button>
-        </span>
+      <div className="rail-search">
+        <Input
+          allowClear
+          prefix={<SearchOutlined />}
+          placeholder="Search requests"
+          aria-label="Search requests"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+        <Tooltip title="New collection">
+          <Button icon={<Plus size={14} />} onClick={newCollection} aria-label="New collection" />
+        </Tooltip>
+        <Tooltip title="Reload from disk">
+          <Button icon={<RefreshCw size={13} />} onClick={() => qc.invalidateQueries({ queryKey: ["workspace"] })} aria-label="Reload from disk" />
+        </Tooltip>
       </div>
-      <ul className="tree" role="tree" aria-label="Collections">
-        {ws.collections.map((n) => (
-          <TreeItem key={n.path} node={n} depth={0} selected={selected} onSelect={select} onCreate={(p) => create.mutate(p)} />
-        ))}
-      </ul>
-      {create.error && <p className="inline-error pad">Couldn't create the request: {create.error.message}</p>}
+      <div className="rail-meta">
+        {plural(ws.collections.length, "collection")} · {plural(total, "request")}
+      </div>
+      {nodes.length === 0 ? (
+        <p className="rail-meta">No requests match “{search.trim()}”.</p>
+      ) : (
+        <ul className="tree" role="tree" aria-label="Collections">
+          {nodes.map((n) => (
+            <TreeItem key={n.path} node={n} depth={0} selected={selected} onSelect={select} onCreate={setNewIn} forceOpen={!!q} />
+          ))}
+        </ul>
+      )}
+      <NewRequestModal parent={newIn} onClose={() => setNewIn(null)} />
+      {nameModal}
     </div>
+  );
+}
+
+const BUILTIN_KINDS: { kind: Kind; title: string; tag: string; desc: string }[] = [
+  { kind: "http", title: "HTTP", tag: "GET", desc: "REST and GraphQL: method, params, headers, body and auth." },
+  { kind: "websocket", title: "WebSocket", tag: "WS", desc: "A raw WebSocket connection. Send and watch text or binary messages." },
+  { kind: "socketio", title: "Socket.IO", tag: "SIO", desc: "Socket.IO v4 client: namespaces, events and acks." },
+];
+
+/** Creates a request. Its type is chosen here and can't be changed later. */
+function NewRequestModal({ parent, onClose }: { parent: TreeNode | null; onClose: () => void }) {
+  const qc = useQueryClient();
+  const select = useApp((s) => s.select);
+  const protocols = usePluginTypes("protocol");
+  const [kind, setKind] = useState<Kind>("http");
+  const [name, setName] = useState("");
+  const create = useMutation({
+    mutationFn: async () => {
+      const title = name.trim() || "New request";
+      const taken = new Set((parent!.children ?? []).map((c) => c.path));
+      const base = slugify(title) || "new-request";
+      let slug = base;
+      for (let i = 2; taken.has(`${parent!.path}/${slug}`); i++) slug = `${base}-${i}`;
+      const path = `${parent!.path}/${slug}`;
+      const req: PyroRequest = { kind, name: title, url: "" };
+      if (kind === "http") req.method = "GET";
+      if (kind.startsWith("plugin:")) req.body = { type: "text", content: "" };
+      await api.saveRequest(path, req);
+      return path;
+    },
+    onSuccess: async (path) => {
+      await qc.invalidateQueries({ queryKey: ["workspace"] });
+      select(path);
+      onClose();
+    },
+  });
+  const options = [
+    ...BUILTIN_KINDS,
+    ...protocols.map((p) => ({
+      kind: `plugin:${p.id}` as Kind,
+      title: p.title || p.id,
+      tag: p.id.slice(0, 4).toUpperCase(),
+      desc: `Provided by the ${p.plugin.title || p.plugin.name} plugin.`,
+    })),
+  ];
+  return (
+    <Modal
+      title={parent ? `New request in ${parent.name}` : "New request"}
+      open={!!parent}
+      okText="Create request"
+      onOk={() => create.mutate()}
+      confirmLoading={create.isPending}
+      onCancel={onClose}
+      afterOpenChange={(open) => {
+        if (!open) {
+          setKind("http");
+          setName("");
+          create.reset();
+        }
+      }}
+      width={640}
+      destroyOnHidden
+    >
+      <div className="kind-cards" role="radiogroup" aria-label="Request type">
+        {options.map((o) => (
+          <button
+            key={o.kind}
+            type="button"
+            role="radio"
+            aria-checked={kind === o.kind}
+            className={`kind-card ${kind === o.kind ? "is-active" : ""}`}
+            onClick={() => setKind(o.kind)}
+            onDoubleClick={() => create.mutate()}
+          >
+            <span className={`kind-card-tag k-${o.kind.startsWith("plugin:") ? "plugin" : o.kind}`}>{o.tag}</span>
+            <span className="kind-card-title">{o.title}</span>
+            <span className="kind-card-desc">{o.desc}</span>
+          </button>
+        ))}
+      </div>
+      <label className="kind-name">
+        <span className="field-label">Name</span>
+        <Input autoFocus aria-label="Request name" placeholder="New request" value={name} onChange={(e) => setName(e.target.value)} onPressEnter={() => create.mutate()} />
+      </label>
+      <p className="muted small">The type can't be changed after the request is created.</p>
+      {create.error && <Alert type="error" showIcon title={`Couldn't create the request: ${create.error.message}`} />}
+    </Modal>
   );
 }
 
@@ -106,21 +251,24 @@ function TreeItem({
   selected,
   onSelect,
   onCreate,
+  forceOpen,
 }: {
   node: TreeNode;
   depth: number;
   selected: string | null;
   onSelect: (p: string) => void;
   onCreate: (parent: TreeNode) => void;
+  forceOpen?: boolean;
 }) {
   const containsSelected = !!selected && selected.startsWith(node.path + "/");
   const [open, setOpen] = useState(depth === 0 || containsSelected);
-  const indent = { paddingLeft: 10 + depth * 14 };
+  const indent = { paddingLeft: 8 + depth * 18 };
+  const expanded = open || !!forceOpen;
 
   if (node.type === "request") {
     return (
       <li role="treeitem" aria-selected={selected === node.path}>
-        <button className={`row ${selected === node.path ? "is-active" : ""}`} style={indent} onClick={() => onSelect(node.path)}>
+        <button className={`row ${selected === node.path ? "is-active" : ""}`} style={{ paddingLeft: 8 + depth * 18 + 22 }} onClick={() => onSelect(node.path)}>
           <KindBadge kind={node.kind} method={node.method} />
           <span className="row-label">{node.name}</span>
         </button>
@@ -128,51 +276,32 @@ function TreeItem({
     );
   }
 
-  const Icon = node.type === "collection" ? Layers : open ? FolderOpen : Folder;
+  const Icon = expanded ? FolderOpen : Folder;
   return (
-    <li role="treeitem" aria-expanded={open}>
+    <li role="treeitem" aria-expanded={expanded}>
       <div className="row-wrap">
-        <button className={`row ${node.type} ${selected === `run:${node.path}` ? "is-active" : ""}`} style={indent} onClick={() => setOpen(!open)}>
-          <ChevronRight size={13} className={`chev ${open ? "open" : ""}`} />
-          <Icon size={14} className="row-icon" />
+        <button className={`row ${node.type} ${selected === `run:${node.path}` ? "is-active" : ""}`} style={indent} onClick={() => setOpen(!expanded)}>
+          <ChevronRight size={10} className={`chev ${expanded ? "open" : ""}`} />
+          {node.type === "collection" ? <Layers size={14} className="row-icon" /> : <Icon size={14} className="row-icon" />}
           <span className="row-label">{node.name}</span>
         </button>
         <span className="row-actions">
-          <button className="icon-btn" onClick={() => onSelect(`run:${node.path}`)} aria-label={`Run ${node.name}`} title="Run all requests">
-            <Play size={13} />
-          </button>
-          <button className="icon-btn" onClick={() => onCreate(node)} aria-label={`New request in ${node.name}`} title="New request">
-            <Plus size={14} />
-          </button>
-          <button className="icon-btn" onClick={() => onSelect(`settings:${node.path}`)} aria-label={`Settings for ${node.name}`} title="Variables, auth and scripts">
-            <Settings2 size={13} />
-          </button>
-          {node.type === "collection" && (
-            <button
-              className="icon-btn"
-              aria-label={`API docs for ${node.name}`}
-              title="Open generated API docs"
-              onClick={async () => {
-                try {
-                  const html = await api.collectionDocs(node.path);
-                  const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
-                  window.open(url, "_blank", "noopener");
-                  setTimeout(() => URL.revokeObjectURL(url), 60_000);
-                } catch (e) {
-                  alert((e as Error).message);
-                }
-              }}
-            >
-              <BookOpen size={13} />
-            </button>
-          )}
-          {node.type === "collection" && <ExportButton slug={node.path} name={node.name} />}
+          <Tooltip title="Run all requests">
+            <Button type="text" size="small" icon={<Play size={12} />} onClick={() => onSelect(`run:${node.path}`)} aria-label={`Run ${node.name}`} />
+          </Tooltip>
+          <Tooltip title="New request">
+            <Button type="text" size="small" icon={<Plus size={12} />} onClick={() => onCreate(node)} aria-label={`New request in ${node.name}`} />
+          </Tooltip>
+          <Tooltip title="Variables, auth and scripts">
+            <Button type="text" size="small" icon={<Settings2 size={12} />} onClick={() => onSelect(`settings:${node.path}`)} aria-label={`Settings for ${node.name}`} />
+          </Tooltip>
+          {node.type === "collection" && <CollectionMenu slug={node.path} name={node.name} />}
         </span>
       </div>
-      {open && node.children && node.children.length > 0 && (
+      {expanded && node.children && node.children.length > 0 && (
         <ul role="group">
           {node.children.map((c) => (
-            <TreeItem key={c.path} node={c} depth={depth + 1} selected={selected} onSelect={onSelect} onCreate={onCreate} />
+            <TreeItem key={c.path} node={c} depth={depth + 1} selected={selected} onSelect={onSelect} onCreate={onCreate} forceOpen={forceOpen} />
           ))}
         </ul>
       )}
@@ -183,20 +312,20 @@ function TreeItem({
 export function KindBadge({ kind, method }: { kind?: string; method?: string }) {
   if (kind === "websocket")
     return (
-      <span className="badge stream" title="WebSocket">
-        <Plug size={11} /> WS
+      <span className="badge m-ws" title="WebSocket">
+        WS
       </span>
     );
   if (kind === "socketio")
     return (
-      <span className="badge stream" title="Socket.IO">
-        <Radio size={11} /> SIO
+      <span className="badge m-sio" title="Socket.IO">
+        SIO
       </span>
     );
   if (kind?.startsWith("plugin:"))
     return (
-      <span className="badge stream" title={`Plugin request type ${kind}`}>
-        <Puzzle size={11} /> {kind.slice(7, 11).toUpperCase()}
+      <span className="badge m-plugin" title={`Plugin request type ${kind}`}>
+        {kind.slice(7, 11).toUpperCase()}
       </span>
     );
   const m = (method ?? "GET").toUpperCase();
@@ -223,18 +352,19 @@ function History() {
   if (q.data.length === 0) {
     return (
       <div className="rail-empty">
-        <p>Nothing sent yet.</p>
-        <p className="muted">Every request you send is kept here, newest first.</p>
+        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Nothing sent yet">
+          <p className="muted">Every request you send is kept here, newest first.</p>
+        </Empty>
       </div>
     );
   }
   return (
     <div className="rail-scroll">
       <div className="rail-head">
-        <span className="muted small">Last {q.data.length}</span>
-        <button className="icon-btn" onClick={() => clear.mutate()} aria-label="Clear history" title="Clear history">
-          <Trash2 size={13} />
-        </button>
+        <span className="rail-section">Last {q.data.length}</span>
+        <Button type="link" size="small" onClick={() => clear.mutate()} aria-label="Clear history">
+          Clear
+        </Button>
       </div>
       <ul className="history" aria-label="History">
         {q.data.map((h) => (
@@ -244,21 +374,15 @@ function History() {
               onClick={() => open(h.id, h.path)}
               title={`${h.method} ${h.url}`}
             >
-              <span className="hist-top">
-                <KindBadge method={h.method} />
-                <span className="row-label">{h.name || h.url}</span>
-              </span>
+              <KindBadge method={h.method} />
+              <span className="hist-url mono">{h.name || h.url}</span>
+              {h.error ? <span className="hist-err">failed</span> : <span className={`hist-status s${String(h.status)[0]}`}>{h.status}</span>}
               <span className="hist-meta">
-                {h.error ? (
-                  <span className="hist-err">failed</span>
-                ) : (
-                  <>
-                    <span className={`hist-status s${String(h.status)[0]}`}>{h.status}</span>
-                    <span>
-                      <span className={`swatch heat-${heatOf(h.durationMs)}`} aria-hidden />
-                      {formatMs(h.durationMs)}
-                    </span>
-                  </>
+                {!h.error && (
+                  <span>
+                    <span className={`swatch heat-${heatOf(h.durationMs)}`} aria-hidden />
+                    {formatMs(h.durationMs)}
+                  </span>
                 )}
                 <time dateTime={h.at}>{relativeTime(h.at)}</time>
               </span>
@@ -279,34 +403,33 @@ function LoadTests() {
 
   return (
     <div className="rail-scroll">
-      <div className="rail-head">
-        <span className="muted small">{tests.data ? `${tests.data.length} load test${tests.data.length === 1 ? "" : "s"}` : ""}</span>
-        <button className="icon-btn" onClick={() => select("load:new")} aria-label="New load test" title="New load test">
-          <Plus size={14} />
-        </button>
+      <div className="rail-cta">
+        <Button type="dashed" block icon={<Plus size={13} />} onClick={() => select("load:new")} aria-label="New load test">
+          New load test
+        </Button>
       </div>
       {running && (
         <button className={`hist-row running-row ${selected === `loadrun:${running.id}` ? "is-active" : ""}`} onClick={() => select(`loadrun:${running.id}`)}>
-          <span className="hist-top">
-            <Activity size={13} className="live-icon" />
-            <span className="row-label">{running.name || running.test}</span>
-          </span>
+          <Activity size={13} className="live-icon" />
+          <span className="row-label">{running.name || running.test}</span>
           <span className="hist-meta">running now · open dashboard</span>
         </button>
       )}
       {tests.isPending && <TreeSkeleton />}
       {tests.data?.length === 0 && (
         <div className="rail-empty">
-          <p>No load tests yet.</p>
-          <p className="muted">
-            Press + to create one from a profile. It's saved as <code>loadtests/&lt;name&gt;.load.yaml</code>.
-          </p>
+          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No load tests yet">
+            <p className="muted">
+              Create one from a profile. It's saved as <code>loadtests/&lt;name&gt;.load.yaml</code>.
+            </p>
+          </Empty>
         </div>
       )}
+      {(tests.data?.length ?? 0) > 0 && <div className="rail-section rail-head">Test plans</div>}
       <ul className="tree">
         {tests.data?.map((t) => (
           <li key={t.name}>
-            <button className={`row ${selected === `load:${t.name}` ? "is-active" : ""}`} style={{ paddingLeft: 12 }} onClick={() => select(`load:${t.name}`)}>
+            <button className={`row ${selected === `load:${t.name}` ? "is-active" : ""}`} onClick={() => select(`load:${t.name}`)}>
               <Gauge size={14} className="row-icon" />
               <span className="row-label">{t.title || t.name}</span>
               {t.error && <TriangleAlert size={13} className="row-warn" aria-label="Invalid plan" />}
@@ -329,37 +452,49 @@ function relativeTime(iso: string): string {
 function TreeSkeleton() {
   return (
     <div className="pad" aria-busy="true" aria-label="Loading">
-      {[70, 55, 80, 60, 45].map((w, i) => (
-        <span key={i} className="skeleton line" style={{ width: `${w}%` }} />
-      ))}
+      <Skeleton active title={false} paragraph={{ rows: 5 }} />
     </div>
   );
 }
 
-/** Downloads a collection as Postman v2.1 JSON; shows the report if anything didn't convert. */
-function ExportButton({ slug, name }: { slug: string; name: string }) {
+/** Collection extras: generated API docs and Postman export. */
+function CollectionMenu({ slug, name }: { slug: string; name: string }) {
   const setReport = useApp((s) => s.setReport);
-  const [busy, setBusy] = useState(false);
+  const { message } = App.useApp();
+  const openDocs = async () => {
+    try {
+      const html = await api.collectionDocs(slug);
+      const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
+      window.open(url, "_blank", "noopener");
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (e) {
+      message.error((e as Error).message);
+    }
+  };
+  const exportPostman = async () => {
+    try {
+      const ex = await api.exportCollection(slug);
+      saveFile(ex.filename, JSON.stringify(ex.content, null, "\t"));
+      if (ex.report && ex.report.warnings.length > 0) setReport({ mode: "export", data: ex.report });
+    } catch (e) {
+      message.error((e as Error).message);
+    }
+  };
   return (
-    <button
-      className="icon-btn"
-      disabled={busy}
-      aria-label={`Export ${name} to Postman`}
-      title="Export to Postman"
-      onClick={async () => {
-        setBusy(true);
-        try {
-          const ex = await api.exportCollection(slug);
-          saveFile(ex.filename, JSON.stringify(ex.content, null, "\t"));
-          if (ex.report && ex.report.warnings.length > 0) setReport({ mode: "export", data: ex.report });
-        } catch (e) {
-          alert((e as Error).message);
-        } finally {
-          setBusy(false);
-        }
+    <Dropdown
+      trigger={["click"]}
+      menu={{
+        items: [
+          { key: "docs", icon: <BookOpen size={13} />, label: `API docs for ${name}`, onClick: openDocs },
+          { key: "export", icon: <Download size={13} />, label: `Export ${name} to Postman`, onClick: exportPostman },
+        ],
       }}
     >
-      <Download size={13} />
-    </button>
+      <Button type="text" size="small" icon={<MoreOutlined />} aria-label={`More actions for ${name}`} />
+    </Dropdown>
   );
+}
+
+function plural(n: number, word: string) {
+  return `${n} ${word}${n === 1 ? "" : "s"}`;
 }

@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
+import { Alert, Button, Collapse, Input, Select, Tooltip } from "antd";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Eye, EyeOff, KeyRound, LogIn, RefreshCw, Trash2 } from "lucide-react";
+import { Eye, EyeOff, KeyRound, LogIn, RefreshCw, Trash2 } from "../icons";
 import { api, type PyroRequest } from "../api";
 import { useApp } from "../store";
 
@@ -26,6 +27,7 @@ export function OAuth2Form({ params, onChange, context }: { params: Params; onCh
     onChange(next);
   };
   const interactive = grant.startsWith("authorization_code");
+  const grantId = useId();
   const fields: Field[] = [];
   if (grant === "") {
     fields.push({ key: "accessToken", label: "Access token", secret: true, placeholder: "{{accessToken}}" });
@@ -42,80 +44,116 @@ export function OAuth2Form({ params, onChange, context }: { params: Params; onCh
   }
   return (
     <>
-      <label className="field-row">
-        <span className="field-label">Grant type</span>
-        <select
+      <div className="field-row">
+        <label className="field-label" htmlFor={grantId}>
+          Grant type
+        </label>
+        <Select
+          id={grantId}
+          className="wide"
           value={grant}
-          onChange={(e) => {
+          onChange={(v) => {
             const next = { ...params };
-            if (e.target.value) next.grant_type = e.target.value;
+            if (v) next.grant_type = v;
             else delete next.grant_type;
             onChange(next);
           }}
-          aria-label="Grant type"
-        >
-          {GRANTS.map((g) => (
-            <option key={g.id} value={g.id}>
-              {g.label}
-            </option>
-          ))}
-        </select>
-      </label>
-      {fields.map((f) => (
-        <label key={f.key} className="field-row">
-          <span className="field-label">{f.label}</span>
-          <input
-            className="cell mono wide"
-            type={f.secret ? "password" : "text"}
-            value={params[f.key] ?? ""}
-            onChange={(e) => set(f.key, e.target.value)}
-            placeholder={f.placeholder}
-            autoComplete="off"
-            spellCheck={false}
-            aria-label={f.label}
-          />
-        </label>
-      ))}
+          options={GRANTS.map((g) => ({ value: g.id, label: g.label }))}
+        />
+      </div>
+      {fields.map((f) => {
+        const Field = f.secret ? Input.Password : Input;
+        return (
+          <label key={f.key} className="field-row">
+            <span className="field-label">{f.label}</span>
+            <Field
+              className="mono wide"
+              value={params[f.key] ?? ""}
+              onChange={(e) => set(f.key, e.target.value)}
+              placeholder={f.placeholder}
+              autoComplete="off"
+              spellCheck={false}
+              aria-label={f.label}
+            />
+          </label>
+        );
+      })}
       {grant !== "" && (
-        <details className="oauth-advanced">
-          <summary>Advanced</summary>
-          <label className="field-row">
-            <span className="field-label">Client auth</span>
-            <select value={params.client_authentication ?? "header"} onChange={(e) => set("client_authentication", e.target.value === "header" ? "" : e.target.value)}>
-              <option value="header">Basic auth header</option>
-              <option value="body">In the request body</option>
-            </select>
-          </label>
-          {grant === "authorization_code_with_pkce" && (
-            <label className="field-row">
-              <span className="field-label">PKCE method</span>
-              <select value={params.challengeAlgorithm ?? "S256"} onChange={(e) => set("challengeAlgorithm", e.target.value === "S256" ? "" : e.target.value)}>
-                <option value="S256">SHA-256</option>
-                <option value="plain">Plain</option>
-              </select>
-            </label>
-          )}
-          <label className="field-row">
-            <span className="field-label">Audience</span>
-            <input className="cell mono wide" value={params.audience ?? ""} onChange={(e) => set("audience", e.target.value)} aria-label="Audience" />
-          </label>
-          <label className="field-row">
-            <span className="field-label">Refresh URL</span>
-            <input className="cell mono wide" value={params.refreshTokenUrl ?? ""} onChange={(e) => set("refreshTokenUrl", e.target.value)} placeholder="same as the access token URL" aria-label="Refresh token URL" />
-          </label>
-        </details>
+        <Collapse
+          ghost
+          size="small"
+          className="oauth-advanced"
+          items={[
+            {
+              key: "advanced",
+              label: "Advanced",
+              children: (
+                <>
+                  <div className="field-row">
+                    <span className="field-label">Client auth</span>
+                    <Select
+                      className="wide"
+                      aria-label="Client auth"
+                      value={params.client_authentication ?? "header"}
+                      onChange={(v) => set("client_authentication", v === "header" ? "" : v)}
+                      options={[
+                        { value: "header", label: "Basic auth header" },
+                        { value: "body", label: "In the request body" },
+                      ]}
+                    />
+                  </div>
+                  {grant === "authorization_code_with_pkce" && (
+                    <div className="field-row">
+                      <span className="field-label">PKCE method</span>
+                      <Select
+                        className="wide"
+                        aria-label="PKCE method"
+                        value={params.challengeAlgorithm ?? "S256"}
+                        onChange={(v) => set("challengeAlgorithm", v === "S256" ? "" : v)}
+                        options={[
+                          { value: "S256", label: "SHA-256" },
+                          { value: "plain", label: "Plain" },
+                        ]}
+                      />
+                    </div>
+                  )}
+                  <label className="field-row">
+                    <span className="field-label">Audience</span>
+                    <Input className="mono wide" value={params.audience ?? ""} onChange={(e) => set("audience", e.target.value)} aria-label="Audience" />
+                  </label>
+                  <label className="field-row">
+                    <span className="field-label">Refresh URL</span>
+                    <Input
+                      className="mono wide"
+                      value={params.refreshTokenUrl ?? ""}
+                      onChange={(e) => set("refreshTokenUrl", e.target.value)}
+                      placeholder="same as the access token URL"
+                      aria-label="Refresh token URL"
+                    />
+                  </label>
+                </>
+              ),
+            },
+          ]}
+        />
       )}
-      <label className="field-row">
+      <div className="field-row">
         <span className="field-label">Add token to</span>
-        <select value={params.addTokenTo ?? "header"} onChange={(e) => set("addTokenTo", e.target.value === "header" ? "" : e.target.value)}>
-          <option value="header">Authorization header</option>
-          <option value="queryParams">access_token query parameter</option>
-        </select>
-      </label>
+        <Select
+          className="wide"
+          aria-label="Add token to"
+          value={params.addTokenTo ?? "header"}
+          onChange={(v) => set("addTokenTo", v === "header" ? "" : v)}
+          options={[
+            { value: "header", label: "Authorization header" },
+            { value: "queryParams", label: "access_token query parameter" },
+          ]}
+        />
+      </div>
       {(params.addTokenTo ?? "header") === "header" && (
         <label className="field-row">
           <span className="field-label">Header prefix</span>
-          <input className="cell mono wide" value={params.headerPrefix ?? ""} onChange={(e) => set("headerPrefix", e.target.value)} placeholder="Bearer" aria-label="Header prefix" />
+          <Input className="mono wide" value={params.headerPrefix ?? ""} onChange={(e) => set("headerPrefix", e.target.value)} placeholder="Bearer" aria-label="Header prefix" />
         </label>
       )}
       {grant !== "" && context && <TokenPanel context={context} />}
@@ -151,7 +189,7 @@ export function TokenPanel({ context, inheritedOnly = false }: { context: TokenC
     return () => window.removeEventListener("message", onMessage);
   }, [qc]);
 
-  if (status.error) return <p className="inline-error">{status.error.message}</p>;
+  if (status.error) return <Alert className="token-error" type="error" showIcon title={status.error.message} />;
   const s = status.data;
   // Inherited auth that isn't OAuth 2.0: nothing to show.
   if (!s || !s.oauth) return null;
@@ -196,21 +234,21 @@ export function TokenPanel({ context, inheritedOnly = false }: { context: TokenC
       {t && (
         <div className="token-value">
           <code className="mono">{show ? t.accessToken : `${t.accessToken.slice(0, 6)}…${t.accessToken.slice(-4)}`}</code>
-          <button className="icon-btn" onClick={() => setShow(!show)} aria-label={show ? "Hide token" : "Show token"}>
-            {show ? <EyeOff size={13} /> : <Eye size={13} />}
-          </button>
+          <Tooltip title={show ? "Hide token" : "Show token"}>
+            <Button type="text" size="small" icon={show ? <EyeOff size={13} /> : <Eye size={13} />} onClick={() => setShow(!show)} aria-label={show ? "Hide token" : "Show token"} />
+          </Tooltip>
           {t.scope && <span className="muted small">scope: {t.scope}</span>}
         </div>
       )}
-      {s.unresolved && s.unresolved.length > 0 && <p className="inline-warn small">Unresolved variables: {s.unresolved.join(", ")} (pick an environment?)</p>}
+      {s.unresolved && s.unresolved.length > 0 && <Alert type="warning" showIcon title={`Unresolved variables: ${s.unresolved.join(", ")} (pick an environment?)`} />}
       <div className="token-actions">
-        <button className="btn ghost small" onClick={getToken} disabled={busy}>
-          {s.interactive ? <LogIn size={13} /> : <RefreshCw size={13} />} {busy ? (s.interactive ? "Waiting for sign-in…" : "Getting token…") : "Get new access token"}
-        </button>
+        <Button size="small" icon={s.interactive ? <LogIn size={13} /> : <RefreshCw size={13} />} onClick={getToken} disabled={busy}>
+          {busy ? (s.interactive ? "Waiting for sign-in…" : "Getting token…") : "Get new access token"}
+        </Button>
         {t && (
-          <button className="btn ghost small" onClick={clear}>
-            <Trash2 size={13} /> Forget
-          </button>
+          <Button size="small" icon={<Trash2 size={13} />} onClick={clear}>
+            Forget
+          </Button>
         )}
       </div>
       <p className="muted small">
@@ -223,7 +261,7 @@ export function TokenPanel({ context, inheritedOnly = false }: { context: TokenC
           <>Sends fetch a token automatically and reuse it until it expires; this button forces a new one.</>
         )}
       </p>
-      {error && <p className="inline-error">{error}</p>}
+      {error && <Alert type="error" showIcon title={error} />}
     </div>
   );
 }

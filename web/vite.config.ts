@@ -10,5 +10,18 @@ export default defineConfig({
   build: {
     outDir: "dist",
     emptyOutDir: true,
+    // Served from localhost by the pyro binary; split vendor code so app
+    // changes don't invalidate the cached component library.
+    chunkSizeWarningLimit: 1500,
+    rolldownOptions: {
+      output: {
+        codeSplitting: {
+          groups: [
+            { name: "antd", test: /node_modules[\\/](antd|@ant-design|@rc-component|rc-[^\\/]+)[\\/]/ },
+            { name: "vendor", test: /node_modules[\\/]/ },
+          ],
+        },
+      },
+    },
   },
 });

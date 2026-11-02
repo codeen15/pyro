@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { BookmarkPlus, Check, CircleX, Copy, Terminal, TriangleAlert, X } from "lucide-react";
+import { Alert, Button, Segmented, Skeleton, Tabs, Tag, Tooltip } from "antd";
+import { BookmarkPlus, Check, Copy, SendHorizontal, Terminal, X } from "../icons";
 import { decodeBody, type PyroResponse, type SendResult, type TestResult, type Timings } from "../api";
 import { HEAT_STEPS, formatBytes, formatMs, heatOf, type HeatStep } from "../heat";
 
@@ -18,79 +19,94 @@ export function ResponseView({ result, sending, onSaveExample }: { result?: Send
   if (sending && !result) return <ResponseSkeleton />;
   if (!result) {
     return (
-      <section className="response empty-response" aria-label="Response">
-        <p>
+      <section className="card response empty-response" aria-label="Response">
+        <header className="response-head">
+          <span className="response-title">Response</span>
+        </header>
+        <EmptyState icon={<SendHorizontal size={22} />}>
           Send the request to see the response. <kbd>Ctrl</kbd> + <kbd>Enter</kbd>
-        </p>
+        </EmptyState>
       </section>
     );
   }
 
   const res = result.response;
   return (
-    <section className={`response ${sending ? "is-stale" : ""}`} aria-label="Response" aria-busy={sending}>
+    <section className={`card response ${sending ? "is-stale" : ""}`} aria-label="Response" aria-busy={sending}>
+      <header className="response-head">
+        <span className="response-title">Response</span>
+        {res && <StatusLine res={res} tests={result.tests} lit={!acknowledged} onTiming={() => setTab("timing")} onTests={() => setTab("tests")} onSaveExample={onSaveExample} />}
+        {res && (
+          <Tabs
+            className="response-tabs"
+            size="small"
+            activeKey={tab}
+            onChange={(k) => setTab(k as Tab)}
+            aria-label="Response parts"
+            items={(["body", "tests", "headers", "cookies", "timing"] as Tab[]).map((t) => ({
+              key: t,
+              label: (
+                <>
+                  {t[0].toUpperCase() + t.slice(1)}
+                  {t === "tests" && (result.tests?.length ?? 0) > 0 && <TestCount tests={result.tests!} />}
+                  {t === "headers" && <span className="count">{res.headers?.length ?? 0}</span>}
+                  {t === "cookies" && (res.cookies?.length ?? 0) > 0 && <span className="count">{res.cookies!.length}</span>}
+                </>
+              ),
+            }))}
+          />
+        )}
+      </header>
       {result.unresolved && result.unresolved.length > 0 && (
-        <div className="notice warn" role="status">
-          <TriangleAlert size={15} />
-          <span>
-            Not defined in the selected environment or collection:{" "}
-            {result.unresolved.map((v, i) => (
-              <span key={v}>
-                {i > 0 && ", "}
-                <code>{`{{${v}}}`}</code>
-              </span>
-            ))}
-            . Sent as written.
-          </span>
-        </div>
+        <Alert
+          type="warning"
+          showIcon
+          role="status"
+          title={
+            <>
+              Not defined in the selected environment or collection:{" "}
+              {result.unresolved.map((v, i) => (
+                <span key={v}>
+                  {i > 0 && ", "}
+                  <code>{`{{${v}}}`}</code>
+                </span>
+              ))}
+              . Sent as written.
+            </>
+          }
+        />
       )}
-      {result.error && (
-        <div className="notice error" role="alert">
-          <CircleX size={15} />
-          <span>{result.error}</span>
-        </div>
-      )}
-      {result.scriptErrors?.map((e, i) => (
-        <div key={i} className="notice error" role="alert">
-          <CircleX size={15} />
-          <span className="mono">{e}</span>
-        </div>
-      ))}
-      {result.skipped && (
-        <div className="notice" role="status">
-          <TriangleAlert size={15} />
-          <span>Not sent: a pre-request script called skipRequest().</span>
-        </div>
-      )}
+      {result.error && <Alert type="error" showIcon title={result.error} />}
+      {result.scriptErrors?.map((e, i) => <Alert key={i} type="error" showIcon title={<span className="mono">{e}</span>} />)}
+      {result.skipped && <Alert type="info" showIcon role="status" title="Not sent: a pre-request script called skipRequest()." />}
       {res && (
-        <>
-          <StatusLine res={res} tests={result.tests} lit={!acknowledged} onTiming={() => setTab("timing")} onTests={() => setTab("tests")} onSaveExample={onSaveExample} />
-          <div className="tabs" role="tablist" aria-label="Response parts">
-            {(["body", "tests", "headers", "cookies", "timing"] as Tab[]).map((t) => (
-              <button key={t} role="tab" aria-selected={tab === t} className="tab" onClick={() => setTab(t)}>
-                {t[0].toUpperCase() + t.slice(1)}
-                {t === "tests" && (result.tests?.length ?? 0) > 0 && <TestCount tests={result.tests!} />}
-                {t === "headers" && <span className="count">{res.headers?.length ?? 0}</span>}
-                {t === "cookies" && (res.cookies?.length ?? 0) > 0 && <span className="count">{res.cookies!.length}</span>}
-              </button>
-            ))}
-          </div>
-          <div className="tab-panel response-panel" role="tabpanel">
-            {tab === "body" && <BodyView res={res} />}
-            {tab === "tests" && <TestsView result={result} />}
-            {tab === "headers" && <Table rows={(res.headers ?? []).map((h) => [h.key, h.value])} empty="No headers." />}
-            {tab === "cookies" && (
-              <Table
-                head={["Name", "Value", "Domain", "Path", "Flags"]}
-                rows={(res.cookies ?? []).map((c) => [c.name, c.value, c.domain ?? "", c.path ?? "", [c.httpOnly && "HttpOnly", c.secure && "Secure"].filter(Boolean).join(" ")])}
-                empty="The server set no cookies."
-              />
-            )}
-            {tab === "timing" && <TimingView t={res.timings} remote={res.remoteAddr} />}
-          </div>
-        </>
+        <div className="response-panel" role="tabpanel">
+          {tab === "body" && <BodyView res={res} />}
+          {tab === "tests" && <TestsView result={result} />}
+          {tab === "headers" && <Table rows={(res.headers ?? []).map((h) => [h.key, h.value])} head={["Header", "Value"]} empty="No headers." />}
+          {tab === "cookies" && (
+            <Table
+              head={["Name", "Value", "Domain", "Path", "Flags"]}
+              rows={(res.cookies ?? []).map((c) => [c.name, c.value, c.domain ?? "", c.path ?? "", [c.httpOnly && "HttpOnly", c.secure && "Secure"].filter(Boolean).join(" ")])}
+              empty="The server set no cookies."
+            />
+          )}
+          {tab === "timing" && <TimingView t={res.timings} remote={res.remoteAddr} />}
+        </div>
       )}
     </section>
+  );
+}
+
+export function EmptyState({ icon, children, action }: { icon: React.ReactNode; children: React.ReactNode; action?: React.ReactNode }) {
+  return (
+    <div className="empty-state">
+      <span className="empty-icon" aria-hidden>
+        {icon}
+      </span>
+      <div>{children}</div>
+      {action}
+    </div>
   );
 }
 
@@ -109,19 +125,16 @@ function StatusLine({
   onTests: () => void;
   onSaveExample?: () => void;
 }) {
-  const cls = res.status >= 500 ? "s5" : res.status >= 400 ? "s4" : res.status >= 300 ? "s3" : "s2";
+  const color = res.status >= 500 || res.status === 0 ? "error" : res.status >= 400 ? "warning" : res.status >= 300 ? "processing" : "success";
   const heat = heatOf(res.timings.total);
   return (
     <div className="status-line">
-      <span className={`status ${cls}`}>
+      <Tag color={color} className="status-tag" bordered>
         {res.status ? `${res.status} ` : ""}
         {res.statusText}
-      </span>
-      <button
-        className={`heat-chip heat-${heat} ${lit && HOT.includes(heat) ? "is-lit" : ""}`}
-        onClick={onTiming}
-        title="Show where the time went"
-      >
+      </Tag>
+      <button className={`time-chip ${lit && HOT.includes(heat) ? "is-lit" : ""}`} onClick={onTiming} title="Show where the time went">
+        <span className={`swatch heat-${heat}`} aria-hidden />
         {formatMs(res.timings.total)}
       </button>
       <span className="meta">{formatBytes(res.size)}</span>
@@ -132,9 +145,9 @@ function StatusLine({
         </button>
       )}
       {onSaveExample && (
-        <button className="btn ghost small save-example" onClick={onSaveExample} title="Keep this response in the request's Examples tab">
-          <BookmarkPlus size={13} /> Save as example
-        </button>
+        <Button size="small" className="save-example" icon={<BookmarkPlus size={13} />} onClick={onSaveExample} title="Keep this response in the request's Examples tab">
+          Save as example
+        </Button>
       )}
     </div>
   );
@@ -230,18 +243,20 @@ function BodyView({ res }: { res: PyroResponse }) {
   return (
     <div className="body-view">
       <div className="body-tools">
-        <div className="seg" role="group" aria-label="Body format">
-          <button aria-pressed={mode === "pretty"} onClick={() => setMode("pretty")}>
-            Pretty
-          </button>
-          <button aria-pressed={mode === "raw"} onClick={() => setMode("raw")}>
-            Raw
-          </button>
-        </div>
+        <Segmented
+          size="small"
+          aria-label="Body format"
+          value={mode}
+          onChange={(v) => setMode(v as "pretty" | "raw")}
+          options={[
+            { value: "pretty", label: "Pretty" },
+            { value: "raw", label: "Raw" },
+          ]}
+        />
         <span className="meta">{contentType || "no content-type"}</span>
-        <button className="icon-btn" onClick={() => navigator.clipboard?.writeText(text)} title="Copy body" aria-label="Copy body">
-          <Copy size={14} />
-        </button>
+        <Tooltip title="Copy body">
+          <Button type="text" size="small" icon={<Copy size={14} />} onClick={() => navigator.clipboard?.writeText(text)} aria-label="Copy body" />
+        </Tooltip>
       </div>
       {res.bodyTruncated && (
         <p className="inline-warn">Showing the first {formatBytes(bytes.length)} of {formatBytes(res.size)}.</p>
@@ -345,13 +360,11 @@ function Table({ head, rows, empty }: { head?: string[]; rows: string[][]; empty
 
 function ResponseSkeleton() {
   return (
-    <section className="response" aria-label="Response" aria-busy="true">
-      <div className="status-line">
-        <span className="skeleton" style={{ width: 90 }} />
-        <span className="skeleton" style={{ width: 60 }} />
-        <span className="skeleton" style={{ width: 50 }} />
-      </div>
-      <div className="skeleton block" />
+    <section className="card response" aria-label="Response" aria-busy="true">
+      <header className="response-head">
+        <span className="response-title">Response</span>
+      </header>
+      <Skeleton active paragraph={{ rows: 6 }} />
     </section>
   );
 }
