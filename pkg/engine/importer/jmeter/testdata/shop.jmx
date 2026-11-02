@@ -86,6 +86,29 @@
             <stringProp name="ConstantTimer.delay">500</stringProp>
           </ConstantTimer>
           <hashTree/>
+          <UserParameters guiclass="UserParametersGui" testclass="UserParameters" testname="Shopper">
+            <collectionProp name="UserParameters.names">
+              <stringProp name="1">currency</stringProp>
+              <stringProp name="2">region</stringProp>
+            </collectionProp>
+            <collectionProp name="UserParameters.thread_values">
+              <collectionProp name="t1">
+                <stringProp name="1">EUR</stringProp>
+                <stringProp name="2">${sku}-eu</stringProp>
+              </collectionProp>
+            </collectionProp>
+            <boolProp name="UserParameters.per_iteration">false</boolProp>
+          </UserParameters>
+          <hashTree/>
+          <CounterConfig guiclass="CounterConfigGui" testclass="CounterConfig" testname="Cart counter">
+            <stringProp name="CounterConfig.start">1</stringProp>
+            <stringProp name="CounterConfig.end">99</stringProp>
+            <stringProp name="CounterConfig.incr">1</stringProp>
+            <stringProp name="CounterConfig.name">cartNo</stringProp>
+            <stringProp name="CounterConfig.format">000</stringProp>
+            <boolProp name="CounterConfig.per_user">true</boolProp>
+          </CounterConfig>
+          <hashTree/>
           <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="List products">
             <stringProp name="HTTPSampler.path">/api/products</stringProp>
             <stringProp name="HTTPSampler.method">GET</stringProp>
@@ -99,6 +122,11 @@
             </elementProp>
           </HTTPSamplerProxy>
           <hashTree>
+            <GaussianRandomTimer guiclass="GaussianRandomTimerGui" testclass="GaussianRandomTimer" testname="Jitter">
+              <stringProp name="ConstantTimer.delay">100</stringProp>
+              <stringProp name="RandomTimer.range">50</stringProp>
+            </GaussianRandomTimer>
+            <hashTree/>
             <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="200">
               <collectionProp name="Asserion.test_strings">
                 <stringProp name="49586">200</stringProp>

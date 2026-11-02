@@ -40,7 +40,7 @@ func TestJMeterImport(t *testing.T) {
 	}
 	login := find(b, "shoppers/log-in")
 	if login == nil || login.URL != "{{baseUrl}}/api/login" || login.Body.Type != model.BodyJSON ||
-		login.Body.Content != `{"user":"{{user}}","password":"{{pass}}"}` || len(login.Extract) != 1 || login.Extract[0].Var != "token" {
+		login.Body.Content != `{"user":"{{user}}","password":"{{pass}}"}` || len(login.Post) != 1 || login.Post[0].Extract == nil || login.Post[0].Extract.Var != "token" {
 		t.Fatalf("login %+v", login)
 	}
 	hdr := map[string]string{}
@@ -51,15 +51,25 @@ func TestJMeterImport(t *testing.T) {
 		t.Errorf("headers (plan + sampler scope) %v", hdr)
 	}
 	list := find(b, "shoppers/list-products")
-	if list.Query[0].Value != "{{$randomInt}}" || len(list.Assertions) != 2 || list.Assertions[0].Type != "status" ||
-		list.Assertions[1].Op != "exists" || list.Extract[0].From != "regex" {
-		t.Errorf("list %+v %+v %+v", list.Query, list.Assertions, list.Extract)
+	// Post-processors in JMeter order: extractors, then assertions.
+	post := list.Post
+	if list.Query[0].Value != "{{$randomInt}}" || len(post) != 3 || post[0].Extract == nil || post[0].Extract.From != "regex" ||
+		post[1].Assert == nil || post[1].Assert.Type != "status" || post[2].Assert.Op != "exists" {
+		t.Errorf("list %+v %+v", list.Query, post)
+	}
+	// The group's constant timer and the sampler's Gaussian timer add up.
+	if th := list.Think; th == nil || th.Type != model.TimerGaussian || th.Delay != "600ms" || th.Range != "50ms" {
+		t.Errorf("list think %+v", list.Think)
+	}
+	if len(list.Pre) != 2 || list.Pre[0].Type != model.ProcVars || list.Pre[0].Vars[1].Value != "{{sku}}-eu" ||
+		list.Pre[1].Counter == nil || list.Pre[1].Counter.Var != "cartNo" || list.Pre[1].Counter.End != 99 || list.Pre[1].Counter.Format != "%03d" {
+		t.Errorf("list pre %+v", list.Pre)
 	}
 	add := find(b, "shoppers/add-to-cart")
 	if add.URL != "{{baseUrl}}/api/cart/{{productId}}" || add.Body.Type != model.BodyForm || add.Headers[len(add.Headers)-1].Value != "Bearer {{token}}" {
 		t.Errorf("add %+v", add)
 	}
-	if h := find(b, "health-checks/health"); h == nil || h.Assertions[0].Type != "duration" || h.Assertions[0].Op != "lte" {
+	if h := find(b, "health-checks/health"); h == nil || h.Post[0].Assert.Type != "duration" || h.Post[0].Assert.Op != "lte" || h.Think != nil {
 		t.Errorf("health %+v", h)
 	}
 	if find(b, "health-checks/disabled") != nil {
@@ -83,8 +93,9 @@ func TestJMeterImport(t *testing.T) {
 		t.Fatalf("flow %+v", flow)
 	}
 	grp := flow[1].Steps
-	if grp[0].Think == nil || grp[0].Think.Min.D().Milliseconds() != 500 || grp[1].Request == "" || grp[2].If == nil ||
-		grp[2].If.Expr != `productId != ""` || grp[2].If.Then[0].Loop.Count != 2 || len(grp[3].Weighted) != 2 {
+	// Timers live on the requests now, not as think steps.
+	if grp[0].Request == "" || grp[1].If == nil ||
+		grp[1].If.Expr != `productId != ""` || grp[1].If.Then[0].Loop.Count != 2 || len(grp[2].Weighted) != 2 {
 		t.Errorf("group steps %+v", grp)
 	}
 	health := plan.Scenarios["health_checks"]

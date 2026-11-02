@@ -48,7 +48,8 @@ type converter struct {
 type scope struct {
 	headers  []model.KeyValue
 	defaults *node
-	timers   []load.Think
+	timers   []model.Timer
+	pre      []model.Processor // user parameters, counters
 	asserts  []model.Assertion
 	extract  []model.Extractor
 	auth     *model.Auth
@@ -244,17 +245,14 @@ func (c *converter) config(it item, sc *scope) bool {
 	case "Arguments":
 		c.addVars(el)
 	case "ConstantTimer":
-		d := millis(c.number(el.prop("ConstantTimer.delay"), 0))
-		sc.timers = append(sc.timers, load.Think{Min: d, Max: d})
-	case "UniformRandomTimer":
-		off := c.number(el.prop("ConstantTimer.delay"), 0)
-		rng := c.number(el.prop("RandomTimer.range"), 0)
-		sc.timers = append(sc.timers, load.Think{Min: millis(off), Max: millis(off + rng)})
-	case "GaussianRandomTimer", "PoissonRandomTimer":
-		off := c.number(el.prop("ConstantTimer.delay"), 0)
-		dev := c.number(el.prop("RandomTimer.range"), 0)
-		sc.timers = append(sc.timers, load.Think{Min: millis(max(off-dev, 0)), Max: millis(off + dev)})
-		c.warn(c.where, "jmeter.timer", el.class()+" approximated as a uniform think time")
+		sc.timers = append(sc.timers, model.Timer{Type: model.TimerConstant, Delay: msString(c.number(el.prop("ConstantTimer.delay"), 0))})
+	case "UniformRandomTimer", "GaussianRandomTimer", "PoissonRandomTimer":
+		typ := map[string]string{"UniformRandomTimer": model.TimerUniform, "GaussianRandomTimer": model.TimerGaussian, "PoissonRandomTimer": model.TimerPoisson}[el.class()]
+		sc.timers = append(sc.timers, model.Timer{Type: typ, Delay: msString(c.number(el.prop("ConstantTimer.delay"), 0)), Range: msString(c.number(el.prop("RandomTimer.range"), 0))})
+	case "UserParameters":
+		c.userParameters(el, sc)
+	case "CounterConfig":
+		c.counter(el, sc)
 	case "ConstantThroughputTimer":
 		perMin := c.number(el.prop("throughput"), 0)
 		if perMin > 0 && (c.rps == 0 || perMin/60 < c.rps) {
@@ -308,7 +306,8 @@ func setHeader(hs []model.KeyValue, k, v string) []model.KeyValue {
 
 func (s scope) clone() scope {
 	s.headers = append([]model.KeyValue(nil), s.headers...)
-	s.timers = append([]load.Think(nil), s.timers...)
+	s.timers = append([]model.Timer(nil), s.timers...)
+	s.pre = append([]model.Processor(nil), s.pre...)
 	s.asserts = append([]model.Assertion(nil), s.asserts...)
 	s.extract = append([]model.Extractor(nil), s.extract...)
 	return s
@@ -609,8 +608,15 @@ func (c *converter) sampler(it item, outer scope) []load.Step {
 	r.URL = c.sampleURL(el, sc.defaults)
 	r.Headers = sc.headers
 	r.Auth = sc.auth
-	r.Assertions = sc.asserts
-	r.Extract = sc.extract
+	r.Think = c.timer(sc.timers, r.Name)
+	r.Pre = sc.pre
+	// JMeter runs post-processors (extractors) before assertions.
+	for i := range sc.extract {
+		r.Post = append(r.Post, model.Processor{Type: model.ProcExtract, Extract: &sc.extract[i]})
+	}
+	for i := range sc.asserts {
+		r.Post = append(r.Post, model.Processor{Type: model.ProcAssert, Assert: &sc.asserts[i]})
+	}
 
 	var args []node
 	if a := el.element("HTTPsampler.Arguments"); a != nil {
@@ -680,18 +686,91 @@ func (c *converter) sampler(it item, outer scope) []load.Step {
 	f := c.b.Folders[c.folder]
 	f.Order = append(f.Order, slug)
 
-	var steps []load.Step
-	if len(sc.timers) > 0 {
-		// JMeter runs every timer in scope before the sampler; their
-		// delays add up.
-		var total load.Think
-		for _, t := range sc.timers {
-			total.Min += t.Min
-			total.Max += t.Max
-		}
-		steps = append(steps, load.Step{Think: &total})
+	return []load.Step{{Request: importer.CollectionRef + rel, Name: r.Name}}
+}
+
+func msString(ms float64) string {
+	return strconv.FormatFloat(ms, 'f', -1, 64) + "ms"
+}
+
+func msOf(s string) float64 {
+	v, _ := strconv.ParseFloat(strings.TrimSuffix(s, "ms"), 64)
+	return v
+}
+
+// timer combines the timers in a sampler's scope into its think time.
+// JMeter runs every one before the sampler, so their delays add up; one
+// random timer keeps its distribution, several become a uniform spread.
+func (c *converter) timer(ts []model.Timer, name string) *model.Timer {
+	if len(ts) == 0 {
+		return nil
 	}
-	return append(steps, load.Step{Request: importer.CollectionRef + rel, Name: r.Name})
+	if len(ts) == 1 {
+		t := ts[0]
+		return &t
+	}
+	var delay, spread float64
+	var random []model.Timer
+	for _, t := range ts {
+		delay += msOf(t.Delay)
+		if t.Type != model.TimerConstant {
+			random = append(random, t)
+			spread += msOf(t.Range)
+		}
+	}
+	out := &model.Timer{Type: model.TimerConstant, Delay: msString(delay)}
+	switch {
+	case len(random) == 1:
+		out.Type, out.Range = random[0].Type, random[0].Range
+	case len(random) > 1:
+		out.Type, out.Range = model.TimerUniform, msString(spread)
+		c.warn(c.where, "jmeter.timer", fmt.Sprintf("%s has several random timers; combined into one uniform think time", name))
+	}
+	return out
+}
+
+// userParameters maps User Parameters to a set-variables pre-processor
+// (the first thread's values; JMeter cycles them per thread).
+func (c *converter) userParameters(el *node, sc *scope) {
+	var names []string
+	for _, n := range el.collection("UserParameters.names") {
+		names = append(names, n.Text)
+	}
+	threads := el.collection("UserParameters.thread_values")
+	if len(names) == 0 || len(threads) == 0 {
+		return
+	}
+	var kvs []model.KeyValue
+	for i, v := range threads[0].Children {
+		if i < len(names) && names[i] != "" {
+			kvs = append(kvs, model.KeyValue{Key: names[i], Value: c.value(v.Text)})
+		}
+	}
+	if len(threads) > 1 {
+		c.warn(c.where, "jmeter.userparams", fmt.Sprintf("User Parameters %q has values for %d threads; every VU uses the first set", el.name(), len(threads)))
+	}
+	sc.pre = append(sc.pre, model.Processor{Type: model.ProcVars, Name: el.name(), Vars: kvs})
+}
+
+// counter maps a Counter config element to a counter pre-processor.
+func (c *converter) counter(el *node, sc *scope) {
+	name := el.prop("CounterConfig.name")
+	if name == "" {
+		return
+	}
+	n := func(k string, def float64) int { return int(c.number(el.prop(k), def)) }
+	ctr := &model.Counter{Var: name, Start: n("CounterConfig.start", 1), Step: n("CounterConfig.incr", 1), End: n("CounterConfig.end", 0)}
+	if f := el.prop("CounterConfig.format"); f != "" {
+		if strings.Trim(f, "0") == "" {
+			ctr.Format = fmt.Sprintf("%%0%dd", len(f))
+		} else {
+			c.warn(c.where, "jmeter.counter", fmt.Sprintf("counter %s format %q isn't supported; plain numbers are used", name, f))
+		}
+	}
+	if !el.boolProp("CounterConfig.per_user") {
+		c.warn(c.where, "jmeter.counter", fmt.Sprintf("counter %s is shared by all threads in JMeter; Pyro counts per VU", name))
+	}
+	sc.pre = append(sc.pre, model.Processor{Type: model.ProcCounter, Name: el.name(), Counter: ctr})
 }
 
 func looksJSON(s string) bool {

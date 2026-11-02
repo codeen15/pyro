@@ -5,10 +5,12 @@ package runner
 
 import (
 	"context"
+	"math/rand/v2"
 	"time"
 
 	"github.com/codeen15/pyro/pkg/engine"
 	"github.com/codeen15/pyro/pkg/engine/model"
+	"github.com/codeen15/pyro/pkg/engine/process"
 	"github.com/codeen15/pyro/pkg/engine/script"
 	"github.com/codeen15/pyro/pkg/engine/vars"
 )
@@ -30,6 +32,8 @@ type Options struct {
 	Delay time.Duration
 	// Bail stops the run after the first failed request.
 	Bail bool
+	// Think waits each request's timer before it, as a load test would.
+	Think bool
 	// OnResult is called after every request (progress reporting).
 	OnResult func(ItemResult)
 }
@@ -85,6 +89,7 @@ func Run(ctx context.Context, e *engine.Engine, items []Item, opts Options) *Sum
 		return sum
 	}
 
+	rnd := rand.New(rand.NewPCG(uint64(time.Now().UnixNano()), 0))
 	byName := map[string]int{}
 	for i := len(items) - 1; i >= 0; i-- {
 		byName[items[i].Request.Name] = i
@@ -102,6 +107,16 @@ func Run(ctx context.Context, e *engine.Engine, items []Item, opts Options) *Sum
 				return sum
 			}
 			item := items[i]
+			if opts.Think {
+				if d := process.Sample(process.EffectiveTimer(item.Request, item.Chain), rnd); d > 0 {
+					select {
+					case <-time.After(d):
+					case <-ctx.Done():
+						sum.Stopped = "cancelled"
+						return sum
+					}
+				}
+			}
 			ir := runItem(ctx, e, rt, item, v, it)
 			sum.add(ir)
 			if opts.OnResult != nil {

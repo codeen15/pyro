@@ -44,6 +44,7 @@ type runBody struct {
 	Data        []map[string]string `json:"data,omitempty"`
 	DelayMS     int                 `json:"delayMs,omitempty"`
 	Bail        bool                `json:"bail,omitempty"`
+	Think       bool                `json:"think,omitempty"`
 }
 
 func (s *Server) startRun(w http.ResponseWriter, r *http.Request) {
@@ -56,7 +57,7 @@ func (s *Server) startRun(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	opts := runner.Options{Iterations: body.Iterations, Data: body.Data, Bail: body.Bail, Globals: s.ws.GlobalVars()}
+	opts := runner.Options{Iterations: body.Iterations, Data: body.Data, Bail: body.Bail, Think: body.Think, Globals: s.ws.GlobalVars()}
 	opts.Delay = msDuration(body.DelayMS)
 	if body.Environment != "" {
 		env, err := s.ws.ReadEnvironment(body.Environment)

@@ -56,6 +56,9 @@ auth:
 scripts:
   pre: "..."     # pm.*-compatible JS, runs before every request in scope
   post: "..."
+think: { type: uniform, delay: 1s, range: 2s }   # default timer for requests beneath
+pre:  [ { type: vars, vars: [ { key: tenant, value: acme } ] } ]   # processors around every request
+post: [ { type: assert, assert: { type: status, op: lt, value: "500" } } ]
 order: [auth, orders, checkout]   # optional run order of children (file/folder names)
 ```
 
@@ -108,7 +111,62 @@ and `graphql` uses `content` (the query) plus `variables` (a JSON string).
 
 Assertion `type`: `status`, `header`, `jsonpath`, `body`, `duration`.
 `op`: `eq`, `neq`, `lt`, `gt`, `contains`, `exists`, `matches`.
-Extractor `from`: `jsonpath`, `header`, `regex`, `status`.
+Extractor `from`: `jsonpath`, `header`, `regex`, `status`, `boundary` (the text between
+`left` and `right`), `xpath` (XPath 1.0 on an XML body; the first match's text).
+
+## Think time and pre/post processors
+JMeter-style timers and processors, on any request and on `collection.yaml` / `folder.yaml`:
+
+```yaml
+think: { type: gaussian, delay: 800ms, range: 200ms }
+pre:
+  - { type: counter, counter: { var: orderNo, start: 1, step: 1, end: 9999, format: "%05d" } }
+  - { type: vars, vars: [ { key: idem, value: "{{$guid}}" }, { key: ref, value: "ord-{{orderNo}}" } ] }
+  - { type: script, script: "pm.variables.set('ts', Date.now())" }
+post:
+  - { type: extract, extract: { var: orderId, from: jsonpath, path: "$.id" } }
+  - { type: extract, extract: { var: csrf, from: boundary, left: 'name="csrf" value="', right: '"' } }
+  - { type: assert, assert: { type: status, op: eq, value: "201" } }
+  - { type: plugin:hmac-var, options: { secret: "{{secret}}", header: X-Signature } }
+  - { type: script, name: Log slow orders, disabled: true, script: "..." }
+```
+
+**Timers** (`think`) run before the request in load tests, and in collection runs started with
+`--think` (or "Apply think time" in the UI). Manual sends never wait, and a timer's wait is never
+counted as response time. `delay` is the constant part and `range` the random part:
+
+| `type` | Wait |
+|---|---|
+| `constant` | `delay` |
+| `uniform` | `delay` + a random 0..`range` |
+| `gaussian` | `delay` + a normal deviation of `range` (never below 0) |
+| `poisson` | `delay` + a Poisson-distributed wait with mean `range` |
+| `none` | no wait, even if a folder or the collection sets a timer |
+
+Durations are Go-style (`300ms`, `1.5s`); a bare number is milliseconds. The request's own
+`think` wins, then the nearest folder's, then the collection's. A load test's `think` steps
+still add pauses between steps on top of request timers.
+
+**Processors** run in every mode (manual sends, collection runs and load tests):
+
+| `type` | Phase | Does |
+|---|---|---|
+| `script` | pre, post | pm.*-compatible JavaScript, like `scripts.pre` / `scripts.post` |
+| `vars` | pre, post | Sets each enabled key to its value in the run's variables; `{{vars}}` and `{{$functions}}` are resolved, in order (like JMeter's User Parameters) |
+| `counter` | pre | `var` = `start` on first use, then `+ step` (default 1) each time; wraps to `start` after passing `end` (0 = never); optional printf `format`. Counts per virtual user. |
+| `extract` | post | One extractor (fields as above) |
+| `assert` | post | One assertion (fields as above) |
+| `plugin:<id>` | per plugin | A processor from an installed plugin; `options` are its fields, variables resolved ([plugins.md](plugins.md)) |
+
+Order: before the request, each level from the collection through folders to the request runs
+its legacy `scripts.pre` and then its `pre` list, top to bottom. After the response, each
+level runs `scripts.post` and then its `post` list, and finally the request's legacy
+`assertions` and `extract`. A pre-processor that fails (a script error, an invalid processor
+or an unavailable plugin) stops the request, as in Postman. `disabled: true` keeps a
+processor without running it.
+
+`scripts`, `assertions` and `extract` still load and run. The editor shows them in the
+Pre/Post-processors lists and saves them in the `pre`/`post` form the first time you edit a list.
 
 ### WebSocket
 ```yaml

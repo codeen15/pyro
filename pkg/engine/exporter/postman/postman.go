@@ -144,7 +144,7 @@ func Export(b *importer.Bundle) ([]byte, *importer.Report, error) {
 	}{}
 	out.Info.Name, out.Info.Description, out.Info.Schema = b.Collection.Name, b.Collection.Description, schemaV21
 	out.Auth = x.auth("", b.Collection.Auth)
-	out.Event = x.events(b.Collection.Scripts, nil, nil, "")
+	out.Event = x.events(procs{b.Collection.Scripts, b.Collection.Pre, b.Collection.Post, b.Collection.Think, nil, nil}, "")
 	for _, v := range b.Collection.Variables {
 		pv := variable{Key: v.Key, Value: v.Value, Disabled: v.Disabled}
 		if v.Secret {
@@ -169,7 +169,7 @@ func Export(b *importer.Bundle) ([]byte, *importer.Report, error) {
 			}
 			f.Description = s.Description
 			f.Auth = x.auth(p, s.Auth)
-			f.Event = x.events(s.Scripts, nil, nil, p)
+			f.Event = x.events(procs{s.Scripts, s.Pre, s.Post, s.Think, nil, nil}, p)
 			if len(s.Variables) > 0 {
 				rep.Warn(p, "export.folder-variables", "Postman folders have no variables; they were left out")
 			}
@@ -266,7 +266,7 @@ func (x *exporter) request(p string, r *model.Request) *item {
 	}
 	pr.Body = x.body(p, r.Body)
 	pr.Auth = x.auth(p, r.Auth)
-	it := &item{Name: r.Name, Request: pr, Event: x.events(r.Scripts, r.Assertions, r.Extract, p)}
+	it := &item{Name: r.Name, Request: pr, Event: x.events(procs{r.Scripts, r.Pre, r.Post, r.Think, r.Assertions, r.Extract}, p)}
 	for _, ex := range r.Examples {
 		rp := resp{Name: ex.Name, OriginalRequest: pr, Code: ex.Status, Status: http.StatusText(ex.Status), Header: []kv{}, Body: ex.Body}
 		for _, h := range ex.Headers {
@@ -389,10 +389,20 @@ func (x *exporter) auth(p string, a *model.Auth) *auth {
 }
 
 // events converts scripts, plus assertions and extractors as test code.
-func (x *exporter) events(s *model.Scripts, as []model.Assertion, ex []model.Extractor, p string) []event {
+// procs is everything that becomes a level's Postman scripts.
+type procs struct {
+	scripts   *model.Scripts
+	pre, post []model.Processor
+	think     *model.Timer
+	as        []model.Assertion
+	ex        []model.Extractor
+}
+
+func (x *exporter) events(l procs, p string) []event {
 	var out []event
-	add := func(listen, code string) {
-		if strings.TrimSpace(code) == "" {
+	add := func(listen string, parts []string) {
+		code := strings.TrimSpace(strings.Join(parts, "\n\n"))
+		if code == "" {
 			return
 		}
 		e := event{Listen: listen}
@@ -400,18 +410,85 @@ func (x *exporter) events(s *model.Scripts, as []model.Assertion, ex []model.Ext
 		e.Script.Exec = strings.Split(code, "\n")
 		out = append(out, e)
 	}
-	pre, post := "", ""
-	if s != nil {
-		pre, post = s.Pre, s.Post
+	var pre, post []string
+	if l.scripts != nil {
+		pre, post = []string{l.scripts.Pre}, []string{l.scripts.Post}
 	}
-	if conv := x.checks(as, ex, p); conv != "" {
-		if post != "" {
-			post += "\n\n"
+	if l.think != nil && l.think.Type != "" && l.think.Type != "none" {
+		x.rep.Warn(p, "export.think", "think time has no Postman equivalent; left out")
+	}
+	pre = append(pre, x.processors(l.pre, p)...)
+	// Postman runs one test script: converted scripts and variables first,
+	// then every assertion and extractor.
+	as, ex := l.as, l.ex
+	for _, pr := range l.post {
+		if pr.Disabled {
+			continue
 		}
-		post += conv
+		switch {
+		case pr.Type == model.ProcAssert && pr.Assert != nil:
+			as = append(as, *pr.Assert)
+		case pr.Type == model.ProcExtract && pr.Extract != nil:
+			ex = append(ex, *pr.Extract)
+		default:
+			post = append(post, x.processors([]model.Processor{pr}, p)...)
+		}
 	}
+	post = append(post, x.checks(as, ex, p))
 	add("prerequest", pre)
 	add("test", post)
+	return out
+}
+
+var padFormat = regexp.MustCompile(`^%0(\d+)d$`)
+
+// processors converts scripts, variables and counters to pm.* code.
+func (x *exporter) processors(list []model.Processor, p string) []string {
+	var out []string
+	for _, pr := range list {
+		if pr.Disabled {
+			continue
+		}
+		switch pr.Type {
+		case model.ProcScript:
+			out = append(out, pr.Script)
+		case model.ProcVars:
+			var b strings.Builder
+			for _, kv := range pr.Vars {
+				if !kv.Disabled && kv.Key != "" {
+					fmt.Fprintf(&b, "pm.variables.set(%s, pm.variables.replaceIn(%s));\n", js(kv.Key), js(kv.Value))
+				}
+			}
+			out = append(out, b.String())
+		case model.ProcCounter:
+			c := pr.Counter
+			if c == nil || c.Var == "" {
+				continue
+			}
+			step := c.Step
+			if step == 0 {
+				step = 1
+			}
+			val := "String(n)"
+			if m := padFormat.FindStringSubmatch(c.Format); m != nil {
+				val = fmt.Sprintf("String(n).padStart(%s, \"0\")", m[1])
+			} else if c.Format != "" {
+				x.rep.Warn(p, "export.counter", fmt.Sprintf("counter format %q can't be converted; the plain number is used", c.Format))
+			}
+			wrap := ""
+			if c.End != 0 {
+				cmp := ">"
+				if step < 0 {
+					cmp = "<"
+				}
+				wrap = fmt.Sprintf(" if (n %s %d) n = %d;", cmp, c.End, c.Start)
+			}
+			out = append(out, fmt.Sprintf("{ // counter %[1]s\n  const cur = pm.variables.get(%[2]s);\n  let n = cur === undefined ? %[3]d : Number(cur) + %[4]d;%[5]s\n  pm.variables.set(%[2]s, String(n));\n  pm.variables.set(%[1]s, %[6]s);\n}",
+				js(c.Var), js("__counter."+c.Var), c.Start, step, wrap, val))
+		default:
+			x.rep.Warn(p, "export.processor", fmt.Sprintf("processor %s has no Postman equivalent; left out", pr.Type))
+		}
+	}
 	return out
 }
 

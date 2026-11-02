@@ -4,13 +4,13 @@ import { Alert, Button, Checkbox, Input, Skeleton, Tabs, Tooltip } from "antd";
 import { Check, Eye, EyeOff, Plus, Save, Trash2 } from "../icons";
 import { api, type CollectionSettings, type Variable } from "../api";
 import { AuthEditor } from "./RequestEditor";
-import { ScriptsEditor } from "./TestsEditor";
+import { ProcessorList, TimerEditor, postList, preList, setPost, setPre } from "./Processors";
 import { MockPanel } from "./Mock";
 
 // Settings a collection or folder passes down to its requests: variables,
-// auth and scripts (collection.yaml / folder.yaml).
+// auth, think time and pre/post processors (collection.yaml / folder.yaml).
 
-type Tab = "overview" | "variables" | "auth" | "scripts" | "mock";
+type Tab = "overview" | "variables" | "auth" | "pre" | "post" | "mock";
 
 export function SettingsPage({ path }: { path: string }) {
   const qc = useQueryClient();
@@ -59,11 +59,14 @@ export function SettingsPage({ path }: { path: string }) {
     }
   };
 
+  const pre = preList(c);
+  const post = postList(c);
   const tabs: { id: Tab; label: string; count?: number }[] = [
     { id: "overview", label: "Overview" },
     { id: "variables", label: "Variables", count: c.variables?.length },
     { id: "auth", label: "Auth", count: c.auth ? 1 : 0 },
-    { id: "scripts", label: "Scripts", count: (c.scripts?.pre?.trim() ? 1 : 0) + (c.scripts?.post?.trim() ? 1 : 0) },
+    { id: "pre", label: "Pre-processors", count: pre.length + (c.think ? 1 : 0) },
+    { id: "post", label: "Post-processors", count: post.length },
   ];
   if (isCollection) tabs.push({ id: "mock", label: "Mock server" });
 
@@ -122,11 +125,28 @@ export function SettingsPage({ path }: { path: string }) {
               <AuthEditor auth={c.auth} onChange={(auth) => edit({ auth })} />
             </>
           )}
-          {tab === "scripts" && (
-            <>
-              <p className="muted small">Run before (pre-request) and after (tests) every request below, outermost first.</p>
-              <ScriptsEditor scripts={c.scripts} onChange={(scripts) => edit({ scripts })} />
-            </>
+          {tab === "pre" && (
+            <div className="proc-tab">
+              <section>
+                <h3 className="sub-head">Default think time</h3>
+                <p className="muted small">
+                  For every request {isCollection ? "in this collection" : "in this folder"} that doesn't set its own; a nearer folder's wins. Load tests and opted-in collection runs only.
+                </p>
+                <TimerEditor value={c.think} onChange={(think) => edit({ think })} inheritLabel={isCollection ? "No default" : "Inherit"} target="each request" />
+              </section>
+              <section>
+                <h3 className="sub-head">Pre-processors</h3>
+                <ProcessorList phase="pre" items={pre} onChange={(items) => edit(setPre(c, items))} />
+              </section>
+            </div>
+          )}
+          {tab === "post" && (
+            <div className="proc-tab">
+              <section>
+                <h3 className="sub-head">Post-processors</h3>
+                <ProcessorList phase="post" items={post} onChange={(items) => edit(setPost(c, items))} />
+              </section>
+            </div>
           )}
           {tab === "mock" && <MockPanel slug={path} />}
         </div>

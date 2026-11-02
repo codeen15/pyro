@@ -2,14 +2,14 @@
 
 Pyro is an API client (REST, WebSocket, Socket.IO, Postman import) and load-testing
 tool (stress, spike, soak, concurrency) with WASM plugins. A single Go binary runs the
-engine and serves a React web UI on localhost. **Current phase: 10 (JMeter import, script steps) done; next: push, check CI, tag v0.1.0**
+engine and serves a React web UI on localhost. **Current phase: 12 (think time, pre/post processors) done; next: push, check CI, tag v0.1.0**
 (see `docs/roadmap.md`). Product context: `PRODUCT.md`; visual system: `DESIGN.md`.
 
 ## Layout
 - `cmd/pyro`: CLI (cobra): `serve`, `init`, `import`, `export`, `run`, `load`, `agent`, `mock`, `docs`, `plugin`, `version`
 - `pkg/engine/...`: the engine, a library with no dependency on server/CLI/UI. `model/` is the shared data model;
-  `engine.go` is the send pipeline, `session.go` opens WS/SIO sessions; `vars/`, `auth/`, `check/` (assertions,
-  extractors), `script/` (goja + pm.* shim, vendored chai), `runner/`, `report/` (JUnit, JSON, load HTML),
+  `engine.go` is the send pipeline (pre-processors → resolve → auth → execute → post-processors), `session.go` opens WS/SIO sessions; `vars/`, `auth/`, `check/` (assertions,
+  extractors incl. boundary/XPath), `process/` (timers, set-variables and counter processors), `script/` (goja + pm.* shim, vendored chai), `runner/`, `report/` (JUnit, JSON, load HTML),
   `load/` (plans, executors, VUs, thresholds, script steps (`scripting.go`, goja with `pyro.*`), segments and workers for distributed runs), `metrics/` (HDR histograms,
   deltas), `agent/` (distributed load agents), `output/` (InfluxDB, Prometheus, NDJSON/CSV live outputs), `plugin/` (wazero host), `importer/{postman,openapi,har,curl,jmeter,auto}/`, `exporter/postman/`, `docs/` (HTML API reference), `mock/` (mock server from examples),
   `protocol/{httpdriver,wsdriver,sioclient}/`.

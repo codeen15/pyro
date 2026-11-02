@@ -12,11 +12,13 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/codeen15/pyro/pkg/engine/check"
 	"github.com/codeen15/pyro/pkg/engine/model"
 	"github.com/codeen15/pyro/pkg/engine/protocol"
 )
@@ -519,6 +521,90 @@ func (m *Manager) Sign(ctx context.Context, id string, req *model.Request, param
 		req.Headers, req.Query, req.URL = r.Request.Headers, r.Request.Query, r.Request.URL
 	}
 	return st.logs, nil
+}
+
+// ProcessInput is one processor call. Request is the request as it stands
+// (unresolved before it is sent, resolved after); Response is set after.
+type ProcessInput struct {
+	Phase    string // pre | post
+	Request  *model.Request
+	Response *protocol.Response
+	Vars     map[string]string
+	Options  map[string]string
+}
+
+// ProcessOutput is what a processor returned: variables to set, a
+// rewritten request (pre only, nil when unchanged), test results and logs.
+type ProcessOutput struct {
+	Vars    map[string]string
+	Request *model.Request
+	Tests   []check.Result
+	Logs    []Log
+}
+
+type wireResponse struct {
+	Status     int              `json:"status"`
+	StatusText string           `json:"statusText,omitempty"`
+	Headers    []model.KeyValue `json:"headers,omitempty"`
+	Body       []byte           `json:"body,omitempty"`
+	TimeMs     float64          `json:"timeMs"`
+}
+
+// Process runs a processor plugin.
+func (m *Manager) Process(ctx context.Context, id string, in ProcessInput) (ProcessOutput, error) {
+	l, ps, err := m.find(ctx, KindProcessor, id)
+	if err != nil {
+		return ProcessOutput{}, err
+	}
+	for _, p := range l.man.Provides {
+		if p.Kind == KindProcessor && p.ID == id && len(p.Phases) > 0 && !slices.Contains(p.Phases, in.Phase) {
+			return ProcessOutput{}, fmt.Errorf("processor %s doesn't run %s-request", id, in.Phase)
+		}
+	}
+	ctx, cancel := withTimeout(ctx)
+	defer cancel()
+	st := &callState{caps: l.man.Capabilities, plugin: l.man.Name, conns: map[int32]net.Conn{}}
+	msg := map[string]any{"op": "process", "id": id, "phase": in.Phase, "request": toWire(in.Request), "vars": in.Vars, "params": in.Options, "config": cfgOf(ps)}
+	if in.Response != nil {
+		msg["response"] = wireResponse{
+			Status: in.Response.Status, StatusText: in.Response.StatusText, Headers: in.Response.Headers, Body: in.Response.Body,
+			TimeMs: float64(in.Response.Timings.Total.Microseconds()) / 1000,
+		}
+	}
+	var r struct {
+		Vars    map[string]string `json:"vars"`
+		Request *wireRequest      `json:"request"`
+		Tests   []struct {
+			Name   string `json:"name"`
+			Passed bool   `json:"passed"`
+			Error  string `json:"error"`
+		} `json:"tests"`
+		Error string `json:"error"`
+	}
+	if err := l.pool.call(ctx, st, msg, &r); err != nil {
+		return ProcessOutput{Logs: st.logs}, err
+	}
+	out := ProcessOutput{Vars: r.Vars, Logs: st.logs}
+	if r.Error != "" {
+		return out, errors.New(r.Error)
+	}
+	for _, t := range r.Tests {
+		out.Tests = append(out.Tests, check.Result{Name: t.Name, Passed: t.Passed, Error: t.Error, Source: "plugin"})
+	}
+	if r.Request != nil && in.Phase == "pre" {
+		cp := *in.Request
+		cp.Method, cp.URL, cp.Headers, cp.Query = r.Request.Method, r.Request.URL, r.Request.Headers, r.Request.Query
+		if orig := toWire(in.Request).Body; r.Request.Body != orig && r.Request.Body != "" {
+			body := model.Body{Type: model.BodyText}
+			if cp.Body != nil {
+				body = *cp.Body
+			}
+			body.Content = r.Request.Body
+			cp.Body = &body
+		}
+		out.Request = &cp
+	}
+	return out, nil
 }
 
 func cfgOf(ps *pluginState) map[string]string {

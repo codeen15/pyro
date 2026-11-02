@@ -7,19 +7,19 @@ import { OAuth2Form, TokenPanel, type TokenContext } from "./OAuth2";
 import { api, type Auth, type Body, type KeyValue, type PyroRequest } from "../api";
 import { useApp } from "../store";
 import { KVEditor } from "./KVEditor";
-import { ScriptsEditor, TestsEditor } from "./TestsEditor";
+import { ProcessorList, TimerEditor, postList, preList, setPost, setPre } from "./Processors";
 import { FieldsForm, KindLabel, usePluginTypes } from "./Plugins";
 import { ExamplesEditor } from "./Examples";
 
 const METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];
-type Tab = "params" | "headers" | "body" | "options" | "auth" | "scripts" | "tests" | "examples";
+type Tab = "params" | "headers" | "body" | "options" | "auth" | "pre" | "post" | "examples";
 const TABS: { id: Tab; label: string }[] = [
   { id: "params", label: "Params" },
   { id: "headers", label: "Headers" },
   { id: "body", label: "Body" },
   { id: "auth", label: "Auth" },
-  { id: "scripts", label: "Scripts" },
-  { id: "tests", label: "Tests" },
+  { id: "pre", label: "Pre-processors" },
+  { id: "post", label: "Post-processors" },
   { id: "examples", label: "Examples" },
 ];
 // Plugin request types: the plugin's own fields replace params, and the
@@ -29,8 +29,8 @@ const PLUGIN_TABS: { id: Tab; label: string }[] = [
   { id: "options", label: "Options" },
   { id: "headers", label: "Headers" },
   { id: "auth", label: "Auth" },
-  { id: "scripts", label: "Scripts" },
-  { id: "tests", label: "Tests" },
+  { id: "pre", label: "Pre-processors" },
+  { id: "post", label: "Post-processors" },
 ];
 
 export function RequestEditor({ path, saved }: { path: string; saved: PyroRequest }) {
@@ -94,14 +94,16 @@ export function RequestEditor({ path, saved }: { path: string; saved: PyroReques
   const activeTab = tabs.some((t) => t.id === tab) ? tab : tabs[0].id;
 
 
+  const pre = preList(req);
+  const post = postList(req);
   const counts: Record<Tab, number> = {
     params: (req.query ?? []).filter((q) => !q.disabled).length,
     headers: (req.headers ?? []).filter((h) => !h.disabled).length,
     body: req.body && req.body.type !== "none" ? 1 : 0,
     auth: req.auth ? 1 : 0,
     options: Object.keys(req.options ?? {}).length,
-    scripts: (req.scripts?.pre?.trim() ? 1 : 0) + (req.scripts?.post?.trim() ? 1 : 0),
-    tests: (req.assertions?.length ?? 0) + (req.extract?.length ?? 0),
+    pre: pre.length + (req.think ? 1 : 0),
+    post: post.length,
     examples: req.examples?.length ?? 0,
   };
 
@@ -206,14 +208,26 @@ export function RequestEditor({ path, saved }: { path: string; saved: PyroReques
         )}
         {activeTab === "auth" && <AuthEditor auth={req.auth} onChange={(auth) => edit({ auth })} context={{ path, request: req }} />}
         {activeTab === "examples" && <ExamplesEditor examples={req.examples ?? []} onChange={(examples) => edit({ examples: examples.length ? examples : undefined })} />}
-        {activeTab === "scripts" && <ScriptsEditor scripts={req.scripts} onChange={(scripts) => edit({ scripts })} />}
-        {activeTab === "tests" && (
-          <TestsEditor
-            assertions={req.assertions ?? []}
-            extract={req.extract ?? []}
-            onAssertions={(assertions) => edit({ assertions })}
-            onExtract={(extract) => edit({ extract })}
-          />
+        {activeTab === "pre" && (
+          <div className="proc-tab">
+            <section>
+              <h3 className="sub-head">Think time</h3>
+              <p className="muted small">Load tests and opted-in collection runs; manual sends don't wait.</p>
+              <TimerEditor value={req.think} onChange={(think) => edit({ think })} inheritLabel="Inherit (folder/collection)" />
+            </section>
+            <section>
+              <h3 className="sub-head">Pre-processors</h3>
+              <ProcessorList phase="pre" items={pre} onChange={(items) => edit(setPre(req, items))} />
+            </section>
+          </div>
+        )}
+        {activeTab === "post" && (
+          <div className="proc-tab">
+            <section>
+              <h3 className="sub-head">Post-processors</h3>
+              <ProcessorList phase="post" items={post} onChange={(items) => edit(setPost(req, items))} />
+            </section>
+          </div>
         )}
       </div>
     </section>

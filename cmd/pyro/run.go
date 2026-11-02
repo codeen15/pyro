@@ -26,7 +26,7 @@ func runCmd() *cobra.Command {
 		wsDir, envName, dataFile, junitOut, jsonOut string
 		iterations                                  int
 		delay, timeout                              time.Duration
-		bail, insecure, quiet                       bool
+		bail, insecure, quiet, think                bool
 	)
 	cmd := &cobra.Command{
 		Use:   "run <collection | folder | request>",
@@ -44,7 +44,7 @@ func runCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			opts := runner.Options{Iterations: iterations, Delay: delay, Bail: bail, Globals: ws.GlobalVars()}
+			opts := runner.Options{Iterations: iterations, Delay: delay, Bail: bail, Think: think, Globals: ws.GlobalVars()}
 			if envName != "" {
 				if opts.Environment, err = ws.ReadEnvironment(envName); err != nil {
 					return fmt.Errorf("environment %q: %w", envName, err)
@@ -106,6 +106,7 @@ func runCmd() *cobra.Command {
 	f.DurationVar(&delay, "delay", 0, "wait between requests, e.g. 200ms")
 	f.DurationVar(&timeout, "timeout", 30*time.Second, "per-request timeout")
 	f.BoolVar(&bail, "bail", false, "stop at the first failed request")
+	f.BoolVar(&think, "think", false, "wait each request's think time (timer), as a load test would")
 	f.BoolVar(&insecure, "insecure", false, "skip TLS certificate verification")
 	f.BoolVarP(&quiet, "quiet", "q", false, "only print failures and the summary")
 	f.StringVar(&junitOut, "junit", "", "write a JUnit XML report to this file")

@@ -57,8 +57,13 @@ export interface PyroRequest {
   auth?: Auth;
   options?: Record<string, string>;
   scripts?: { pre?: string; post?: string };
+  /** Older form of post-processors; still run, after `post`. */
   assertions?: Assertion[];
   extract?: Extractor[];
+  /** Think time before the request in load tests; unset inherits the folder/collection's. */
+  think?: Timer;
+  pre?: Processor[];
+  post?: Processor[];
   messages?: SavedMessage[];
   socketio?: SocketIOConfig;
   examples?: Example[];
@@ -81,8 +86,44 @@ export interface Assertion {
 
 export interface Extractor {
   var: string;
+  /** jsonpath | header | regex | status | boundary | xpath */
   from: string;
   path?: string;
+  /** boundary: text between left and right. */
+  left?: string;
+  right?: string;
+}
+
+/** JMeter-style timer. delay is the constant part; range the random part
+ * (uniform: +0..range, gaussian: ±deviation range, poisson: mean range).
+ * Durations like "300ms". type "none" turns off an inherited timer. */
+export interface Timer {
+  type: "constant" | "uniform" | "gaussian" | "poisson" | "none";
+  delay?: string;
+  range?: string;
+}
+
+/** A pre or post processor. Pre: script | vars | counter | plugin:<id>.
+ * Post: script | extract | assert | vars | plugin:<id>. */
+export interface Processor {
+  type: string;
+  name?: string;
+  disabled?: boolean;
+  script?: string;
+  vars?: KeyValue[];
+  counter?: Counter;
+  extract?: Extractor;
+  assert?: Assertion;
+  options?: Record<string, string>;
+}
+
+export interface Counter {
+  var: string;
+  start?: number;
+  step?: number;
+  end?: number;
+  /** printf-style, e.g. "%05d" */
+  format?: string;
 }
 
 export interface SavedMessage {
@@ -299,6 +340,9 @@ export interface CollectionSettings {
   variables?: Variable[];
   auth?: Auth;
   scripts?: { pre?: string; post?: string };
+  think?: Timer;
+  pre?: Processor[];
+  post?: Processor[];
   order?: string[];
 }
 
@@ -512,9 +556,11 @@ export interface PluginField {
 }
 
 export interface PluginProvide {
-  kind: "protocol" | "auth";
+  kind: "protocol" | "auth" | "processor";
   id: string;
   title?: string;
+  /** processor only: where it can run (default both). */
+  phases?: ("pre" | "post")[];
   urlPlaceholder?: string;
   fields?: PluginField[];
 }
@@ -666,7 +712,7 @@ export const api = {
   sessionSend: (id: string, m: { data: string; binary?: boolean; event?: string; ack?: boolean }) =>
     call<{ message: SessionMessage; unresolved?: string[] }>("POST", `/sessions/${id}/send`, m),
   closeSession: (id: string) => call<void>("DELETE", `/sessions/${id}`),
-  startRun: (body: { path: string; environment?: string; iterations?: number; data?: Record<string, string>[]; delayMs?: number; bail?: boolean }) =>
+  startRun: (body: { path: string; environment?: string; iterations?: number; data?: Record<string, string>[]; delayMs?: number; bail?: boolean; think?: boolean }) =>
     call<RunView>("POST", "/runs", body),
   run: (id: string) => call<RunView>("GET", `/runs/${id}`),
   cancelRun: (id: string) => call<void>("DELETE", `/runs/${id}`),

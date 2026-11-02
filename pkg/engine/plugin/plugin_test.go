@@ -106,7 +106,7 @@ func tcpReq(addr, body string, opts map[string]string) *model.Request {
 
 func TestManifestValidation(t *testing.T) {
 	_, err := ParseManifest([]byte("name: Bad Name\nversion: 1\nabi: 2\nmodule: ../x.wasm\nprovides: [{kind: reporter, id: X!}]\ncapabilities: {network: [nope]}\n"))
-	for _, want := range []string{"name must", "version must", "abi 2", "module must", "kind must be protocol or auth", "invalid", "must be host:port"} {
+	for _, want := range []string{"name must", "version must", "abi 2", "module must", "kind must be protocol, auth or processor", "invalid", "must be host:port"} {
 		if err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("missing %q in %v", want, err)
 		}
