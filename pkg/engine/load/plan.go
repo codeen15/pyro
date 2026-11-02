@@ -23,6 +23,10 @@ type Plan struct {
 	Environment string               `yaml:"environment,omitempty" json:"environment,omitempty"`
 	Scenarios   map[string]*Scenario `yaml:"scenarios" json:"scenarios"`
 	Thresholds  map[string]Criteria  `yaml:"thresholds,omitempty" json:"thresholds,omitempty"`
+	// Hosts lists extra hosts script steps may call with pyro.http (beyond
+	// those found in request URLs and literal script URLs); all of them go
+	// through the load-test host confirmation.
+	Hosts []string `yaml:"hosts,omitempty" json:"hosts,omitempty"`
 	// MaxRPS caps how many requests start per second across all scenarios
 	// and VUs (0 = no cap).
 	MaxRPS float64 `yaml:"maxRPS,omitempty" json:"maxRPS,omitempty"`
@@ -83,6 +87,11 @@ type Step struct {
 	Send    []model.Message `yaml:"send,omitempty" json:"send,omitempty"`
 
 	Think *Think `yaml:"think,omitempty" json:"think,omitempty"`
+
+	// Script is JavaScript run with the pyro.* API; ScriptFile names a
+	// workspace file holding it (read when the test is prepared).
+	Script     string `yaml:"script,omitempty" json:"script,omitempty"`
+	ScriptFile string `yaml:"scriptFile,omitempty" json:"scriptFile,omitempty"`
 
 	Group string `yaml:"group,omitempty" json:"group,omitempty"`
 	Steps []Step `yaml:"steps,omitempty" json:"steps,omitempty"`
@@ -328,16 +337,27 @@ func validateSteps(steps []Step, where string, exists func(string) bool, add fun
 	for i, st := range steps {
 		at := fmt.Sprintf("%s step %d", where, i+1)
 		kinds := 0
-		for _, set := range []bool{st.Request != "", st.Think != nil, st.Group != "", st.Loop != nil, st.If != nil, len(st.Weighted) > 0} {
+		for _, set := range []bool{st.Request != "", st.Think != nil, st.Group != "", st.Loop != nil, st.If != nil, len(st.Weighted) > 0, st.Script != "" || st.ScriptFile != ""} {
 			if set {
 				kinds++
 			}
 		}
 		if kinds != 1 {
-			add("%s: needs exactly one of request, think, group, loop, if, weighted", at)
+			add("%s: needs exactly one of request, think, group, loop, if, weighted, script", at)
 			continue
 		}
 		switch {
+		case st.Script != "" && st.ScriptFile != "":
+			add("%s: use script or scriptFile, not both", at)
+		case st.Script != "":
+			if _, err := compileScript(st.Script); err != nil {
+				add("%s: script: %v", at, err)
+			}
+			for _, r := range scriptRequests(st.Script) {
+				if exists != nil && !exists(r) {
+					add("%s: script calls pyro.request(%q), which doesn't exist", at, r)
+				}
+			}
 		case st.Request != "":
 			if exists != nil && !exists(st.Request) {
 				add("%s: no request at %q", at, st.Request)

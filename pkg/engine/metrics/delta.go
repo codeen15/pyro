@@ -13,6 +13,9 @@ type SeriesDelta struct {
 	Count  int64   `json:"n"`
 	Sum    float64 `json:"s,omitempty"`
 	Trues  int64   `json:"r,omitempty"`
+	// Type is set for custom (script-defined) metrics, so the controller
+	// merges them with the right type.
+	Type string `json:"y,omitempty"`
 	// Buckets are a trend's non-empty HDR buckets as [value µs, count]
 	// pairs; value is the bucket's lowest equivalent value, so merging is
 	// lossless.
@@ -39,6 +42,9 @@ func (a *Aggregator) TakeDelta() []SeriesDelta {
 			continue
 		}
 		d := SeriesDelta{Metric: k.Metric, Tags: k.Tags, Count: s.count, Sum: s.sum, Trues: s.trues}
+		if _, builtin := Builtin[k.Metric]; !builtin {
+			d.Type = s.typ.String()
+		}
 		if s.hist != nil {
 			for i, c := range s.hist.Export().Counts {
 				if c != 0 {
@@ -73,6 +79,9 @@ func (a *Aggregator) Merge(deltas []SeriesDelta) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	for _, d := range deltas {
+		if d.Type != "" {
+			_ = Register(d.Metric, parseType(d.Type))
+		}
 		t := TypeOf(d.Metric)
 		if t == Gauge || d.Count == 0 {
 			continue
@@ -103,3 +112,15 @@ func (a *Aggregator) Merge(deltas []SeriesDelta) {
 
 // Since is when the aggregator started (for tests and controllers).
 func (a *Aggregator) Since() time.Time { return a.start }
+
+func parseType(s string) Type {
+	switch s {
+	case "counter":
+		return Counter
+	case "rate":
+		return Rate
+	case "gauge":
+		return Gauge
+	}
+	return Trend
+}

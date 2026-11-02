@@ -83,6 +83,47 @@ thresholds:
 | `group: <name>` + `steps` | Named transaction. Its duration is recorded as `group_duration{group:<name>}`. |
 | `once: true` | Run this step only on the VU's first iteration. |
 
+## Script steps
+For logic the flow DSL can't express, a step can run JavaScript with a `pyro.*` API:
+```yaml
+flow:
+  - request: shop/login
+  - script: |
+      const list = pyro.request("shop/products", { name: "list products" });
+      const items = list.json().items;
+      pyro.check(list, { "has items": (r) => items.length > 0 });
+      pyro.group("checkout", () => {
+        const order = pyro.http.post(pyro.vars.get("baseUrl") + "/orders", { sku: items[0].sku });
+        pyro.metrics.trend("order_ms").add(order.timings.total);
+        if (order.status !== 201) pyro.fail("order failed: " + order.status);
+      });
+      pyro.sleep(1 + Math.random());
+  - scriptFile: scripts/browse.js     # or keep the code in a workspace file
+```
+
+| API | What it does |
+|---|---|
+| `pyro.request(path, {name, vars})` | Sends a workspace request through the full pipeline (its scripts, auth, assertions, extractors) and returns `{ok, status, statusText, headers, body, json(), timings: {total, waiting}, passed, error}`. Use a literal path: requests are resolved before the test. |
+| `pyro.http.get(url, opts)`, `.post(url, body, opts)`, `.put`, `.patch`, `.del`, `.head`, `.request(method, url, body, opts)` | Ad-hoc requests. Objects in `body` are sent as JSON. `opts`: `{name, headers}`. Only hosts the test was confirmed for (see below) may be called. |
+| `pyro.check(value, {name: fn})` | Records each check in the `checks` rate (tagged by name); returns whether all passed. |
+| `pyro.group(name, fn)` | Tags what `fn` sends with the group; records `group_duration`. |
+| `pyro.sleep(seconds)` | Think time (stops promptly when the test stops). |
+| `pyro.metrics.counter(name).add(n)`, `.trend(name).add(ms)`, `.rate(name).add(bool)` | Custom metrics, usable in thresholds and merged across agents. |
+| `pyro.vars.get(name)`, `pyro.vars.set(name, value)` | The VU's variables (shared with request steps, `if` and `loop`). |
+| `pyro.vu.id`, `pyro.vu.iteration`, `pyro.scenario`, `pyro.data` | The VU, its iteration, the scenario and the current data row. |
+| `pyro.fail(message)` | Stops the script and counts the message as an error. |
+
+Requests made from scripts are measured exactly like request steps (`http_req_*`, the
+requests table) and respect `maxRPS`. Each VU has its own JavaScript runtime, and scripts
+are compiled once per test, so a script step costs little more than the requests it makes.
+A script that throws is counted as an error and the VU carries on. An endless loop is
+interrupted when the test stops.
+
+**Hosts.** `pyro.http` may only call hosts covered by the load test's host confirmation:
+hosts found in request URLs, literal URLs in scripts (`pyro.http.get("https://…")`), the
+plan's `hosts:` list, `loadAllowHosts` and loopback. URLs built at run time to other hosts are
+refused; list those hosts under `hosts:` so they're confirmed up front.
+
 ## Data feeders
 - File types: CSV (header row = variable names) and JSON (array of objects).
 - `mode: shared` (every VU reads the next row from a global cursor), `per-vu` (each VU gets its own row, chosen by VU id), `random`.

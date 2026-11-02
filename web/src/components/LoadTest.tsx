@@ -650,8 +650,41 @@ function FlowEditor({
           const m = it as YAMLMap;
           const request = m.get?.("request") as string | undefined;
           const think = m.get?.("think");
+          const script = m.get?.("script") as string | undefined;
+          const scriptFile = m.get?.("scriptFile") as string | undefined;
           let body: React.ReactNode;
-          if (request !== undefined) {
+          if (script !== undefined) {
+            body = (
+              <div className="script-step">
+                <span className="step-kind">Script</span>
+                <textarea
+                  className="code-input mono"
+                  value={script}
+                  onChange={(e) => update((d) => d.setIn([...path, i, "script"], e.target.value))}
+                  spellCheck={false}
+                  rows={Math.min(14, Math.max(4, script.split("\n").length + 1))}
+                  aria-label="Script"
+                />
+                <span className="muted small">
+                  <code>pyro.request(path)</code>, <code>pyro.http.get/post(url)</code>, <code>pyro.check</code>, <code>pyro.sleep</code>,{" "}
+                  <code>pyro.group</code>, <code>pyro.metrics</code>, <code>pyro.vars</code>; see docs/load-engine.md.
+                </span>
+              </div>
+            );
+          } else if (scriptFile !== undefined) {
+            body = (
+              <>
+                <span className="step-kind">Script</span>
+                <input
+                  className="cell mono wide"
+                  value={scriptFile}
+                  onChange={(e) => update((d) => d.setIn([...path, i, "scriptFile"], e.target.value))}
+                  aria-label="Script file"
+                />
+                <span className="muted small">file in the workspace</span>
+              </>
+            );
+          } else if (request !== undefined) {
             const known = requests.some((r) => r.path === request);
             body = (
               <>
@@ -818,6 +851,20 @@ function FlowEditor({
           }
         >
           <Plus size={13} /> Think time
+        </button>
+        <button
+          className="btn ghost small"
+          onClick={() =>
+            update((d) => {
+              const step = d.createNode({
+                script: `// Runs once per iteration, for every VU.\nconst res = pyro.request("${requests[0]?.path ?? "collection/request"}");\npyro.check(res, { "status is 2xx": (r) => r.status < 300 });\n`,
+              });
+              if (isSeq(d.getIn(path))) d.addIn(path, step);
+              else d.setIn(path, d.createNode([step.toJSON()]));
+            })
+          }
+        >
+          <Plus size={13} /> Script
         </button>
       </div>
     </div>

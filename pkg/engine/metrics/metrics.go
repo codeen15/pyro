@@ -6,6 +6,7 @@
 package metrics
 
 import (
+	"fmt"
 	"math"
 	"sort"
 	"sync"
@@ -61,7 +62,25 @@ func TypeOf(name string) Type {
 	if t, ok := Builtin[name]; ok {
 		return t
 	}
+	if t, ok := custom.Load(name); ok {
+		return t.(Type)
+	}
 	return Trend
+}
+
+var custom sync.Map // name -> Type, for metrics defined by scripts
+
+// Register declares a custom metric's type (scripts call it before their
+// first sample). Built-in names can't be redefined, and a custom name keeps
+// its first type.
+func Register(name string, t Type) error {
+	if _, ok := Builtin[name]; ok {
+		return fmt.Errorf("%s is a built-in metric", name)
+	}
+	if prev, loaded := custom.LoadOrStore(name, t); loaded && prev.(Type) != t {
+		return fmt.Errorf("metric %s is already a %s", name, prev.(Type))
+	}
+	return nil
 }
 
 // Tags label a sample. Comparable, so it can key a map.

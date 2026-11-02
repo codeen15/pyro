@@ -57,7 +57,7 @@ func loadCmd() *cobra.Command {
 				envName = plan.Environment
 			}
 			opts := load.Options{
-				Resolve: ws.Target, LoadData: ws.LoadData, MaxVUs: maxVUs, FileRoot: ws.Root, AllowFilesOutsideRoot: ws.Meta.AllowFilesOutsideWorkspace, Globals: ws.GlobalVars(), InsecureTLS: insecure,
+				Resolve: ws.Target, LoadData: ws.LoadData, MaxVUs: maxVUs, FileRoot: ws.Root, AllowFilesOutsideRoot: ws.Meta.AllowFilesOutsideWorkspace, Globals: ws.GlobalVars(), AllowHosts: ws.Meta.LoadAllowHosts, InsecureTLS: insecure,
 				MaxRPS: effectiveCap(ws.Meta.LoadMaxRPS, maxRPS),
 			}
 			if opts.Plugins = openPlugins(); opts.Plugins != nil {
@@ -205,6 +205,9 @@ func readPlan(ws *store.Workspace, arg string) (*load.Plan, error) {
 		}
 		p, err := load.ParsePlan(data, ws.RequestExists)
 		if err != nil {
+			return nil, err
+		}
+		if err := load.InlineScripts(p, ws.ReadFile); err != nil {
 			return nil, err
 		}
 		if p.Name == "" {

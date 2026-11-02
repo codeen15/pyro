@@ -3,6 +3,7 @@ package load
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/url"
 	"sort"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/dop251/goja"
 	"github.com/expr-lang/expr/vm"
 
 	"github.com/codeen15/pyro/pkg/engine"
@@ -41,6 +43,9 @@ type Options struct {
 	InsecureTLS           bool
 	// Plugins provides plugin request and auth types.
 	Plugins *plugin.Manager
+	// AllowHosts are hosts script steps may call besides the plan's own
+	// (the workspace's loadAllowHosts).
+	AllowHosts []string
 	// MaxRPS caps request starts per second (with the plan's maxRPS, the
 	// lower applies; 0 = no cap). Workspaces set it from loadMaxRPS.
 	MaxRPS float64
@@ -137,6 +142,8 @@ type Test struct {
 	feeders  map[string]*feeder
 	workers  []*workerState
 	reported chan struct{} // a worker sent a report
+	scripts  map[*Step]*goja.Program
+	allowed  map[string]bool // hosts pyro.http may call
 	cpu      *cpuSampler
 	oauth    *auth.OAuth2 // shared by every VU, so a token is fetched once
 	pace     *pacer       // the requests-per-second cap, if any
@@ -184,6 +191,7 @@ func Prepare(p *Plan, opts Options) (*Test, error) {
 	t := &Test{
 		plan: p, opts: opts, agg: metrics.NewAggregator(), targets: map[string]Target{}, scripted: map[string]bool{},
 		ths: compileThresholds(p), errors: newErrorCounter(), done: make(chan struct{}), reported: make(chan struct{}, 1),
+		scripts: map[*Step]*goja.Program{},
 	}
 	t.oauth = auth.NewOAuth2()
 	t.pace = newPacer(effectiveRPS(p.MaxRPS, opts.MaxRPS))
@@ -222,6 +230,11 @@ func Prepare(p *Plan, opts Options) (*Test, error) {
 		}
 	}
 
+	t.allowed = map[string]bool{}
+	for _, h := range append(Hosts(p, opts.Resolve, opts.Environment, opts.Globals), opts.AllowHosts...) {
+		t.allowed[strings.ToLower(h)] = true
+	}
+
 	t.soft, t.softStop = context.WithCancel(context.Background())
 	t.hard, t.hardStop = context.WithCancel(context.Background())
 	if len(opts.Workers) > 0 {
@@ -258,16 +271,31 @@ func (t *Test) Close() {
 }
 
 func (t *Test) resolveSteps(steps []Step) error {
-	for _, st := range steps {
+	for i := range steps {
+		st := &steps[i] // VUs key compiled scripts by these same pointers
+		paths := scriptRequests(st.Script)
 		if st.Request != "" {
-			if _, ok := t.targets[st.Request]; !ok {
-				target, err := t.opts.Resolve(st.Request)
+			paths = append(paths, st.Request)
+		}
+		for _, p := range paths {
+			if _, ok := t.targets[p]; !ok {
+				target, err := t.opts.Resolve(p)
 				if err != nil {
-					return fmt.Errorf("request %s: %w", st.Request, err)
+					return fmt.Errorf("request %s: %w", p, err)
 				}
-				t.targets[st.Request] = target
-				t.scripted[st.Request] = hasScripts(target)
+				t.targets[p] = target
+				t.scripted[p] = hasScripts(target)
 			}
+		}
+		if st.ScriptFile != "" {
+			return fmt.Errorf("script file %s wasn't loaded (load plans with the workspace)", st.ScriptFile)
+		}
+		if st.Script != "" {
+			prog, err := compileScript(st.Script)
+			if err != nil {
+				return fmt.Errorf("script: %w", err)
+			}
+			t.scripts[st] = prog
 		}
 		children := [][]Step{st.Steps}
 		if st.Loop != nil {
@@ -533,8 +561,15 @@ func Hosts(p *Plan, resolve func(string) (Target, error), env *model.Environment
 	var walk func([]Step)
 	walk = func(steps []Step) {
 		for _, st := range steps {
+			for _, h := range scriptHosts(st.Script) {
+				seen[h] = true
+			}
+			paths := scriptRequests(st.Script)
 			if st.Request != "" {
-				if target, err := resolve(st.Request); err == nil {
+				paths = append(paths, st.Request)
+			}
+			for _, path := range paths {
+				if target, err := resolve(path); err == nil {
 					v := engine.NewVars(env, target.Chain)
 					for k, val := range globals {
 						v.Globals[k] = val
@@ -565,6 +600,9 @@ func Hosts(p *Plan, resolve func(string) (Target, error), env *model.Environment
 	}
 	for _, sc := range p.Scenarios {
 		walk(sc.Flow)
+	}
+	for _, h := range p.Hosts {
+		seen[strings.ToLower(h)] = true
 	}
 	out := make([]string, 0, len(seen))
 	for h := range seen {
@@ -638,4 +676,59 @@ func (t *Test) warnings() []string {
 		ws.mu.Unlock()
 	}
 	return out
+}
+
+// hostAllowed reports whether pyro.http may call host: loopback, or a host
+// the test's confirmation covered.
+func (t *Test) hostAllowed(host string) bool {
+	host = strings.ToLower(host)
+	if host == "localhost" || t.allowed[host] {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
+// InlineScripts replaces scriptFile steps with the files' contents, so the
+// rest of the engine (and agents) only see script. read gets a
+// workspace-relative path.
+func InlineScripts(p *Plan, read func(string) ([]byte, error)) error {
+	var walk func([]Step) error
+	walk = func(steps []Step) error {
+		for i := range steps {
+			st := &steps[i]
+			if st.ScriptFile != "" {
+				b, err := read(st.ScriptFile)
+				if err != nil {
+					return fmt.Errorf("script file %s: %w", st.ScriptFile, err)
+				}
+				if _, err := compileScript(string(b)); err != nil {
+					return fmt.Errorf("script file %s: %w", st.ScriptFile, err)
+				}
+				st.Script, st.ScriptFile = string(b), ""
+			}
+			kids := [][]Step{st.Steps}
+			if st.Loop != nil {
+				kids = append(kids, st.Loop.Steps)
+			}
+			if st.If != nil {
+				kids = append(kids, st.If.Then, st.If.Else)
+			}
+			for _, b := range st.Weighted {
+				kids = append(kids, b.Steps)
+			}
+			for _, k := range kids {
+				if err := walk(k); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	}
+	for _, sc := range p.Scenarios {
+		if err := walk(sc.Flow); err != nil {
+			return err
+		}
+	}
+	return nil
 }

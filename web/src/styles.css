@@ -2809,3 +2809,19 @@ fieldset legend {
 .settings-page .tab-panel {
   padding-top: 14px;
 }
+
+.script-step {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 6px 10px;
+  align-items: start;
+  flex: 1;
+  min-width: 0;
+}
+.script-step textarea {
+  width: 100%;
+  min-height: 80px;
+}
+.script-step .muted {
+  grid-column: 2;
+}

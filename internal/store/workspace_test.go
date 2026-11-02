@@ -8,6 +8,10 @@ import (
 
 	"github.com/codeen15/pyro/pkg/engine/importer"
 	"github.com/codeen15/pyro/pkg/engine/model"
+
+	"os"
+	"path/filepath"
+	"strings"
 )
 
 func newWorkspace(t *testing.T) *Workspace {
@@ -320,5 +324,27 @@ func TestImportInto(t *testing.T) {
 	}
 	if _, err := ws.ImportInto("payments", &importer.Bundle{Environments: []*model.Environment{{Name: "x"}}}); err == nil {
 		t.Error("environment-only bundle accepted")
+	}
+}
+
+func TestLoadPlanInlinesScriptFiles(t *testing.T) {
+	ws := newWorkspace(t)
+	ws.WriteRequest("payments/ping", &model.Request{Kind: model.KindHTTP, Name: "Ping", URL: "http://localhost/"})
+	os.MkdirAll(filepath.Join(ws.Root, "scripts"), 0o755)
+	os.WriteFile(filepath.Join(ws.Root, "scripts", "flow.js"), []byte(`pyro.request("payments/ping");`), 0o644)
+	plan := "scenarios:\n  s:\n    executor: constant-vus\n    vus: 1\n    duration: 1s\n    flow:\n      - scriptFile: scripts/flow.js\n"
+	if err := ws.WriteLoadTest("scripted", []byte(plan)); err != nil {
+		t.Fatal(err)
+	}
+	p, err := ws.LoadPlan("scripted")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st := p.Scenarios["s"].Flow[0]; st.Script != `pyro.request("payments/ping");` || st.ScriptFile != "" {
+		t.Fatalf("step = %+v", st)
+	}
+	ws.WriteLoadTest("escape", []byte(strings.Replace(plan, "scripts/flow.js", "../../etc/passwd", 1)))
+	if _, err := ws.LoadPlan("escape"); err == nil {
+		t.Fatal("script file outside the workspace accepted")
 	}
 }

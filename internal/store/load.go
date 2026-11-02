@@ -96,7 +96,20 @@ func (w *Workspace) LoadPlan(name string) (*load.Plan, error) {
 	if err != nil {
 		return nil, &ValidationError{Err: err}
 	}
+	if err := load.InlineScripts(p, w.ReadFile); err != nil {
+		return nil, &ValidationError{Err: err}
+	}
 	return p, nil
+}
+
+// ReadFile reads a workspace file by its slash-separated relative path
+// (refusing paths that leave the workspace).
+func (w *Workspace) ReadFile(rel string) ([]byte, error) {
+	p, err := w.resolve(filepath.ToSlash(filepath.Clean(rel)))
+	if err != nil {
+		return nil, fmt.Errorf("%q must be inside the workspace: %w", rel, err)
+	}
+	return os.ReadFile(p)
 }
 
 // RequestExists reports whether a request path exists.

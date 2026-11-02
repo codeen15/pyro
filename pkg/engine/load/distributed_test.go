@@ -241,3 +241,29 @@ scenarios:
 		t.Errorf("negative maxRPS accepted: %+v", p)
 	}
 }
+
+func TestDistributedScriptMetrics(t *testing.T) {
+	tg := newTarget(t, 0)
+	workers := []*memWorker{{name: "a"}, {name: "b"}}
+	res := run(t, tg.URL, `
+name: scripted-dist
+scenarios:
+  s:
+    executor: per-vu-iterations
+    vus: 4
+    iterations: 5
+    flow:
+      - script: |
+          pyro.request("c/ok");
+          pyro.metrics.counter("dist_orders").add(2);
+thresholds:
+  dist_orders: ["count==40"]
+`, func(o *Options) {
+		for _, w := range workers {
+			o.Workers = append(o.Workers, w)
+		}
+	})
+	if res.Status != StatusPassed || res.Metrics["dist_orders"].Type != "counter" || tg.hits.Load() != 20 {
+		t.Fatalf("%s %+v %+v (hits %d)", res.Status, res.Thresholds, res.Metrics["dist_orders"], tg.hits.Load())
+	}
+}

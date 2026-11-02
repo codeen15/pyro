@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/dop251/goja"
 	"github.com/expr-lang/expr"
 	"github.com/expr-lang/expr/vm"
 
@@ -44,6 +45,11 @@ type vu struct {
 	feed     *feeder
 	// rt is created on first use, so flows without scripts never pay for it.
 	rt *script.Runtime
+	// js runs script steps (created on first use); jsCtx and jsGroup are
+	// the running step's context and group, read by the pyro.* functions.
+	js      *goja.Runtime
+	jsCtx   context.Context
+	jsGroup string
 
 	iteration int
 	onceDone  map[*Step]bool
@@ -116,6 +122,8 @@ func (v *vu) step(ctx context.Context, st *Step, group string) error {
 	switch {
 	case st.Request != "":
 		return v.request(ctx, st, group)
+	case st.Script != "":
+		return v.script(ctx, st, group)
 	case st.Think != nil:
 		d := st.Think.Min.D()
 		if span := st.Think.Max.D() - d; span > 0 {
@@ -212,6 +220,31 @@ func (v *vu) eval(src string) (bool, error) {
 
 func (v *vu) request(ctx context.Context, st *Step, group string) error {
 	target := v.t.targets[st.Request]
+	name := st.Name
+	if name == "" {
+		name = target.Path
+	}
+	if err := v.t.pace.wait(ctx, v.stopping); err != nil {
+		return err
+	}
+	in, tags, err := v.input(target, name, group)
+	if err != nil {
+		return err
+	}
+	if k := target.Request.Kind; k == model.KindWebSocket || k == model.KindSocketIO {
+		return v.stream(ctx, st, in, tags)
+	}
+	res := v.eng.Send(ctx, in)
+	if ctx.Err() != nil {
+		return ctx.Err() // cancelled mid-request: don't record a bogus failure
+	}
+	v.recordHTTP(res, tags, name)
+	return nil
+}
+
+// input prepares a send of target: the VU's variables with the target's
+// collection and folder scopes, and its script runtime if it has scripts.
+func (v *vu) input(target Target, name, group string) (engine.SendInput, metrics.Tags, error) {
 	slug := strings.SplitN(target.Path, "/", 2)[0]
 	cv := v.collVars[slug]
 	if cv == nil {
@@ -228,35 +261,19 @@ func (v *vu) request(ctx context.Context, st *Step, group string) error {
 			v.vars.Folders = append(v.vars.Folders, vars.Map(c.Variables))
 		}
 	}
-	name := st.Name
-	if name == "" {
-		name = target.Path
-	}
 	tags := metrics.Tags{Scenario: v.scenario, Request: name, Group: group}
 	in := engine.SendInput{Request: target.Request, Path: target.Path, Chain: target.Chain, Vars: v.vars, Iteration: v.iteration}
-	if v.t.scripted[st.Request] {
+	if v.t.scripted[target.Path] {
 		if v.rt == nil {
 			rt, err := script.New()
 			if err != nil {
-				return err
+				return in, tags, err
 			}
 			v.rt = rt
 		}
 		in.Script = v.rt
 	}
-
-	if err := v.t.pace.wait(ctx, v.stopping); err != nil {
-		return err
-	}
-	if k := target.Request.Kind; k == model.KindWebSocket || k == model.KindSocketIO {
-		return v.stream(ctx, st, in, tags)
-	}
-	res := v.eng.Send(ctx, in)
-	if ctx.Err() != nil {
-		return ctx.Err() // cancelled mid-request: don't record a bogus failure
-	}
-	v.recordHTTP(res, tags, name)
-	return nil
+	return in, tags, nil
 }
 
 func (v *vu) recordHTTP(res *engine.Result, tags metrics.Tags, name string) {
