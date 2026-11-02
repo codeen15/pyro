@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
-import { Alert, App as AntApp, Button, Result, Segmented, Select, Skeleton, Table, Tag, Tooltip } from "antd";
+import { Alert, App as AntApp, Button, Dropdown, Result, Select, Skeleton, Table, Tag, Tooltip } from "antd";
+import { DownOutlined } from "@ant-design/icons";
 import { useQuery } from "@tanstack/react-query";
 import { CircleCheck, Cookie, FileInput, Layers, SlidersHorizontal, X } from "./icons";
 import logo from "./assets/pyro-logo.png";
@@ -436,21 +437,30 @@ function plural(n: number, word: string) {
   return `${n} ${word}${n === 1 ? "" : "s"}`;
 }
 
+const THEMES: { value: Theme; label: string }[] = [
+  { value: "system", label: "System theme" },
+  { value: "light", label: "Light" },
+  { value: "dark", label: "Dark" },
+];
+
 function ThemeSelect() {
   const theme = useApp((s) => s.theme);
   const setTheme = useApp((s) => s.setTheme);
   return (
-    <Segmented
-      className="theme-switch"
-      size="small"
-      aria-label="Theme"
-      value={theme}
-      onChange={(v) => setTheme(v as Theme)}
-      options={[
-        { value: "system", label: "System" },
-        { value: "light", label: "Light" },
-        { value: "dark", label: "Dark" },
-      ]}
-    />
+    <Dropdown
+      trigger={["click"]}
+      placement="topRight"
+      menu={{
+        selectable: true,
+        selectedKeys: [theme],
+        items: THEMES.map((t) => ({ key: t.value, label: t.label })),
+        onClick: ({ key }) => setTheme(key as Theme),
+      }}
+    >
+      <Button type="text" size="small" className="theme-switch" aria-label="Theme">
+        {THEMES.find((t) => t.value === theme)?.label}
+        <DownOutlined />
+      </Button>
+    </Dropdown>
   );
 }

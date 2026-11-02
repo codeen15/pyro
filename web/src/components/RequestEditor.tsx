@@ -8,7 +8,7 @@ import { api, type Auth, type Body, type KeyValue, type PyroRequest } from "../a
 import { useApp } from "../store";
 import { KVEditor } from "./KVEditor";
 import { ScriptsEditor, TestsEditor } from "./TestsEditor";
-import { FieldsForm, KindSelect, usePluginTypes } from "./Plugins";
+import { FieldsForm, KindLabel, usePluginTypes } from "./Plugins";
 import { ExamplesEditor } from "./Examples";
 
 const METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];
@@ -92,11 +92,7 @@ export function RequestEditor({ path, saved }: { path: string; saved: PyroReques
   const provider = pluginId ? protocols.find((p) => p.id === pluginId) : undefined;
   const tabs = pluginId ? PLUGIN_TABS : TABS;
   const activeTab = tabs.some((t) => t.id === tab) ? tab : tabs[0].id;
-  const changeKind = (kind: PyroRequest["kind"]) => {
-    const next: PyroRequest = { ...req, kind };
-    if (kind.startsWith("plugin:") && !next.body) next.body = { type: "text", content: "" };
-    setDraft(path, next);
-  };
+
 
   const counts: Record<Tab, number> = {
     params: (req.query ?? []).filter((q) => !q.disabled).length,
@@ -112,7 +108,7 @@ export function RequestEditor({ path, saved }: { path: string; saved: PyroReques
   return (
     <section className="card editor">
       <RequestTitle req={req} path={path} dirty={dirty} onName={(name) => edit({ name })}>
-        <KindSelect value={req.kind} onChange={changeKind} />
+        <KindLabel value={req.kind} />
         <SaveButton dirty={dirty} saving={save.isPending} onSave={() => save.mutate()} />
       </RequestTitle>
       {save.error && <Alert type="error" showIcon title={`Couldn't save: ${save.error.message}`} />}

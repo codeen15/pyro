@@ -10,7 +10,7 @@ import { useApp } from "../store";
 import { KVEditor } from "./KVEditor";
 import { AuthEditor, RequestTitle, SaveButton } from "./RequestEditor";
 import { EmptyState } from "./ResponseView";
-import { KindSelect } from "./Plugins";
+import { KindLabel } from "./Plugins";
 
 type Tab = "message" | "saved" | "headers" | "auth" | "settings";
 
@@ -159,7 +159,7 @@ export function SessionConsole({ path, saved }: { path: string; saved: PyroReque
     <div className="work session">
       <section className="card editor">
         <RequestTitle req={req} path={path} dirty={dirty} onName={(name) => edit({ name })}>
-          <KindSelect value={req.kind} onChange={(kind) => edit({ kind })} />
+          <KindLabel value={req.kind} />
           <SaveButton dirty={dirty} saving={save.isPending} onSave={() => save.mutate()} />
         </RequestTitle>
 

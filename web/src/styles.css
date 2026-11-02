@@ -861,11 +861,6 @@ input[type="checkbox"] {
   color: var(--accent);
 }
 
-.kind-select.ant-segmented {
-  max-width: 100%;
-  overflow-x: auto;
-}
-
 /* URL bar: method / URL / Send, one 40px compact group. */
 .urlbar .ant-space-compact {
   height: 40px;
@@ -2593,10 +2588,6 @@ input[type="checkbox"] {
 
 /* ---------- Plugins ---------- */
 
-.kind-select {
-  height: 30px;
-  min-width: 108px;
-}
 .plugin-tag {
   width: auto;
   min-width: 64px;
@@ -2953,9 +2944,93 @@ input[type="checkbox"] {
   color: var(--text-faint);
   font-size: 12px;
 }
-.theme-switch.ant-segmented {
+.theme-switch.ant-btn {
   flex: none;
   font-size: 12px;
+  color: var(--text-muted);
+}
+.theme-switch .anticon {
+  font-size: 10px;
+}
+
+/* Request type: fixed after creation. */
+.kind-label {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--r-sm);
+  background: var(--iron-2);
+  color: var(--text-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.kind-label.k-socketio,
+.kind-label.k-plugin {
+  border-color: var(--cyan-border);
+  background: var(--cyan-soft);
+  color: var(--stream);
+}
+.kind-label.k-websocket {
+  color: var(--stream-ws);
+}
+
+.kind-cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 8px 0 16px;
+}
+.kind-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 14px 16px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-lg);
+  background: var(--iron-1);
+  text-align: left;
+  transition: border-color 0.2s var(--ease), background-color 0.2s var(--ease);
+}
+.kind-card:hover {
+  border-color: var(--accent-hover);
+}
+.kind-card.is-active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.kind-card-tag {
+  font: 600 11px var(--font-mono);
+  color: var(--m-get);
+}
+.kind-card-tag.k-websocket {
+  color: var(--stream-ws);
+}
+.kind-card-tag.k-socketio,
+.kind-card-tag.k-plugin {
+  color: var(--stream);
+}
+.kind-card-title {
+  font-weight: 600;
+}
+.kind-card.is-active .kind-card-title {
+  color: var(--accent);
+}
+.kind-card-desc {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-faint);
+}
+.kind-name {
+  display: grid;
+  gap: 6px;
+}
+@media (max-width: 760px) {
+  .kind-cards {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 .theme-switch {
   margin-left: auto;

@@ -1,10 +1,10 @@
 import { useMemo, useState } from "react";
-import { App, Button, Dropdown, Empty, Input, Modal, Skeleton, Tabs, Tooltip } from "antd";
+import { Alert, App, Button, Dropdown, Empty, Input, Modal, Skeleton, Tabs, Tooltip } from "antd";
 import { MoreOutlined, SearchOutlined } from "@ant-design/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Activity, BookOpen, ChevronRight, Download, Settings2, Folder, FolderOpen, Gauge, Layers, Play, Plus, RefreshCw, TriangleAlert } from "../icons";
-import { PluginsRail } from "./Plugins";
-import { api, saveFile, type TreeNode, type WorkspaceInfo } from "../api";
+import { PluginsRail, usePluginTypes } from "./Plugins";
+import { api, saveFile, type Kind, type PyroRequest, type TreeNode, type WorkspaceInfo } from "../api";
 import { formatMs, heatOf } from "../heat";
 import { useApp } from "../store";
 import { slugify } from "../loadProfiles";
@@ -58,20 +58,7 @@ function Collections({ ws }: { ws: WorkspaceInfo | undefined }) {
   const [search, setSearch] = useState("");
   const [naming, setNaming] = useState(false);
   const [newName, setNewName] = useState("");
-  const create = useMutation({
-    mutationFn: async (parent: TreeNode) => {
-      const taken = new Set((parent.children ?? []).map((c) => c.path));
-      let slug = "new-request";
-      for (let i = 2; taken.has(`${parent.path}/${slug}`); i++) slug = `new-request-${i}`;
-      const path = `${parent.path}/${slug}`;
-      await api.saveRequest(path, { kind: "http", name: "New request", method: "GET", url: "" });
-      return path;
-    },
-    onSuccess: async (path) => {
-      await qc.invalidateQueries({ queryKey: ["workspace"] });
-      select(path);
-    },
-  });
+  const [newIn, setNewIn] = useState<TreeNode | null>(null);
 
   const createCollection = async (name: string) => {
     const taken = new Set(ws?.collections.map((c) => c.path));
@@ -161,13 +148,100 @@ function Collections({ ws }: { ws: WorkspaceInfo | undefined }) {
       ) : (
         <ul className="tree" role="tree" aria-label="Collections">
           {nodes.map((n) => (
-            <TreeItem key={n.path} node={n} depth={0} selected={selected} onSelect={select} onCreate={(p) => create.mutate(p)} forceOpen={!!q} />
+            <TreeItem key={n.path} node={n} depth={0} selected={selected} onSelect={select} onCreate={setNewIn} forceOpen={!!q} />
           ))}
         </ul>
       )}
-      {create.error && <p className="inline-error pad">Couldn't create the request: {create.error.message}</p>}
+      <NewRequestModal parent={newIn} onClose={() => setNewIn(null)} />
       {nameModal}
     </div>
+  );
+}
+
+const BUILTIN_KINDS: { kind: Kind; title: string; tag: string; desc: string }[] = [
+  { kind: "http", title: "HTTP", tag: "GET", desc: "REST and GraphQL: method, params, headers, body and auth." },
+  { kind: "websocket", title: "WebSocket", tag: "WS", desc: "A raw WebSocket connection. Send and watch text or binary messages." },
+  { kind: "socketio", title: "Socket.IO", tag: "SIO", desc: "Socket.IO v4 client: namespaces, events and acks." },
+];
+
+/** Creates a request. Its type is chosen here and can't be changed later. */
+function NewRequestModal({ parent, onClose }: { parent: TreeNode | null; onClose: () => void }) {
+  const qc = useQueryClient();
+  const select = useApp((s) => s.select);
+  const protocols = usePluginTypes("protocol");
+  const [kind, setKind] = useState<Kind>("http");
+  const [name, setName] = useState("");
+  const create = useMutation({
+    mutationFn: async () => {
+      const title = name.trim() || "New request";
+      const taken = new Set((parent!.children ?? []).map((c) => c.path));
+      const base = slugify(title) || "new-request";
+      let slug = base;
+      for (let i = 2; taken.has(`${parent!.path}/${slug}`); i++) slug = `${base}-${i}`;
+      const path = `${parent!.path}/${slug}`;
+      const req: PyroRequest = { kind, name: title, url: "" };
+      if (kind === "http") req.method = "GET";
+      if (kind.startsWith("plugin:")) req.body = { type: "text", content: "" };
+      await api.saveRequest(path, req);
+      return path;
+    },
+    onSuccess: async (path) => {
+      await qc.invalidateQueries({ queryKey: ["workspace"] });
+      select(path);
+      onClose();
+    },
+  });
+  const options = [
+    ...BUILTIN_KINDS,
+    ...protocols.map((p) => ({
+      kind: `plugin:${p.id}` as Kind,
+      title: p.title || p.id,
+      tag: p.id.slice(0, 4).toUpperCase(),
+      desc: `Provided by the ${p.plugin.title || p.plugin.name} plugin.`,
+    })),
+  ];
+  return (
+    <Modal
+      title={parent ? `New request in ${parent.name}` : "New request"}
+      open={!!parent}
+      okText="Create request"
+      onOk={() => create.mutate()}
+      confirmLoading={create.isPending}
+      onCancel={onClose}
+      afterOpenChange={(open) => {
+        if (!open) {
+          setKind("http");
+          setName("");
+          create.reset();
+        }
+      }}
+      width={640}
+      destroyOnHidden
+    >
+      <div className="kind-cards" role="radiogroup" aria-label="Request type">
+        {options.map((o) => (
+          <button
+            key={o.kind}
+            type="button"
+            role="radio"
+            aria-checked={kind === o.kind}
+            className={`kind-card ${kind === o.kind ? "is-active" : ""}`}
+            onClick={() => setKind(o.kind)}
+            onDoubleClick={() => create.mutate()}
+          >
+            <span className={`kind-card-tag k-${o.kind.startsWith("plugin:") ? "plugin" : o.kind}`}>{o.tag}</span>
+            <span className="kind-card-title">{o.title}</span>
+            <span className="kind-card-desc">{o.desc}</span>
+          </button>
+        ))}
+      </div>
+      <label className="kind-name">
+        <span className="field-label">Name</span>
+        <Input autoFocus aria-label="Request name" placeholder="New request" value={name} onChange={(e) => setName(e.target.value)} onPressEnter={() => create.mutate()} />
+      </label>
+      <p className="muted small">The type can't be changed after the request is created.</p>
+      {create.error && <Alert type="error" showIcon title={`Couldn't create the request: ${create.error.message}`} />}
+    </Modal>
   );
 }
 

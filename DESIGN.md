@@ -179,7 +179,7 @@ bodies, header values, paths and measurements.
 A fixed shell:
 - a 56px white header: logo, workspace, environment select, icon buttons and Import;
 - a 300px white sidebar with Collections, History, Load and Plugins tabs;
-- a 28px status bar: engine status, host, workspace path and the System/Light/Dark switch;
+- a 28px status bar: engine status, host, workspace path and a theme menu (System / Light / Dark);
 - the grey main area.
 
 Main pads 16px. The request card and response card are separated by a 16px draggable
@@ -194,8 +194,9 @@ their field rather than pushing the page sideways.
 
 - **Request card:**
   - an editable title, with the mono slug beneath;
-  - a `Segmented` kind switch (REST / WebSocket / Socket.IO / plugin types) and a Save button
-    (Saved when clean);
+  - a fixed request-type label (HTTP / WebSocket / Socket.IO / plugin type) and a Save button
+    (Saved when clean). The type is chosen once, from cards in the New request dialog, and
+    can't be changed afterwards;
   - a `Space.Compact` URL bar, 40px tall: method `Select` on a fill, mono `Input`, primary
     Send at least 124px wide;
   - antd `Tabs` with faint counts.

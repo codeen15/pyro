@@ -160,11 +160,13 @@ test("save a response as an example", async ({ page }) => {
 
 test("theme choice applies and persists", async ({ page }) => {
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark"); // the test browser prefers dark
-  await page.locator(".theme-switch").getByText("Light", { exact: true }).click();
+  await page.getByRole("button", { name: "Theme" }).click();
+  await page.getByRole("menuitem", { name: "Light" }).click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
   await page.reload();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
-  await page.locator(".theme-switch").getByText("System", { exact: true }).click();
+  await page.getByRole("button", { name: "Theme" }).click();
+  await page.getByRole("menuitem", { name: "System theme" }).click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
 });
 
@@ -187,7 +189,7 @@ test("edit collection settings and create a collection", async ({ page }) => {
   await page.getByRole("button", { name: "New collection" }).click();
   await page.getByLabel("New collection name").fill("Billing API");
   await page.getByRole("button", { name: "Create", exact: true }).click();
-  await expect(page.getByLabel("Collection name")).toHaveValue("Billing API");
+  await expect(page.getByLabel("Collection name", { exact: true })).toHaveValue("Billing API");
   await expect(page.locator(".tree")).toContainText("Billing API");
 });
 
@@ -226,4 +228,17 @@ test("import a JMeter test plan as requests and a load test", async ({ page }) =
   const login = page.locator('.flow-step[data-request="shop-checkout/shoppers/log-in"]');
   await expect(login).toHaveCount(1);
   await expect(login.locator('input[type="checkbox"]')).toBeChecked();
+});
+
+test("a new request's type is chosen once, when it is created", async ({ page }) => {
+  const row = page.locator(".row-wrap").filter({ has: page.getByText("Shop", { exact: true }) });
+  await row.hover();
+  await row.getByRole("button", { name: "New request in Shop" }).click();
+  await page.getByRole("radio", { name: /Socket\.IO/ }).click();
+  await page.getByRole("dialog").getByLabel("Request name").fill("Chat room");
+  await page.getByRole("button", { name: "Create request" }).click();
+  await expect(page.locator(".req-path")).toContainText("shop/chat-room");
+  await expect(page.locator(".kind-label")).toHaveText("Socket.IO");
+  await expect(page.getByRole("button", { name: "Connect" }).first()).toBeVisible();
+  await expect(page.locator(".tree")).toContainText("Chat room");
 });

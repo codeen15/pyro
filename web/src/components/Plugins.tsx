@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Alert, App, Button, Checkbox, Empty, Input, Segmented, Select, Switch, Tag } from "antd";
+import { Alert, App, Button, Checkbox, Empty, Input, Select, Switch, Tag } from "antd";
 import { FileUp, Plus, Puzzle, ShieldAlert, ShieldCheck, Trash2, TriangleAlert, Upload } from "../icons";
 import { api, type Kind, type PluginField, type PluginInfo, type PluginProvide } from "../api";
 import { useApp } from "../store";
@@ -102,23 +102,16 @@ export function FieldsForm({
 }
 
 /** The request type selector: built-in kinds plus installed plugin protocols. */
-export function KindSelect({ value, onChange }: { value: Kind; onChange: (k: Kind) => void }) {
+/** The request type, fixed once the request exists (shown in the request header). */
+export function KindLabel({ value }: { value: Kind }) {
   const protos = usePluginTypes("protocol");
-  const known = ["http", "websocket", "socketio", ...protos.map((p) => `plugin:${p.id}`)].includes(value);
+  const plugin = value.startsWith("plugin:") ? protos.find((p) => `plugin:${p.id}` === value) : undefined;
+  const label =
+    value === "http" ? "HTTP" : value === "websocket" ? "WebSocket" : value === "socketio" ? "Socket.IO" : plugin ? plugin.title || plugin.id : `${value} (not installed)`;
   return (
-    <Segmented
-      className="kind-select"
-      aria-label="Request type"
-      value={value}
-      onChange={(v) => onChange(v as Kind)}
-      options={[
-        { value: "http", label: "REST" },
-        { value: "websocket", label: "WebSocket" },
-        { value: "socketio", label: "Socket.IO" },
-        ...protos.map((p) => ({ value: `plugin:${p.id}`, label: p.title || p.id })),
-        ...(known ? [] : [{ value, label: `${value} (not installed)` }]),
-      ]}
-    />
+    <span className={`kind-label k-${value.startsWith("plugin:") ? "plugin" : value}`} title="Request type (fixed when the request was created)">
+      {label}
+    </span>
   );
 }
 
