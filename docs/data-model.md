@@ -193,6 +193,13 @@ messages:
   - { event: "chat message", content: '["hi"]', ack: true }   # content = JSON args array
   - { event: "upload", content: '[{"$binary": "AAEC/w=="}, "name.bin"]' }   # binary attachment
 ```
+A message's `content` is the JSON array of its arguments, any number of them, e.g.
+`'["lobby", {"user": "{{user}}"}, {{count}}, true]'`. The editor shows it as a list of typed
+arguments (Text, JSON, Number, Boolean, Binary), as Postman does, with a switch to edit the
+raw array. A `{{variable}}` may stand in for a whole number, boolean or JSON argument: it is
+filled in before the array is parsed. WebSocket messages carry one payload, edited as Text,
+JSON (with formatting) or Binary (base64, `binary: true`).
+
 Socket.IO binary attachments appear in received messages as `{"$binary": "<base64>"}` at
 their place in the arguments, and the same notation sends one (wherever it appears in the
 arguments). With `transport: auto`, Pyro tries a WebSocket and falls back to HTTP

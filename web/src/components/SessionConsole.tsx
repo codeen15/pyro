@@ -6,10 +6,11 @@ import { api, type PyroRequest, type SavedMessage, type SessionMessage, type Ses
 import { subscribe } from "../events";
 import { formatMs, heatOf } from "../heat";
 import { useApp } from "../store";
-import { VarInput, VarTextArea, VarScope } from "../vars";
+import { VarInput, VarScope } from "../vars";
 import { KVEditor } from "./KVEditor";
 import { AuthEditor, DeleteRequestButton, RequestTitle, SaveButton } from "./RequestEditor";
 import { EmptyState } from "./ResponseView";
+import { ArgsEditor, WsPayloadEditor } from "./MessageArgs";
 import { KindLabel } from "./Plugins";
 
 type Tab = "message" | "saved" | "headers" | "auth" | "settings";
@@ -227,15 +228,11 @@ export function SessionConsole({ path, saved }: { path: string; saved: PyroReque
                     </Checkbox>
                   </div>
                 )}
-                <VarTextArea
-                  className="code-input mono"
-                  value={compose.content}
-                  onChange={(e) => setCompose({ ...compose, content: e.target.value })}
-                  spellCheck={false}
-                  aria-label="Message"
-                  autoSize={{ minRows: 5 }}
-                  placeholder={sio ? '["hello", {"room": "{{room}}"}]   (a JSON array of arguments)' : '{"op": "subscribe", "channel": "{{channel}}"}'}
-                />
+                {sio ? (
+                  <ArgsEditor value={compose.content} onChange={(content) => setCompose({ ...compose, content })} />
+                ) : (
+                  <WsPayloadEditor value={compose.content} binary={!!compose.binary} onChange={(content, binary) => setCompose({ ...compose, content, binary: binary || undefined })} />
+                )}
                 <div className="composer-actions">
                   <Button type="primary" icon={<SendHorizontal size={14} />} onClick={send} disabled={!connected} title={connected ? "Send (Ctrl+Enter)" : "Connect first"}>
                     Send
@@ -243,11 +240,6 @@ export function SessionConsole({ path, saved }: { path: string; saved: PyroReque
                   <Button icon={<Bookmark size={13} />} onClick={saveTemplate} disabled={!compose.content.trim() && !compose.event}>
                     Save message
                   </Button>
-                  {!sio && (
-                    <Checkbox checked={!!compose.binary} onChange={(e) => setCompose({ ...compose, binary: e.target.checked })}>
-                      Binary (base64)
-                    </Checkbox>
-                  )}
                   {!connected && <span className="muted small">Connect to send. Variables like {"{{name}}"} are filled in when sent.</span>}
                 </div>
                 {sendError && <Alert type="error" showIcon title={sendError} />}

@@ -4077,3 +4077,56 @@ input[type="checkbox"] {
     grid-column: 1 / -1;
   }
 }
+
+/* ---------- Message arguments (Socket.IO) and WebSocket payloads ---------- */
+.args-editor {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.args-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.args-raw {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.args-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.arg-row {
+  display: grid;
+  grid-template-columns: 20px 120px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 8px;
+}
+.arg-no {
+  padding-top: 5px;
+  color: var(--text-faint);
+  font: 12px var(--font-mono);
+  text-align: right;
+}
+.arg-value {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+.arg-actions {
+  display: flex;
+}
+@media (max-width: 760px) {
+  .arg-row {
+    grid-template-columns: 20px minmax(0, 1fr) auto;
+  }
+  .arg-value {
+    grid-column: 2 / -1;
+  }
+}

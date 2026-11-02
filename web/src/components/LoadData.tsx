@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Alert, App, Button, Checkbox, Dropdown, Input, Select, Table } from "antd";
 import { isMap, isSeq, type Document, type YAMLMap } from "yaml";
 import { api, type DataFormat, type SavedMessage } from "../api";
+import { ArgsEditor, WsPayloadEditor } from "./MessageArgs";
 import { Plus, Trash2, Upload, X } from "../icons";
 
 const MODES = [
@@ -277,23 +278,19 @@ export function StreamStepEditor({
                 aria-label={`Event of message ${i + 1}`}
               />
             )}
-            <Input.TextArea
-              className="mono step-msg-args"
-              value={m.content}
-              autoSize={{ minRows: 1, maxRows: 6 }}
-              placeholder={sio ? '["hello", {"user": "{{user}}"}]   args as a JSON array' : '{"op": "subscribe", "user": "{{user}}"}'}
-              onChange={(e) => patch(i, { content: e.target.value })}
-              aria-label={sio ? `Arguments of message ${i + 1}` : `Payload of message ${i + 1}`}
-              spellCheck={false}
-            />
+            <div className="step-msg-args">
+              {sio ? (
+                <ArgsEditor value={m.content} onChange={(content) => patch(i, { content })} label={`Arguments of message ${i + 1}`} />
+              ) : (
+                <WsPayloadEditor value={m.content} binary={!!m.binary} onChange={(content, binary) => patch(i, { content, binary })} label={`Payload of message ${i + 1}`} />
+              )}
+            </div>
             {sio ? (
               <Checkbox checked={!!m.ack} onChange={(e) => patch(i, { ack: e.target.checked })}>
                 Ack
               </Checkbox>
             ) : (
-              <Checkbox checked={!!m.binary} onChange={(e) => patch(i, { binary: e.target.checked })}>
-                Binary
-              </Checkbox>
+              <span />
             )}
             <Button type="text" icon={<X size={14} />} onClick={() => setMsgs(msgs.filter((_, j) => j !== i))} aria-label={`Remove message ${i + 1}`} />
           </div>

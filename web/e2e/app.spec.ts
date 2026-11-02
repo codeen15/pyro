@@ -384,7 +384,13 @@ test("load test data from a CSV and Socket.IO events with args", async ({ page }
   await page.getByLabel("Keep the connection open for").fill("2s");
   await page.getByRole("button", { name: "Event", exact: true }).click();
   await page.getByLabel("Event of message 1").fill("join");
-  await page.getByLabel("Arguments of message 1").fill('["lobby", {"user": "{{username}}"}]');
+  // Typed arguments, like Postman: text then JSON.
+  const step = page.locator(".step-msg").first();
+  await step.getByRole("button", { name: "Add argument" }).click();
+  await step.getByLabel("Argument 1", { exact: true }).fill("lobby");
+  await step.getByRole("button", { name: "Add argument" }).click();
+  await pickOption(page, step.getByRole("combobox", { name: "Type of argument 2" }), "JSON");
+  await step.getByLabel("Argument 2", { exact: true }).fill('{"user": "{{username}}"}');
   await page.locator(".step-msg").getByText("Ack").click();
 
   await page.getByRole("tab", { name: "YAML" }).click();
@@ -394,6 +400,44 @@ test("load test data from a CSV and Socket.IO events with args", async ({ page }
   await expect(yaml).toHaveValue(/delimiter: "?;"?/);
   await expect(yaml).toHaveValue(/user: username/);
   await expect(yaml).toHaveValue(/event: join/);
+  await expect(yaml).toHaveValue(/\[\\?"lobby\\?", \{\\?"user\\?": \\?"\{\{username\}\}\\?"\}\]/);
   await expect(yaml).toHaveValue(/ack: true/);
   await expect(yaml).toHaveValue(/hold: 2s/);
+});
+
+test("Socket.IO messages take several typed arguments, WebSocket a formatted payload", async ({ page }) => {
+  const shop = page.locator(".row-wrap").filter({ has: page.getByText("Shop", { exact: true }) });
+  for (const [kind, name] of [["Socket.IO", "Room"], ["WebSocket", "Feed"]]) {
+    await shop.hover();
+    await shop.getByRole("button", { name: "New request in Shop" }).click();
+    await page.getByRole("radio", { name: new RegExp(kind.replace(".", "\\.")) }).click();
+    await page.getByRole("dialog").getByLabel("Request name").fill(name);
+    await page.getByRole("button", { name: "Create request" }).click();
+    await expect(page.locator(".kind-label")).toHaveText(kind);
+    if (kind === "Socket.IO") {
+      await page.getByLabel("Event", { exact: true }).fill("join");
+      for (let i = 0; i < 4; i++) await page.getByRole("button", { name: "Add argument" }).click();
+      await page.getByLabel("Argument 1", { exact: true }).fill("lobby");
+      await pickOption(page, page.getByRole("combobox", { name: "Type of argument 2" }), "JSON");
+      await page.getByLabel("Argument 2", { exact: true }).fill('{"user": "{{user}}"}');
+      await pickOption(page, page.getByRole("combobox", { name: "Type of argument 3" }), "Number");
+      await page.getByLabel("Argument 3", { exact: true }).fill("{{count}}");
+      await pickOption(page, page.getByRole("combobox", { name: "Type of argument 4" }), "Boolean");
+      await page.getByLabel("Argument 4").getByText("true", { exact: true }).click();
+      await page.getByRole("button", { name: "Move argument 4 up" }).click();
+      // The same message as the raw JSON array the engine sends.
+      await page.getByLabel("Edit arguments as JSON").click();
+      await expect(page.getByLabel("Arguments as JSON", { exact: true })).toHaveValue('["lobby", {"user": "{{user}}"}, true, {{count}}]');
+      await page.getByLabel("Edit arguments as JSON").click();
+      await expect(page.locator(".arg-row")).toHaveCount(4);
+      await page.getByRole("button", { name: "Save message" }).click();
+      await page.getByRole("tab", { name: /Saved/ }).click();
+      await expect(page.locator(".saved-list")).toContainText('["lobby", {"user": "{{user}}"}, true, {{count}}]');
+    } else {
+      await page.getByLabel("Message format").getByText("JSON", { exact: true }).click();
+      await page.getByRole("textbox", { name: "Message", exact: true }).fill('{"op":"subscribe","topic":"{{topic}}"}');
+      await page.getByRole("button", { name: "Format" }).click();
+      await expect(page.getByRole("textbox", { name: "Message", exact: true })).toHaveValue('{\n  "op": "subscribe",\n  "topic": "{{topic}}"\n}');
+    }
+  }
 });
