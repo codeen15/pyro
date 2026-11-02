@@ -1,6 +1,6 @@
 # Import and export
 
-Pyro imports Postman, OpenAPI/Swagger, HAR and cURL, and exports collections and
+Pyro imports Postman, OpenAPI/Swagger, HAR, JMeter and cURL, and exports collections and
 environments back to Postman. Postman import has its own page,
 [postman-import.md](postman-import.md); this page covers the other formats and export.
 
@@ -61,6 +61,39 @@ Browser dev tools (Network → Save all as HAR) and proxies produce these.
 - Bodies: JSON, XML, text, form and multipart (uploaded file contents aren't in a HAR;
   reported). WebSocket entries become WebSocket requests.
 - The collection is named after the first page's host, else the file name.
+
+## JMeter (.jmx)
+A JMeter test plan becomes a collection (one folder per thread group, one request per HTTP
+sampler) **and a load test** (`loadtests/<name>.load.yaml`) with one scenario per thread
+group, ready to run with `pyro load` or from the Load tab.
+
+| JMeter | Pyro |
+|---|---|
+| Thread Group: threads, ramp-up, duration (scheduler) | `ramping-vus` (ramp to the thread count, hold for the rest), or `constant-vus` without ramp-up |
+| Thread Group with a loop count and no duration | `per-vu-iterations` (ramp-up ignored, reported) |
+| Concurrency Thread Group / Arrivals Thread Group (BlazeMeter plugins) | `ramping-vus` / `ramping-arrival-rate` |
+| setUp / tearDown Thread Group | Ordinary scenarios (reported) |
+| HTTP Request (+ HTTP Request Defaults) | A request; a scheme and host shared by all requests becomes the `baseUrl` variable |
+| Parameters / raw body / files | Query (GET, DELETE), form or multipart fields, raw JSON/XML/text body, file fields |
+| HTTP Header Manager, HTTP Authorization Manager (basic, digest) | Headers and auth on every request in scope |
+| User Defined Variables | Collection variables |
+| CSV Data Set Config | The scenario's data file `data/<file>` (shared); column names from the plan become the CSV header |
+| Transaction / Loop / While / If / Once Only / Random Controller | `group` / `loop` / `loop.while` / `if` / `once` / `weighted` steps; Simple Controller is inlined |
+| Constant, Uniform Random, Gaussian timers | `think` before each request in scope (delays in scope add up) |
+| Constant Throughput Timer | `maxRPS` for the whole test (reported) |
+| Response Assertion (code, text, headers), JSON Assertion, Duration Assertion | `status`, `body`, `header`, `jsonpath`, `duration` assertions |
+| JSON Extractor, Regular Expression Extractor, Boundary Extractor | `jsonpath` and `regex` extractors |
+| `${var}`, `${__UUID()}`, `${__Random(…)}`, `${__time()}`, `${__P(name,default)}` | `{{var}}`, `{{$guid}}`, `{{$randomInt}}`, `{{$timestamp}}`, `{{name}}` (numbers use the default) |
+| If/While conditions (`${__jexl3(…)}` or JavaScript) | Converted to Pyro expressions where possible (`"${status}" == "200"` → `status == 200`); others become `true` and are reported |
+
+Skipped and reported: JSR223/BeanShell elements (rewrite them as [script steps](load-engine.md#script-steps)),
+non-HTTP samplers, Module/Include Controllers, Kerberos auth, XPath extractors, negated text
+assertions. Cookie, cache and listener elements are ignored (Pyro keeps cookies per VU and
+has its own results). Disabled elements are left out.
+
+**Data files:** `pyro import` copies a CSV Data Set's file into `data/` when it finds it (at
+the path in the plan, or next to the `.jmx`), adding the header line if JMeter listed the
+column names. Importing from the UI can't read local files: copy it yourself (reported).
 
 ## cURL
 Paste one or more commands (Chrome/Firefox "Copy as cURL", API docs, shell history).

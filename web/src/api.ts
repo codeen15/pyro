@@ -242,6 +242,8 @@ export interface ImportReport {
   slug?: string;
   /** Requests were added to an existing collection or folder (slug). */
   into?: boolean;
+  /** Load tests created (JMeter imports). */
+  loadTests?: string[];
   requests: number;
   folders: number;
   environments?: string[];

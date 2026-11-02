@@ -7,7 +7,7 @@ import { useApp } from "../store";
 // One place for every import: files (Postman, OpenAPI/Swagger, HAR, cURL)
 // and pasted text, into a new collection or an existing one.
 
-const FORMATS = "Postman collections and environments, OpenAPI 3 and Swagger 2 (JSON or YAML), HAR recordings and cURL commands";
+const FORMATS = "Postman collections and environments, OpenAPI 3 and Swagger 2 (JSON or YAML), HAR recordings, JMeter test plans (.jmx, as requests plus a load test) and cURL commands";
 
 export function ImportPage() {
   const qc = useQueryClient();
@@ -94,7 +94,7 @@ export function ImportPage() {
         <button className="btn ghost" onClick={() => fileRef.current?.click()} disabled={busy}>
           <FileInput size={14} /> Choose files
         </button>
-        <input ref={fileRef} type="file" multiple hidden accept=".json,.yaml,.yml,.har,.txt,.sh,.curl" onChange={(e) => fromFiles(e.target.files)} />
+        <input ref={fileRef} type="file" multiple hidden accept=".json,.yaml,.yml,.har,.jmx,.txt,.sh,.curl" onChange={(e) => fromFiles(e.target.files)} />
       </div>
 
       <label className="paste">

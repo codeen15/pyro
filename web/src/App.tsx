@@ -301,6 +301,14 @@ function ImportResult({ report, mode, onClose }: { report: ImportReport; mode: "
                 {" "}· environment <code>{e}</code>
               </span>
             ))}
+            {report.loadTests?.map((l) => (
+              <span key={l}>
+                {" "}· load test{" "}
+                <button className="link" onClick={() => { onClose(); select(`load:${l}`); }}>
+                  {l}
+                </button>
+              </span>
+            ))}
           </p>
         </div>
         <button className="icon-btn" onClick={onClose} aria-label="Close import result">

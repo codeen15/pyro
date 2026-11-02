@@ -5,6 +5,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/codeen15/pyro/pkg/engine/importer"
@@ -44,6 +45,10 @@ func (w *Workspace) Import(b *importer.Bundle) (*importer.Report, error) {
 				return nil, err
 			}
 		}
+	}
+
+	if err := w.importLoadTests(b, rep.Slug, &rep); err != nil {
+		return nil, err
 	}
 
 	if len(b.Environments) > 0 {
@@ -190,6 +195,9 @@ func (w *Workspace) ImportInto(target string, b *importer.Bundle) (*importer.Rep
 	if s := b.Collection.Scripts; s != nil && (s.Pre != "" || s.Post != "") {
 		rep.Warn("", "import.into-scripts", "the imported collection's scripts weren't copied; add them to "+target+" if needed")
 	}
+	if err := w.importLoadTests(b, target, &rep); err != nil {
+		return nil, err
+	}
 	rep.Slug, rep.Into = target, true
 	return &rep, nil
 }
@@ -203,4 +211,35 @@ func inheritsAuth(p string, folders map[string]*model.Collection) bool {
 		}
 	}
 	return false
+}
+
+// importLoadTests writes a bundle's load plans, pointing their request
+// paths at the collection (or folder) the requests went to. Existing load
+// tests are never overwritten.
+func (w *Workspace) importLoadTests(b *importer.Bundle, base string, rep *importer.Report) error {
+	if len(b.LoadTests) == 0 {
+		return nil
+	}
+	existing, err := w.ListLoadTests()
+	if err != nil {
+		return err
+	}
+	taken := map[string]bool{}
+	for _, n := range existing {
+		taken[n] = true
+	}
+	names := make([]string, 0, len(b.LoadTests))
+	for n := range b.LoadTests {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	for _, n := range names {
+		name := importer.Unique(n, taken)
+		data := strings.ReplaceAll(string(b.LoadTests[n]), importer.CollectionRef, base+"/")
+		if err := w.WriteLoadTest(name, []byte(data)); err != nil {
+			return err
+		}
+		rep.LoadTests = append(rep.LoadTests, name)
+	}
+	return nil
 }

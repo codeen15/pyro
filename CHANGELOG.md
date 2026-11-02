@@ -14,7 +14,7 @@ First public release.
   extractors.
 - Collection runner in the UI and `pyro run` for CI (data files, JUnit and JSON reports).
 - Import Postman collections and environments (v2.0, v2.1), OpenAPI 3 and Swagger 2,
-  HAR recordings and cURL commands, into a new or an existing collection. Export
+  HAR recordings, JMeter test plans (as requests plus a load test) and cURL commands, into a new or an existing collection. Export
   collections and environments to Postman v2.1.
 - Workspaces are plain YAML files, one per request, made for git.
 
@@ -37,6 +37,7 @@ First public release.
   dashboard, saved runs, run comparison and self-contained HTML reports; `pyro load` for CI.
 - Distributed tests across `pyro agent` machines with exactly merged percentiles; agents can
   listen or connect out to the controller (behind NAT).
+- Script steps: JavaScript with a `pyro.*` API (requests, checks, groups, custom metrics).
 - A requests-per-second cap (`maxRPS`, `--max-rps`, `loadMaxRPS` in `pyro.yaml`).
 - Live outputs to InfluxDB, Prometheus remote write, NDJSON and CSV.
 - The load generator's own CPU and memory, with a warning when it saturates.

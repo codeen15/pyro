@@ -22,7 +22,24 @@ type Bundle struct {
 	// Requests are in source order. Path is relative to the collection.
 	Requests     []Request
 	Environments []*model.Environment
-	Report       Report
+	// LoadTests are load plans (YAML) by name. Request paths in them start
+	// with CollectionRef, replaced by the collection's final path on import.
+	LoadTests map[string][]byte
+	// DataFiles maps workspace paths the load tests read (data/users.csv)
+	// to where the source said the file was, for the CLI to copy.
+	DataFiles map[string]DataFile
+	Report    Report
+}
+
+// CollectionRef starts request paths in imported load plans.
+const CollectionRef = "@collection/"
+
+// DataFile is a data file an imported load test needs.
+type DataFile struct {
+	Source string // path as written in the source file
+	// Header is a CSV header line to prepend (JMeter lists column names in
+	// the plan, not the file).
+	Header string
 }
 
 type Request struct {
@@ -40,6 +57,7 @@ type Report struct {
 	Requests     int       `json:"requests"`
 	Folders      int       `json:"folders"`
 	Environments []string  `json:"environments,omitempty"`
+	LoadTests    []string  `json:"loadTests,omitempty"`
 	Warnings     []Warning `json:"warnings"`
 }
 

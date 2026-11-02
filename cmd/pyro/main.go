@@ -251,9 +251,10 @@ func importCmd() *cobra.Command {
 	var wsDir, reportFile, into string
 	cmd := &cobra.Command{
 		Use:   "import <file>...",
-		Short: "Import Postman, OpenAPI/Swagger, HAR or cURL into a workspace",
+		Short: "Import Postman, OpenAPI/Swagger, HAR, JMeter or cURL into a workspace",
 		Long: "Imports Postman collections and environments (v2.0/v2.1), OpenAPI 3.x and Swagger 2.0\n" +
-			"definitions (JSON or YAML), HAR recordings and cURL commands. The format is detected.\n" +
+			"definitions (JSON or YAML), HAR recordings, JMeter test plans (.jmx, as requests plus a\n" +
+			"load test) and cURL commands. The format is detected.\n" +
 			"Each file becomes a new collection unless --into names an existing collection or folder.\n" +
 			"Use - to read from standard input (handy for a copied cURL command).",
 		Example: "  pyro import shop.postman_collection.json staging.postman_environment.json\n" +
@@ -291,6 +292,9 @@ func importCmd() *cobra.Command {
 				}
 				if err != nil {
 					return fmt.Errorf("%s: %w", file, err)
+				}
+				if file != "-" {
+					copyDataFiles(ws.Root, file, bundle.DataFiles)
 				}
 				reports = append(reports, rep)
 				printReport(file, rep)
@@ -380,6 +384,9 @@ func printReport(file string, r *importer.Report) {
 	for _, e := range r.Environments {
 		fmt.Printf("  environment  environments/%s.env.yaml\n", e)
 	}
+	for _, l := range r.LoadTests {
+		fmt.Printf("  load test    loadtests/%s.load.yaml\n", l)
+	}
 	if len(r.Warnings) > 0 {
 		fmt.Printf("  %d warning(s):\n", len(r.Warnings))
 		for _, w := range r.Warnings {
@@ -439,4 +446,32 @@ func stdinIsTerminal() bool { return term.IsTerminal(int(os.Stdin.Fd())) }
 func isWSL() bool {
 	b, err := os.ReadFile("/proc/version")
 	return err == nil && strings.Contains(strings.ToLower(string(b)), "microsoft")
+}
+
+// copyDataFiles copies data files an imported load test reads (e.g. a
+// JMeter CSV Data Set) into the workspace when they can be found: at the
+// path the source gave, or next to the imported file. Existing files are
+// kept.
+func copyDataFiles(root, imported string, files map[string]importer.DataFile) {
+	for dst, df := range files {
+		target := filepath.Join(root, filepath.FromSlash(dst))
+		if _, err := os.Stat(target); err == nil {
+			continue
+		}
+		src := strings.ReplaceAll(df.Source, `\`, "/")
+		candidates := []string{src, filepath.Join(filepath.Dir(imported), filepath.Base(src))}
+		for _, c := range candidates {
+			data, err := os.ReadFile(c)
+			if err != nil {
+				continue
+			}
+			if df.Header != "" {
+				data = append([]byte(df.Header+"\n"), data...)
+			}
+			if err := os.MkdirAll(filepath.Dir(target), 0o755); err == nil && os.WriteFile(target, data, 0o644) == nil {
+				fmt.Printf("  data file    %s (copied from %s)\n", dst, c)
+			}
+			break
+		}
+	}
 }

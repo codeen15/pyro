@@ -1,5 +1,5 @@
 // Package auto detects an import's format (OpenAPI/Swagger, HAR, cURL,
-// Postman) and runs the matching importer.
+// JMeter, Postman) and runs the matching importer.
 package auto
 
 import (
@@ -11,6 +11,7 @@ import (
 	"github.com/codeen15/pyro/pkg/engine/importer"
 	"github.com/codeen15/pyro/pkg/engine/importer/curl"
 	"github.com/codeen15/pyro/pkg/engine/importer/har"
+	"github.com/codeen15/pyro/pkg/engine/importer/jmeter"
 	"github.com/codeen15/pyro/pkg/engine/importer/openapi"
 	"github.com/codeen15/pyro/pkg/engine/importer/postman"
 )
@@ -26,6 +27,8 @@ func Parse(filename string, data []byte) (*importer.Bundle, error) {
 	switch {
 	case len(trimmed) == 0:
 		return nil, errors.New("the file is empty")
+	case jmeter.Looks(trimmed):
+		return jmeter.Parse(name, trimmed)
 	case curl.Looks(trimmed):
 		return curl.Parse(name, trimmed)
 	case openapi.Looks(trimmed):
@@ -35,5 +38,5 @@ func Parse(filename string, data []byte) (*importer.Bundle, error) {
 	case trimmed[0] == '{':
 		return postman.Parse(trimmed)
 	}
-	return nil, errors.New("unrecognised format: expected a Postman collection or environment, an OpenAPI/Swagger definition, a HAR file or cURL commands")
+	return nil, errors.New("unrecognised format: expected a Postman collection or environment, an OpenAPI/Swagger definition, a HAR file, a JMeter test plan (.jmx) or cURL commands")
 }

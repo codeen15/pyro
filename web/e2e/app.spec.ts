@@ -211,3 +211,16 @@ test("API docs and mock server from examples", async ({ page, context }) => {
   await page.getByRole("button", { name: "Stop" }).click();
   await expect(page.getByRole("button", { name: "Start mock server" })).toBeVisible();
 });
+
+test("import a JMeter test plan as requests and a load test", async ({ page }) => {
+  await page.getByRole("button", { name: "Import", exact: true }).click();
+  await page.setInputFiles(".drop-zone input[type=file]", new URL("../../pkg/engine/importer/jmeter/testdata/shop.jmx", import.meta.url).pathname);
+  await expect(page.getByRole("heading", { name: /Imported “Shop checkout”/ })).toBeVisible();
+  await expect(page.locator(".report")).toContainText("jmeter");
+  await page.locator(".report").getByRole("button", { name: "shop-checkout" }).click();
+  await expect(page.locator(".designer")).toBeVisible();
+  // One scenario per thread group; the shoppers' first step logs in once per VU.
+  const login = page.locator(".flow-step").filter({ has: page.locator("option:checked", { hasText: "shop-checkout/shoppers/log-in" }) });
+  await expect(login).toHaveCount(1);
+  await expect(login.locator('input[type="checkbox"]')).toBeChecked();
+});
