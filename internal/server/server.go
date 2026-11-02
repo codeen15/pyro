@@ -163,6 +163,9 @@ func (s *Server) Handler() http.Handler {
 		r.Get("/runs/{id}", s.getRun)
 		r.Delete("/runs/{id}", s.cancelRun)
 
+		r.Get("/data", s.listDataFiles)
+		r.Put("/data/*", s.putDataFile)
+		r.Post("/data/preview", s.previewData)
 		r.Get("/loadtests", s.listLoadTests)
 		r.Get("/loadtests/{name}", s.getLoadTest)
 		r.Put("/loadtests/{name}", s.putLoadTest)

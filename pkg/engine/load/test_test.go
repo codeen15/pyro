@@ -256,7 +256,7 @@ scenarios:
       - weighted:
           - { weight: 1, steps: [ { request: c/ok, name: branch } ] }
 `, func(o *Options) {
-		o.LoadData = func(string) ([]map[string]string, error) {
+		o.LoadData = func(string, model.DataFormat) ([]map[string]string, error) {
 			return []map[string]string{{"user": "ann"}, {"user": "bob"}}, nil
 		}
 	})

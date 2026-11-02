@@ -33,7 +33,7 @@ type Options struct {
 	// Resolve loads a request by workspace path.
 	Resolve func(path string) (Target, error)
 	// LoadData loads a data file named in the plan.
-	LoadData func(file string) ([]map[string]string, error)
+	LoadData func(file string, f model.DataFormat) ([]map[string]string, error)
 	MaxVUs   int
 	// TickInterval defaults to 1s.
 	TickInterval time.Duration
@@ -219,7 +219,7 @@ func Prepare(p *Plan, opts Options) (*Test, error) {
 			if opts.LoadData == nil {
 				return nil, fmt.Errorf("scenario %s: data files are not available here", name)
 			}
-			data, err := opts.LoadData(d.File)
+			data, err := opts.LoadData(d.File, d.DataFormat)
 			if err != nil {
 				return nil, fmt.Errorf("scenario %s: %w", name, err)
 			}

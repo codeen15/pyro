@@ -75,7 +75,7 @@ thresholds:
 ## Flow steps
 | Step | Meaning |
 |---|---|
-| `request: <path>` | Run a workspace request (scripts, assertions and extractors included). Options: `once`, `hold` (streams), `send` (messages to send on a stream), `name` (metric tag override). |
+| `request: <path>` | Run a workspace request (scripts, assertions and extractors included). Options: `once`, `hold` (streams: keep the connection open this long), `send` (messages to send on a stream, in order: `{event, content, ack}` for Socket.IO, where `content` is the JSON array of arguments, or `{content, binary}` for WebSocket; `{{variables}}` are filled in per VU), `name` (metric tag override). |
 | `think: {min,max}` / `think: 2s` | Pause, uniformly random between min and max. Requests can also carry their own JMeter-style timer (constant, uniform, Gaussian, Poisson), run before every send of that request; see [data-model.md](data-model.md#think-time-and-prepost-processors). |
 | `loop: {count \| while, steps}` | Repeat steps a fixed number of times, or while an expression is true. |
 | `if: {expr, then, else}` | Branch on an expression over variables, e.g. `status == 200 && cartSize > 0`. Expressions see every variable (numeric strings compare as numbers) plus `status` and `duration` (ms) of the last response and `iteration`. |
@@ -125,9 +125,30 @@ plan's `hosts:` list, `loadAllowHosts` and loopback. URLs built at run time to o
 refused; list those hosts under `hosts:` so they're confirmed up front.
 
 ## Data feeders
-- File types: CSV (header row = variable names) and JSON (array of objects).
+Like JMeter's CSV Data Set Config: each iteration takes a row, and its columns become
+`{{variables}}` for every request, script and stream message in that iteration.
+
+```yaml
+scenarios:
+  shoppers:
+    data:
+      file: data/users.csv      # inside the workspace (the designer uploads files to data/)
+      mode: per-vu              # shared (default) | per-vu | random
+      onEnd: recycle            # recycle (default) | stop
+      variables: [user, pass, region]   # names for a file without a header line
+      header: true              # with variables: skip the file's own header line
+      map: { user: username, region: "" }   # rename columns; "" leaves one out
+      delimiter: ";"            # default ","; "tab" for TSV
+```
+
+- File types: CSV/TSV/text and JSON (an array of flat objects; only `map` applies).
+- **Column names:** without `variables`, the first line names the columns (JMeter's
+  default). With `variables`, columns are named in order; add `header: true` if the file
+  still has a header line to skip.
 - `mode: shared` (every VU reads the next row from a global cursor), `per-vu` (each VU gets its own row, chosen by VU id), `random`.
 - `onEnd: recycle | stop` decides what happens when the rows run out.
+- The designer's **Test data** panel uploads a file, previews the first rows as they will be
+  read, and lets you rename each column's variable.
 - Plugins of kind `datasource` can add more feeders.
 
 ## Metrics

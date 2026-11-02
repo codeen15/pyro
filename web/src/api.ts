@@ -391,6 +391,25 @@ export function saveFile(filename: string, text: string, type = "application/jso
 
 // --- Load tests ---------------------------------------------------------------
 
+/** How a data file becomes variables (JMeter's CSV Data Set Config). */
+export interface DataFormat {
+  /** First line holds column names (default: yes, unless variables are given). */
+  header?: boolean;
+  /** Names for the columns, in order, for files without a header line. */
+  variables?: string[];
+  /** Column → variable; "" leaves a column out. */
+  map?: Record<string, string>;
+  /** One character, or "tab". */
+  delimiter?: string;
+}
+
+export interface DataPreview {
+  columns: string[];
+  variables: string[];
+  rows: Record<string, string>[];
+  total: number;
+}
+
 export interface LoadTestView {
   name: string;
   title?: string;
@@ -723,6 +742,9 @@ export const api = {
   loadTest: (name: string) => call<LoadTestView>("GET", `/loadtests/${encodeURIComponent(name)}`),
   saveLoadTest: (name: string, yaml: string) => call<LoadTestView>("PUT", `/loadtests/${encodeURIComponent(name)}`, { yaml }),
   deleteLoadTest: (name: string) => call<void>("DELETE", `/loadtests/${encodeURIComponent(name)}`),
+  dataFiles: () => call<{ path: string; size: number }[]>("GET", "/data"),
+  uploadData: (name: string, text: string) => call<{ path: string; size: number }>("PUT", `/data/${enc(name)}`, text, true),
+  previewData: (body: { file: string; limit?: number } & DataFormat) => call<DataPreview>("POST", "/data/preview", body),
   agents: () => call<AgentView[]>("GET", "/agents"),
   startLoadTest: (name: string, body: { environment?: string; confirmHosts?: boolean; distributed?: boolean }) =>
     call<{ id: string; test: string }>("POST", `/loadtests/${encodeURIComponent(name)}/start`, body),

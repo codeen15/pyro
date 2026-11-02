@@ -274,3 +274,28 @@ func TestMockServerAPI(t *testing.T) {
 		t.Fatal("mock still answering after stop")
 	}
 }
+
+func TestDataFiles(t *testing.T) {
+	ts := newTestServer(t)
+	if res, body := do(t, ts, "PUT", "/api/v1/data/users.csv", "ada;s3cret\nbob;hunter2\n", true); res.StatusCode != 201 || !strings.Contains(body, `"path":"data/users.csv"`) {
+		t.Fatalf("upload: %d %s", res.StatusCode, body)
+	}
+	if res, _ := do(t, ts, "PUT", "/api/v1/data/evil.sh", "x", true); res.StatusCode != 400 {
+		t.Fatalf("non-data extension: %d", res.StatusCode)
+	}
+	do(t, ts, "PUT", "/api/v1/data/../../outside.csv", "a\n1\n", true)
+	_, body := do(t, ts, "GET", "/api/v1/data", "", true)
+	if !strings.Contains(body, `"data/users.csv"`) || strings.Contains(body, "outside") && !strings.Contains(body, `"data/outside.csv"`) {
+		t.Fatalf("list: %s", body)
+	}
+	res, body := do(t, ts, "POST", "/api/v1/data/preview", `{"file":"data/users.csv","variables":["user","pass"],"delimiter":";","map":{"user":"username"}}`, true)
+	if res.StatusCode != 200 || !strings.Contains(body, `"variables":["username","pass"]`) || !strings.Contains(body, `"total":2`) || !strings.Contains(body, `"username":"ada"`) {
+		t.Fatalf("preview: %d %s", res.StatusCode, body)
+	}
+	if res, body := do(t, ts, "POST", "/api/v1/data/preview", `{"file":"data/users.csv","header":false}`, true); res.StatusCode != 422 {
+		t.Fatalf("headerless without names: %d %s", res.StatusCode, body)
+	}
+	if res, _ := do(t, ts, "POST", "/api/v1/data/preview", `{"file":"data/nope.csv"}`, true); res.StatusCode != 404 {
+		t.Fatalf("missing file: %d", res.StatusCode)
+	}
+}

@@ -395,7 +395,7 @@ func PrepareJob(job Job, opts Options, report func(Report)) (*Test, error) {
 	opts.InsecureTLS = job.InsecureTLS
 	opts.OnReport = report
 	opts.Workers = nil
-	opts.LoadData = func(file string) ([]map[string]string, error) {
+	opts.LoadData = func(file string, _ model.DataFormat) ([]map[string]string, error) {
 		return nil, fmt.Errorf("data file %s wasn't sent with the job", file)
 	}
 	opts.Resolve = func(path string) (Target, error) {

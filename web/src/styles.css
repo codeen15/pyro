@@ -3972,3 +3972,108 @@ input[type="checkbox"] {
 .var-card-edit > .ant-input {
   flex: 1;
 }
+
+/* ---------- Load test data and stream steps ---------- */
+.lt-data {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--rule);
+}
+.lt-data .sub-head,
+.lt-data > p {
+  margin: 0;
+}
+.lt-data-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.lt-data-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.lt-data-file {
+  min-width: 240px;
+}
+.lt-field-wide {
+  grid-column: span 2;
+}
+.lt-data-filerow {
+  display: flex;
+  gap: 8px;
+}
+.lt-data-filerow .ant-select {
+  flex: 1;
+  min-width: 0;
+}
+.lt-data-check {
+  align-content: end;
+  min-height: 32px;
+}
+.lt-data-preview {
+  min-width: 0;
+  overflow-x: auto;
+}
+.lt-data-col {
+  display: grid;
+  gap: 4px;
+  min-width: 120px;
+}
+.step-stream {
+  display: grid;
+  grid-template-columns: 140px minmax(0, 1fr);
+  gap: 12px 16px;
+  flex-basis: 100%;
+  margin: 4px 0 4px 28px;
+  padding: 12px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-lg);
+  background: var(--iron-2);
+}
+.step-hold,
+.step-msgs {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  min-width: 0;
+}
+.step-msg {
+  display: grid;
+  grid-template-columns: 160px minmax(0, 1fr) auto auto;
+  align-items: start;
+  gap: 8px;
+}
+.step-msg:not(:has(.step-msg-event)) {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+}
+.step-msg .ant-checkbox-wrapper {
+  margin-top: 5px;
+}
+.step-msg-add {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+@media (max-width: 1100px) {
+  .lt-field-wide {
+    grid-column: span 2;
+  }
+}
+@media (max-width: 760px) {
+  .lt-field-wide {
+    grid-column: auto;
+  }
+  .step-stream {
+    grid-template-columns: minmax(0, 1fr);
+    margin-left: 0;
+  }
+  .step-msg {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .step-msg-event {
+    grid-column: 1 / -1;
+  }
+}

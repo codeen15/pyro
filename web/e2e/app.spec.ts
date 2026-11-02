@@ -355,3 +355,45 @@ test("variables are coloured and editable from a hover card", async ({ page }) =
   await page.getByRole("button", { name: "Send" }).click();
   await expect(page.locator(".response")).toContainText("/items/red");
 });
+
+test("load test data from a CSV and Socket.IO events with args", async ({ page }) => {
+  // A Socket.IO request to use as a step.
+  const shop = page.locator(".row-wrap").filter({ has: page.getByText("Shop", { exact: true }) });
+  await shop.hover();
+  await shop.getByRole("button", { name: "New request in Shop" }).click();
+  await page.getByRole("radio", { name: /Socket\.IO/ }).click();
+  await page.getByRole("dialog").getByLabel("Request name").fill("Chat");
+  await page.getByRole("button", { name: "Create request" }).click();
+  await expect(page.locator(".kind-label")).toHaveText("Socket.IO");
+
+  await page.getByRole("tab", { name: "Load" }).click();
+  await page.locator(".rail .row", { hasText: "Smoke" }).first().click();
+
+  // A CSV without a header, named like JMeter's Variable Names.
+  await page.locator(".lt-data input[type=file]").setInputFiles({ name: "users.csv", mimeType: "text/csv", buffer: Buffer.from("ada;s3cret;eu\nbob;hunter2;us\n") });
+  await pickOption(page, page.getByRole("combobox", { name: "Delimiter" }), "Semicolon ;");
+  await page.getByLabel("Variable names").fill("user,pass,region");
+  await expect(page.locator(".lt-data")).toContainText("2 rows");
+  await expect(page.locator(".lt-data-preview")).toContainText("hunter2");
+  // Map a column to another variable name.
+  await page.getByLabel("Variable for column user").first().fill("username");
+
+  // The Socket.IO step: an event with JSON args using the data.
+  await page.getByRole("button", { name: "Request", exact: true }).click();
+  await pickOption(page, page.locator(".flow-step").last().getByRole("combobox", { name: "Request" }), "shop/chat (socketio)");
+  await page.getByLabel("Keep the connection open for").fill("2s");
+  await page.getByRole("button", { name: "Event", exact: true }).click();
+  await page.getByLabel("Event of message 1").fill("join");
+  await page.getByLabel("Arguments of message 1").fill('["lobby", {"user": "{{username}}"}]');
+  await page.locator(".step-msg").getByText("Ack").click();
+
+  await page.getByRole("tab", { name: "YAML" }).click();
+  const yaml = page.getByLabel("Load test YAML");
+  await expect(yaml).toHaveValue(/file: data\/users\.csv/);
+  await expect(yaml).toHaveValue(/variables:\s*\n\s*- user\s*\n\s*- pass\s*\n\s*- region/);
+  await expect(yaml).toHaveValue(/delimiter: "?;"?/);
+  await expect(yaml).toHaveValue(/user: username/);
+  await expect(yaml).toHaveValue(/event: join/);
+  await expect(yaml).toHaveValue(/ack: true/);
+  await expect(yaml).toHaveValue(/hold: 2s/);
+});

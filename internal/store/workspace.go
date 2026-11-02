@@ -541,7 +541,11 @@ func writeYAML(file string, v any) error {
 	if err := enc.Close(); err != nil {
 		return err
 	}
-	data := buf.Bytes()
+	return writeAtomic(file, buf.Bytes())
+}
+
+// writeAtomic replaces file with data via a temporary file and rename.
+func writeAtomic(file string, data []byte) error {
 	tmp, err := os.CreateTemp(filepath.Dir(file), ".tmp-*")
 	if err != nil {
 		return err

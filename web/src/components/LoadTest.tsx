@@ -34,6 +34,7 @@ import {
 } from "../loadProfiles";
 import { useApp } from "../store";
 import { LineChart, clock } from "./LineChart";
+import { DataEditor, StreamStepEditor } from "./LoadData";
 import { SaveButton } from "./RequestEditor";
 import { LoadTestMenu } from "./LoadActions";
 
@@ -686,6 +687,7 @@ function ScenarioEditor({
       )}
 
       <FlowEditor doc={doc} base={base} update={update} requests={requests} />
+      <DataEditor doc={doc} base={base} update={update} />
     </section>
   );
 }
@@ -741,6 +743,7 @@ function FlowEditor({
           const script = m.get?.("script") as string | undefined;
           const scriptFile = m.get?.("scriptFile") as string | undefined;
           let body: React.ReactNode;
+          const streamKind = requests.find((r) => r.path === request)?.kind;
           if (script !== undefined) {
             body = (
               <div className="script-step">
@@ -827,11 +830,6 @@ function FlowEditor({
                 >
                   Once per VU
                 </Checkbox>
-                {m.get("hold") !== undefined && (
-                  <span className="muted small">
-                    holds {String(m.get("hold"))}
-                  </span>
-                )}
               </>
             );
           } else if (think !== undefined) {
@@ -916,6 +914,16 @@ function FlowEditor({
                   aria-label="Remove step"
                 />
               </span>
+              {request !== undefined &&
+                (streamKind === "websocket" || streamKind === "socketio") && (
+                  <StreamStepEditor
+                    doc={doc}
+                    path={[...path, i]}
+                    update={update}
+                    request={request}
+                    kind={streamKind}
+                  />
+                )}
             </li>
           );
         })}

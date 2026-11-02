@@ -245,6 +245,20 @@ type SocketIOConfig struct {
 	Transport string `yaml:"transport,omitempty" json:"transport,omitempty"`
 }
 
+// DataFormat says how to read a CSV data file into variables, like
+// JMeter's CSV Data Set Config. With no Variables, the first line holds the
+// column names. Variables names the columns in order instead; set Header
+// too when the file still has a header line to skip. Map renames columns
+// to variables ("" leaves a column out). JSON files (an array of objects)
+// only use Map.
+type DataFormat struct {
+	Header    *bool             `yaml:"header,omitempty" json:"header,omitempty"`
+	Variables []string          `yaml:"variables,omitempty" json:"variables,omitempty"`
+	Map       map[string]string `yaml:"map,omitempty" json:"map,omitempty"`
+	// Delimiter is one character; "\t" or "tab" for tab-separated files.
+	Delimiter string `yaml:"delimiter,omitempty" json:"delimiter,omitempty"`
+}
+
 // Environment is stored as environments/<name>.env.yaml.
 type Environment struct {
 	Name      string     `yaml:"name" json:"name"`

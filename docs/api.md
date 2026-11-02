@@ -64,6 +64,9 @@ TypeScript client in `web/src/api.ts`.
 | POST | `/api/v1/runs` | Body `{path, environment?, iterations?, data?, delayMs?, bail?}`. Starts a background collection run; `202` with the run view |
 | GET | `/api/v1/runs/{id}` | `{id, path, status, done, total, results[], summary?}` |
 | DELETE | `/api/v1/runs/{id}` | Cancel |
+| GET | `/api/v1/data` | Data files under `data/`: `[{path, size}]` |
+| PUT | `/api/v1/data/{name}` | Upload a data file (raw body, `.csv`/`.tsv`/`.txt`/`.json`, up to 64 MB) to `data/{name}` → `201 {path, size}` |
+| POST | `/api/v1/data/preview` | Body `{file, limit?, header?, variables?, map?, delimiter?}` → `{columns, variables, rows, total}` (first `limit` rows, default 5); `422` when the file can't be read that way |
 | GET | `/api/v1/loadtests` | `[{name, title?, peakVUs?, error?}]` (`error` = the plan doesn't validate) |
 | GET / PUT / DELETE | `/api/v1/loadtests/{name}` | GET returns `{name, title, yaml, plan, peakVUs, error?}`. PUT `{yaml}` validates (400 with every problem) and saves the raw text, so comments survive. |
 | POST | `/api/v1/loadtests/{name}/start` | Body `{environment?, confirmHosts?, distributed?}` (`distributed` runs on the agents given to `pyro serve --agent`; `400` if none). `409 {needsConfirmation, hosts}` when it would target hosts that aren't loopback or in `loadAllowHosts`; `409 {running}` when another test runs; `202 {id}` when started. |

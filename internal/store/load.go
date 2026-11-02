@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/codeen15/pyro/pkg/engine/load"
+	"github.com/codeen15/pyro/pkg/engine/model"
 	"github.com/codeen15/pyro/pkg/engine/runner"
 )
 
@@ -132,12 +133,12 @@ func (w *Workspace) Target(path string) (load.Target, error) {
 }
 
 // LoadData reads a data file named by a plan, relative to the workspace root.
-func (w *Workspace) LoadData(file string) ([]map[string]string, error) {
+func (w *Workspace) LoadData(file string, f model.DataFormat) ([]map[string]string, error) {
 	p, err := w.resolve(filepath.ToSlash(filepath.Clean(file)))
 	if err != nil {
 		return nil, fmt.Errorf("data file %q must be inside the workspace: %w", file, err)
 	}
-	return runner.LoadData(p)
+	return runner.LoadDataAs(p, f)
 }
 
 // UnconfirmedHosts returns the hosts that are neither loopback nor in

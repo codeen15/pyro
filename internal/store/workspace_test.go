@@ -267,7 +267,7 @@ func TestLoadTests(t *testing.T) {
 	if _, err := ws.ReadLoadTest("../x"); !errors.Is(err, ErrInvalidPath) {
 		t.Fatalf("traversal: %v", err)
 	}
-	if _, err := ws.LoadData("../../etc/passwd"); err == nil {
+	if _, err := ws.LoadData("../../etc/passwd", model.DataFormat{}); err == nil {
 		t.Fatal("data outside the workspace must be refused")
 	}
 	ws.Meta.LoadAllowHosts = []string{"staging.example.com"}

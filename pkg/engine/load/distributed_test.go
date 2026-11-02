@@ -7,6 +7,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/codeen15/pyro/pkg/engine/model"
 )
 
 // memWorker runs its segment in-process, with the job JSON round-tripped
@@ -151,7 +153,7 @@ scenarios:
     data: { file: users.csv }
     flow: [ { request: c/login } ]
 `, func(o *Options) {
-		o.LoadData = func(string) ([]map[string]string, error) { return rows, nil }
+		o.LoadData = func(string, model.DataFormat) ([]map[string]string, error) { return rows, nil }
 		for _, w := range workers {
 			o.Workers = append(o.Workers, w)
 		}

@@ -14,6 +14,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/codeen15/pyro/pkg/engine/model"
+	"github.com/codeen15/pyro/pkg/engine/runner"
 )
 
 // Plan is a parsed *.load.yaml file.
@@ -76,6 +77,8 @@ type Data struct {
 	File  string `yaml:"file" json:"file"`
 	Mode  string `yaml:"mode,omitempty" json:"mode,omitempty"`   // shared | per-vu | random
 	OnEnd string `yaml:"onEnd,omitempty" json:"onEnd,omitempty"` // recycle | stop
+	// How to read the file: header line, variable names, column mapping.
+	model.DataFormat `yaml:",inline" json:",inline"`
 }
 
 // Step is one flow step; exactly one of its kinds is set.
@@ -311,6 +314,9 @@ func (p *Plan) Validate(exists func(string) bool) error {
 			case "", "recycle", "stop":
 			default:
 				add("%s: data onEnd must be recycle or stop", where)
+			}
+			if _, err := runner.Delimiter(s.Data.Delimiter); err != nil {
+				add("%s: data %v", where, err)
 			}
 		}
 	}
