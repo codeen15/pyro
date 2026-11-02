@@ -36,6 +36,12 @@ type Collection struct {
 	Variables   []Variable `yaml:"variables,omitempty" json:"variables,omitempty"`
 	Auth        *Auth      `yaml:"auth,omitempty" json:"auth,omitempty"`
 	Scripts     *Scripts   `yaml:"scripts,omitempty" json:"scripts,omitempty"`
+	// Think is the default timer for every request beneath (nearest wins).
+	Think *Timer `yaml:"think,omitempty" json:"think,omitempty"`
+	// Pre and Post processors run around every request beneath, outer
+	// levels first.
+	Pre  []Processor `yaml:"pre,omitempty" json:"pre,omitempty"`
+	Post []Processor `yaml:"post,omitempty" json:"post,omitempty"`
 	// Order lists child file/folder names (without .req.yaml) in run order.
 	// Children not listed follow, folders first, sorted by name.
 	Order []string `yaml:"order,omitempty" json:"order,omitempty"`
@@ -57,8 +63,17 @@ type Request struct {
 	Auth    *Auth    `yaml:"auth,omitempty" json:"auth,omitempty"`
 	Scripts *Scripts `yaml:"scripts,omitempty" json:"scripts,omitempty"`
 
+	// Assertions and Extract are the older form of post-processors; they
+	// still run, after Post.
 	Assertions []Assertion `yaml:"assertions,omitempty" json:"assertions,omitempty"`
 	Extract    []Extractor `yaml:"extract,omitempty" json:"extract,omitempty"`
+
+	// Think delays the request in load tests (and collection runs that opt
+	// in), like a JMeter timer. Nil inherits the nearest folder/collection's.
+	Think *Timer `yaml:"think,omitempty" json:"think,omitempty"`
+	// Pre runs before the request is resolved; Post after the response.
+	Pre  []Processor `yaml:"pre,omitempty" json:"pre,omitempty"`
+	Post []Processor `yaml:"post,omitempty" json:"post,omitempty"`
 
 	// Options holds settings for plugin request types (kind plugin:<id>),
 	// as declared by the plugin's manifest fields.
@@ -134,11 +149,72 @@ type Assertion struct {
 }
 
 // Extractor copies part of a response into a variable.
-// From is one of: jsonpath, header, regex, status.
+// From is one of: jsonpath, header, regex, status, boundary, xpath.
+// Boundary extracts the text between Left and Right.
 type Extractor struct {
-	Var  string `yaml:"var" json:"var"`
-	From string `yaml:"from" json:"from"`
-	Path string `yaml:"path,omitempty" json:"path,omitempty"`
+	Var   string `yaml:"var" json:"var"`
+	From  string `yaml:"from" json:"from"`
+	Path  string `yaml:"path,omitempty" json:"path,omitempty"`
+	Left  string `yaml:"left,omitempty" json:"left,omitempty"`
+	Right string `yaml:"right,omitempty" json:"right,omitempty"`
+}
+
+// Timer types (JMeter's constant, uniform random, Gaussian random and
+// Poisson random timers).
+const (
+	TimerConstant = "constant"
+	TimerUniform  = "uniform"
+	TimerGaussian = "gaussian"
+	TimerPoisson  = "poisson"
+)
+
+// Timer is think time before a request. Delay is the constant part; Range
+// is the random part: uniform adds 0..Range, gaussian adds a normal
+// deviation of Range, poisson adds a Poisson-distributed delay with mean
+// Range. Durations are Go-style ("300ms", "1.5s"). Type "none" turns off
+// an inherited timer.
+type Timer struct {
+	Type  string `yaml:"type" json:"type"`
+	Delay string `yaml:"delay,omitempty" json:"delay,omitempty"`
+	Range string `yaml:"range,omitempty" json:"range,omitempty"`
+}
+
+// Processor types. Pre: script, vars, counter, plugin:<id>. Post: script,
+// extract, assert, vars, plugin:<id>.
+const (
+	ProcScript  = "script"
+	ProcVars    = "vars"
+	ProcCounter = "counter"
+	ProcExtract = "extract"
+	ProcAssert  = "assert"
+)
+
+// Processor is one step run before (pre) or after (post) a request, like
+// JMeter's pre/post processors.
+type Processor struct {
+	Type     string `yaml:"type" json:"type"`
+	Name     string `yaml:"name,omitempty" json:"name,omitempty"`
+	Disabled bool   `yaml:"disabled,omitempty" json:"disabled,omitempty"`
+	// Script is pm.*-compatible JavaScript (type script).
+	Script string `yaml:"script,omitempty" json:"script,omitempty"`
+	// Vars sets each key to its value, variables resolved (type vars).
+	Vars    []KeyValue `yaml:"vars,omitempty" json:"vars,omitempty"`
+	Counter *Counter   `yaml:"counter,omitempty" json:"counter,omitempty"`
+	Extract *Extractor `yaml:"extract,omitempty" json:"extract,omitempty"`
+	Assert  *Assertion `yaml:"assert,omitempty" json:"assert,omitempty"`
+	// Options holds a plugin processor's fields (type plugin:<id>).
+	Options map[string]string `yaml:"options,omitempty" json:"options,omitempty"`
+}
+
+// Counter sets Var to Start on first use, then adds Step (default 1) each
+// time. With End set, it wraps back to Start after passing End. Counters
+// live in the run's variables, so each virtual user counts on its own.
+type Counter struct {
+	Var    string `yaml:"var" json:"var"`
+	Start  int    `yaml:"start,omitempty" json:"start,omitempty"`
+	Step   int    `yaml:"step,omitempty" json:"step,omitempty"`
+	End    int    `yaml:"end,omitempty" json:"end,omitempty"`
+	Format string `yaml:"format,omitempty" json:"format,omitempty"` // e.g. "%05d"
 }
 
 // Example is a saved response (Postman calls these examples).

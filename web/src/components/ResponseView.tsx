@@ -170,7 +170,7 @@ export function TestsView({ result }: { result: SendResult }) {
   const extracted = Object.entries(result.extracted ?? {});
   const logs = result.logs ?? [];
   if (tests.length === 0 && extracted.length === 0 && logs.length === 0 && !result.problems?.length) {
-    return <p className="muted pad">No tests for this request. Add assertions or a post-response script in the Tests and Scripts tabs.</p>;
+    return <p className="muted pad">No tests for this request. Add an assertion or a script in the Post-processors tab.</p>;
   }
   return (
     <div className="tests-view">

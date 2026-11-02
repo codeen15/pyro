@@ -16,6 +16,7 @@ export function RunnerView({ path }: { path: string }) {
   const [iterations, setIterations] = useState(1);
   const [delayMs, setDelayMs] = useState(0);
   const [bail, setBail] = useState(false);
+  const [think, setThink] = useState(false);
   const [data, setData] = useState<{ name: string; rows: Record<string, string>[] } | null>(null);
   const [dataError, setDataError] = useState<string | null>(null);
   const [run, setRun] = useState<Run | null>(null);
@@ -56,6 +57,7 @@ export function RunnerView({ path }: { path: string }) {
         data: data?.rows,
         delayMs: delayMs || undefined,
         bail,
+        think: think || undefined,
       });
       setRun(r);
     } catch (e) {
@@ -87,7 +89,7 @@ export function RunnerView({ path }: { path: string }) {
           <header className="runner-head">
             <h1>Run {path}</h1>
             <p className="muted">
-              Sends every request in order with scripts, assertions and extractors. Values captured by one request feed the next.
+              Sends every request in order with its pre- and post-processors. Values captured by one request feed the next.
               {environment ? (
                 <>
                   {" "}Environment: <code>{environment}</code>.
@@ -131,6 +133,12 @@ export function RunnerView({ path }: { path: string }) {
             <Checkbox className="run-bail" checked={bail} onChange={(e) => setBail(e.target.checked)} disabled={running}>
               Stop at first failure
             </Checkbox>
+            <div className="run-think">
+              <Checkbox checked={think} onChange={(e) => setThink(e.target.checked)} disabled={running}>
+                Apply think time
+              </Checkbox>
+              <span className="muted small">Wait each request's timer, as a load test would.</span>
+            </div>
             <div className="run-actions">
               {running ? (
                 <Button icon={<Square size={13} />} onClick={() => api.cancelRun(run!.id)}>

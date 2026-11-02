@@ -82,7 +82,7 @@ type Response struct {
 type Context struct {
 	// Config holds the plugin's settings as configured by the user.
 	Config map[string]string
-	// Params holds the auth type's fields (auth plugins only).
+	// Params holds the auth type's or processor's fields.
 	Params map[string]string
 }
 
@@ -96,6 +96,62 @@ type Auth interface {
 	Sign(ctx *Context, req *Request) error
 }
 
+// Response seen by a post-processor.
+type ProcessResponse struct {
+	Status     int        `json:"status"`
+	StatusText string     `json:"statusText,omitempty"`
+	Headers    []KeyValue `json:"headers,omitempty"`
+	Body       []byte     `json:"body,omitempty"`
+	TimeMs     float64    `json:"timeMs"`
+}
+
+// Process is one processor call. Before the request (Phase "pre") Request
+// is unresolved and may be changed in place; after it (Phase "post")
+// Request is what was sent and Response is set. Vars holds every variable
+// in scope; Params holds the processor's fields.
+type Process struct {
+	Phase    string
+	Request  *Request
+	Response *ProcessResponse
+	Vars     map[string]string
+	set      map[string]string
+	tests    []TestResult
+}
+
+// SetVar sets a variable in the run (later requests can use {{name}}).
+func (p *Process) SetVar(name, value string) {
+	if p.set == nil {
+		p.set = map[string]string{}
+	}
+	p.set[name] = value
+	if p.Vars != nil {
+		p.Vars[name] = value
+	}
+}
+
+// Test records a check, shown with the request's test results.
+func (p *Process) Test(name string, passed bool, msg string) {
+	p.tests = append(p.tests, TestResult{Name: name, Passed: passed, Error: msg})
+}
+
+// TestResult is a check reported by a processor.
+type TestResult struct {
+	Name   string `json:"name"`
+	Passed bool   `json:"passed"`
+	Error  string `json:"error,omitempty"`
+}
+
+// Processor adds a pre/post processor ("plugin:<id>") that runs around
+// requests, like JMeter's pre and post processors.
+type Processor interface {
+	Process(ctx *Context, p *Process) error
+}
+
+// ProcessorFunc adapts a function to Processor.
+type ProcessorFunc func(ctx *Context, p *Process) error
+
+func (f ProcessorFunc) Process(ctx *Context, p *Process) error { return f(ctx, p) }
+
 // ProtocolFunc adapts a function to Protocol.
 type ProtocolFunc func(ctx *Context, req *Request) (*Response, error)
 
@@ -107,8 +163,9 @@ type AuthFunc func(ctx *Context, req *Request) error
 func (f AuthFunc) Sign(ctx *Context, req *Request) error { return f(ctx, req) }
 
 var (
-	protocols = map[string]Protocol{}
-	auths     = map[string]Auth{}
+	protocols  = map[string]Protocol{}
+	auths      = map[string]Auth{}
+	processors = map[string]Processor{}
 )
 
 // RegisterProtocol registers a request type. Call it from init().
@@ -116,6 +173,9 @@ func RegisterProtocol(id string, p Protocol) { protocols[id] = p }
 
 // RegisterAuth registers an auth type. Call it from init().
 func RegisterAuth(id string, a Auth) { auths[id] = a }
+
+// RegisterProcessor registers a pre/post processor. Call it from init().
+func RegisterProcessor(id string, p Processor) { processors[id] = p }
 
 // Log levels.
 const (
@@ -169,11 +229,14 @@ var _ io.ReadWriteCloser = (*Conn)(nil)
 // --- message dispatch (shared by the wasm ABI and tests) -------------------
 
 type message struct {
-	Op      string            `json:"op"`
-	ID      string            `json:"id,omitempty"`
-	Request *Request          `json:"request,omitempty"`
-	Config  map[string]string `json:"config,omitempty"`
-	Params  map[string]string `json:"params,omitempty"`
+	Op       string            `json:"op"`
+	ID       string            `json:"id,omitempty"`
+	Request  *Request          `json:"request,omitempty"`
+	Config   map[string]string `json:"config,omitempty"`
+	Params   map[string]string `json:"params,omitempty"`
+	Phase    string            `json:"phase,omitempty"`
+	Response *ProcessResponse  `json:"response,omitempty"`
+	Vars     map[string]string `json:"vars,omitempty"`
 }
 
 type provided struct {
@@ -182,11 +245,13 @@ type provided struct {
 }
 
 type reply struct {
-	ABI      int        `json:"abi,omitempty"`
-	Provides []provided `json:"provides,omitempty"`
-	Response *Response  `json:"response,omitempty"`
-	Request  *Request   `json:"request,omitempty"`
-	Error    string     `json:"error,omitempty"`
+	ABI      int               `json:"abi,omitempty"`
+	Provides []provided        `json:"provides,omitempty"`
+	Response *Response         `json:"response,omitempty"`
+	Request  *Request          `json:"request,omitempty"`
+	Vars     map[string]string `json:"vars,omitempty"`
+	Tests    []TestResult      `json:"tests,omitempty"`
+	Error    string            `json:"error,omitempty"`
 }
 
 func handle(m *message) reply {
@@ -199,6 +264,26 @@ func handle(m *message) reply {
 		}
 		for id := range auths {
 			r.Provides = append(r.Provides, provided{"auth", id})
+		}
+		for id := range processors {
+			r.Provides = append(r.Provides, provided{"processor", id})
+		}
+		return r
+	case "process":
+		pr, ok := processors[m.ID]
+		if !ok || m.Request == nil {
+			return reply{Error: fmt.Sprintf("no processor %q in this plugin", m.ID)}
+		}
+		p := &Process{Phase: m.Phase, Request: m.Request, Response: m.Response, Vars: m.Vars}
+		if p.Vars == nil {
+			p.Vars = map[string]string{}
+		}
+		if err := pr.Process(ctx, p); err != nil {
+			return reply{Error: err.Error(), Vars: p.set, Tests: p.tests}
+		}
+		r := reply{Vars: p.set, Tests: p.tests}
+		if m.Phase == "pre" {
+			r.Request = p.Request
 		}
 		return r
 	case "execute":

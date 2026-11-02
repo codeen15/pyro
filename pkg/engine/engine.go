@@ -1,8 +1,8 @@
 // Package engine runs requests through Pyro's shared pipeline:
 //
-//	pre-request scripts (collection → folders → request) → resolve variables
-//	→ apply auth → execute → post-response scripts (same order)
-//	→ assertions → extractors
+//	pre-processors (collection → folders → request; each level's legacy
+//	script first) → resolve variables → apply auth → execute
+//	→ post-processors (same order) → legacy assertions → legacy extractors
 package engine
 
 import (
@@ -16,6 +16,7 @@ import (
 	"github.com/codeen15/pyro/pkg/engine/check"
 	"github.com/codeen15/pyro/pkg/engine/model"
 	"github.com/codeen15/pyro/pkg/engine/plugin"
+	"github.com/codeen15/pyro/pkg/engine/process"
 	"github.com/codeen15/pyro/pkg/engine/protocol"
 	"github.com/codeen15/pyro/pkg/engine/protocol/httpdriver"
 	"github.com/codeen15/pyro/pkg/engine/script"
@@ -144,24 +145,10 @@ func (e *Engine) Send(ctx context.Context, in SendInput) *Result {
 	req := in.Request
 	info := script.Info{RequestName: req.Name, RequestID: in.Path, Iteration: in.Iteration}
 
-	// Pre-request scripts may rewrite the request before it is resolved.
-	for _, s := range scriptsFor(in, true) {
-		out := rt.Run(ctx, script.Input{
-			Phase: script.PreRequest, Name: s.name, Code: s.code, Request: req,
-			Vars: in.Vars, Info: info, Send: e.sendRaw,
-		})
-		res.absorb(out)
-		if out.Request != nil {
-			req = out.Request
-		}
-		if out.Error != "" {
-			// Like Postman, a failing pre-request script stops the request.
-			res.Sent = req
-			res.Error = "not sent: pre-request script failed"
-			return res
-		}
-		if out.Skip {
-			res.Sent, res.Skipped = req, true
+	// Pre-processors (scripts may rewrite the request) run before it is resolved.
+	for _, st := range stepsFor(in, true) {
+		var ok bool
+		if req, ok = e.runPre(ctx, st, req, in, rt, info, res); !ok {
 			return res
 		}
 	}
@@ -183,26 +170,25 @@ func (e *Engine) Send(ctx context.Context, in SendInput) *Result {
 	}
 	if err != nil {
 		res.Error = err.Error()
+		// Assertions still report, as failures, so a run shows what was expected.
+		for _, st := range stepsFor(in, false) {
+			if st.proc != nil && st.proc.Type == model.ProcAssert && st.proc.Assert != nil {
+				res.Tests = append(res.Tests, check.Assert([]model.Assertion{*st.proc.Assert}, nil)...)
+			}
+		}
 		res.Tests = append(res.Tests, check.Assert(req.Assertions, nil)...)
 		return res
 	}
 	res.Response = resp
 	wrapped := check.Wrap(resp)
 
-	for _, s := range scriptsFor(in, false) {
-		res.absorb(rt.Run(ctx, script.Input{
-			Phase: script.PostResponse, Name: s.name, Code: s.code, Request: sent, Response: wrapped,
-			Vars: in.Vars, Info: info, Send: e.sendRaw,
-		}))
+	for _, st := range stepsFor(in, false) {
+		e.runPost(ctx, st, sent, wrapped, in, rt, info, res)
 	}
 
 	res.Tests = append(res.Tests, check.Assert(req.Assertions, wrapped)...)
 	if len(req.Extract) > 0 {
-		vals, problems := check.Extract(req.Extract, wrapped)
-		for k, v := range vals {
-			in.Vars.Runtime[k] = v
-		}
-		res.Extracted, res.Problems = vals, problems
+		res.extract(req.Extract, wrapped, in.Vars)
 	}
 	return res
 }
@@ -285,39 +271,215 @@ func (e *Engine) sendRaw(ctx context.Context, r *model.Request) (*protocol.Respo
 	return e.HTTP.Execute(ctx, r)
 }
 
-type namedScript struct{ name, code string }
+// step is one pre or post step: a legacy script (code) or a processor.
+type step struct {
+	label string
+	code  string
+	proc  *model.Processor
+}
 
-func scriptsFor(in SendInput, pre bool) []namedScript {
-	var out []namedScript
-	pick := func(s *model.Scripts) string {
-		if s == nil {
-			return ""
+// stepsFor lists a phase's steps, outer level first: each level's legacy
+// script, then its processors. Disabled processors are left out.
+func stepsFor(in SendInput, pre bool) []step {
+	var out []step
+	level := func(name string, s *model.Scripts, procs []model.Processor) {
+		if s != nil {
+			code := s.Post
+			if pre {
+				code = s.Pre
+			}
+			if code != "" {
+				out = append(out, step{label: name, code: code})
+			}
 		}
+		for i := range procs {
+			if !procs[i].Disabled {
+				out = append(out, step{label: process.Label(procs[i], name, pre, i), proc: &procs[i]})
+			}
+		}
+	}
+	pick := func(p, q []model.Processor) []model.Processor {
 		if pre {
-			return s.Pre
+			return p
 		}
-		return s.Post
+		return q
 	}
 	for i, c := range in.Chain {
 		if c == nil {
 			continue
 		}
-		if code := pick(c.Scripts); code != "" {
-			name := "folder"
-			if i == 0 {
-				name = "collection"
-			}
-			out = append(out, namedScript{name, code})
+		name := "folder"
+		if i == 0 {
+			name = "collection"
 		}
+		level(name, c.Scripts, pick(c.Pre, c.Post))
 	}
-	if code := pick(in.Request.Scripts); code != "" {
-		out = append(out, namedScript{"request", code})
-	}
+	level("request", in.Request.Scripts, pick(in.Request.Pre, in.Request.Post))
 	return out
 }
 
+// UsesScripts reports whether sending req runs any JavaScript (legacy
+// scripts or script processors at any level), so callers know whether to
+// prepare a script runtime.
+func UsesScripts(req *model.Request, chain []*model.Collection) bool {
+	return hasScripts(SendInput{Request: req, Chain: chain})
+}
+
 func hasScripts(in SendInput) bool {
-	return len(scriptsFor(in, true)) > 0 || len(scriptsFor(in, false)) > 0
+	for _, pre := range []bool{true, false} {
+		for _, st := range stepsFor(in, pre) {
+			if st.code != "" || st.proc.Type == model.ProcScript {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// runPre runs one pre step and returns the (possibly rewritten) request.
+// It returns false when the request must not be sent; res is then final.
+func (e *Engine) runPre(ctx context.Context, st step, req *model.Request, in SendInput, rt *script.Runtime, info script.Info, res *Result) (*model.Request, bool) {
+	fail := func(msg string) (*model.Request, bool) {
+		res.ScriptErrors = append(res.ScriptErrors, msg)
+		res.Sent = req
+		res.Error = "not sent: pre-processor failed"
+		return req, false
+	}
+	code := st.code
+	if st.proc != nil {
+		p := st.proc
+		if err := process.ValidateProcessor(*p, true); err != nil {
+			return fail(fmt.Sprintf("%s: %v", st.label, err))
+		}
+		switch {
+		case p.Type == model.ProcVars:
+			process.SetVars(p.Vars, in.Vars)
+			return req, true
+		case p.Type == model.ProcCounter:
+			if _, err := process.Count(p.Counter, in.Vars); err != nil {
+				return fail(fmt.Sprintf("%s: %v", st.label, err))
+			}
+			return req, true
+		case strings.HasPrefix(p.Type, "plugin:"):
+			out, err := e.runPluginProcessor(ctx, p, "pre", req, nil, in.Vars, res)
+			if err != nil {
+				return fail(fmt.Sprintf("%s: %v", st.label, err))
+			}
+			if out != nil {
+				req = out
+			}
+			return req, true
+		}
+		code = p.Script
+	}
+	out := rt.Run(ctx, script.Input{
+		Phase: script.PreRequest, Name: st.label, Code: code, Request: req,
+		Vars: in.Vars, Info: info, Send: e.sendRaw,
+	})
+	res.absorb(out)
+	if out.Request != nil {
+		req = out.Request
+	}
+	if out.Error != "" {
+		// Like Postman, a failing pre-request script stops the request.
+		res.Sent = req
+		res.Error = "not sent: pre-request script failed"
+		return req, false
+	}
+	if out.Skip {
+		res.Sent, res.Skipped = req, true
+		return req, false
+	}
+	return req, true
+}
+
+// runPost runs one post step against the response.
+func (e *Engine) runPost(ctx context.Context, st step, sent *model.Request, resp *check.Response, in SendInput, rt *script.Runtime, info script.Info, res *Result) {
+	code := st.code
+	if st.proc != nil {
+		p := st.proc
+		if err := process.ValidateProcessor(*p, false); err != nil {
+			res.ScriptErrors = append(res.ScriptErrors, fmt.Sprintf("%s: %v", st.label, err))
+			return
+		}
+		switch {
+		case p.Type == model.ProcVars:
+			process.SetVars(p.Vars, in.Vars)
+			return
+		case p.Type == model.ProcExtract:
+			res.extract([]model.Extractor{*p.Extract}, resp, in.Vars)
+			return
+		case p.Type == model.ProcAssert:
+			res.Tests = append(res.Tests, check.Assert([]model.Assertion{*p.Assert}, resp)...)
+			return
+		case strings.HasPrefix(p.Type, "plugin:"):
+			if _, err := e.runPluginProcessor(ctx, p, "post", sent, resp.Response, in.Vars, res); err != nil {
+				res.ScriptErrors = append(res.ScriptErrors, fmt.Sprintf("%s: %v", st.label, err))
+			}
+			return
+		}
+		code = p.Script
+	}
+	res.absorb(rt.Run(ctx, script.Input{
+		Phase: script.PostResponse, Name: st.label, Code: code, Request: sent, Response: resp,
+		Vars: in.Vars, Info: info, Send: e.sendRaw,
+	}))
+}
+
+// extract runs extractors into the runtime variables and records results.
+func (res *Result) extract(ex []model.Extractor, resp *check.Response, v *vars.Set) {
+	vals, problems := check.Extract(ex, resp)
+	for k, val := range vals {
+		v.Runtime[k] = val
+		if res.Extracted == nil {
+			res.Extracted = map[string]string{}
+		}
+		res.Extracted[k] = val
+	}
+	res.Problems = append(res.Problems, problems...)
+}
+
+// runPluginProcessor calls a processor plugin. Its options are resolved
+// first. It sets the variables the plugin returns and, before the request,
+// returns the plugin's rewritten request (nil when unchanged).
+func (e *Engine) runPluginProcessor(ctx context.Context, p *model.Processor, phase string, req *model.Request, resp *protocol.Response, v *vars.Set, res *Result) (*model.Request, error) {
+	if e.Plugins == nil {
+		return nil, fmt.Errorf("%s needs plugins, which aren't available here", p.Type)
+	}
+	id := strings.TrimPrefix(p.Type, "plugin:")
+	r := v.Resolver()
+	opts := make(map[string]string, len(p.Options))
+	for k, val := range p.Options {
+		opts[k], _ = r.Resolve(val)
+	}
+	out, err := e.Plugins.Process(ctx, id, plugin.ProcessInput{Phase: phase, Request: req, Response: resp, Vars: allVars(v), Options: opts})
+	res.addPluginLogs(out.Logs)
+	if err != nil {
+		return nil, err
+	}
+	for k, val := range out.Vars {
+		v.Runtime[k] = val
+	}
+	res.Tests = append(res.Tests, out.Tests...)
+	return out.Request, nil
+}
+
+// allVars flattens every scope as a script would see it.
+func allVars(v *vars.Set) map[string]string {
+	all := map[string]string{}
+	r := v.Resolver()
+	scopes := []map[string]string{v.Globals, v.Collection, v.Environment, v.Data, v.Runtime}
+	for _, f := range v.Folders {
+		scopes = append(scopes, f)
+	}
+	for _, s := range scopes {
+		for k := range s {
+			if !strings.HasPrefix(k, "__") {
+				all[k], _, _ = r.Lookup(k)
+			}
+		}
+	}
+	return all
 }
 
 // ResolveRequest returns a deep copy of req with every placeholder resolved.

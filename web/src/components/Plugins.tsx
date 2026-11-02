@@ -10,7 +10,7 @@ export function usePlugins() {
 }
 
 /** Installed protocol/auth types (ready or not), for editors. */
-export function usePluginTypes(kind: "protocol" | "auth") {
+export function usePluginTypes(kind: "protocol" | "auth" | "processor") {
   const q = usePlugins();
   const out: (PluginProvide & { plugin: PluginInfo })[] = [];
   for (const p of q.data?.plugins ?? []) for (const pr of p.provides ?? []) if (pr.kind === kind) out.push({ ...pr, plugin: p });

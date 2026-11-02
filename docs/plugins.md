@@ -12,6 +12,7 @@ Code: host in `pkg/engine/plugin`, Go SDK in `plugins/sdk/go`, examples in
 |---|---|---|---|
 | `protocol` | ✅ | A request type `plugin:<id>` (request/response) | Raw TCP (`plugins/examples/tcp`) |
 | `auth` | ✅ | An auth type `plugin:<id>` that signs requests | HMAC-SHA256 (`plugins/examples/hmac`) |
+| `processor` | ✅ | A pre/post processor `plugin:<id>` that sets variables, rewrites the request (pre) or reports checks (post) | HMAC sign/verify (`hmac-var` in `plugins/examples/hmac`) |
 | streaming protocols | planned | Sessions like WebSocket (connect/send/receive) | MQTT |
 | `assertion`, `extractor`, `datasource`, `reporter`, `importer`, `ui` | planned | | |
 
@@ -82,9 +83,17 @@ Messages crossing the boundary are **JSON**, passed through the module's linear 
                                                     // → {"response": {"status", "statusText", "headers", "body" (base64), "remoteAddr"}} | {"error": "…"}
 {"op": "sign", "id": "hmac", "request": {…}, "params": {…}, "config": {…}}
                                                     // → {"request": {…headers, query, url updated}} | {"error": "…"}
+{"op": "process", "id": "hmac-var", "phase": "pre" | "post", "request": {…}, "response": {…},
+ "vars": {…}, "params": {…}, "config": {…}}
+                                                    // → {"vars": {…to set}, "request": {…} (pre only), "tests": [{"name", "passed", "error"}]} | {"error": "…"}
 ```
+For `process`, `request` is unresolved before the request (pre) and as sent after it (post);
+`response` (post only) is `{status, statusText, headers, body (base64), timeMs}`; `vars`
+holds every variable in scope; `params` are the processor's fields with variables resolved.
+A pre-processor may change the method, URL, headers, query and text body. A processor's
+manifest entry may list `phases: [pre]` or `[post]` (default both).
 `request` is `{kind, name, method, url, headers, query, body, options}` with variables
-resolved. On install, Pyro calls `describe` and refuses modules that don't register
+resolved (except before the request in `process`). On install, Pyro calls `describe` and refuses modules that don't register
 everything their manifest declares.
 
 **Imported from the host (module `pyro`)**

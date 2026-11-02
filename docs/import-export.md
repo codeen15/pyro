@@ -79,15 +79,18 @@ group, ready to run with `pyro load` or from the Load tab.
 | User Defined Variables | Collection variables |
 | CSV Data Set Config | The scenario's data file `data/<file>` (shared); column names from the plan become the CSV header |
 | Transaction / Loop / While / If / Once Only / Random Controller | `group` / `loop` / `loop.while` / `if` / `once` / `weighted` steps; Simple Controller is inlined |
-| Constant, Uniform Random, Gaussian timers | `think` before each request in scope (delays in scope add up) |
+| Constant, Uniform Random, Gaussian Random, Poisson Random timers | The request's `think` timer, same distribution (timers in scope add up; several random ones become one uniform spread, reported) |
+| User Parameters | A `vars` pre-processor (the first thread's values; reported when there are more) |
+| Counter | A `counter` pre-processor (`000`-style formats become `%03d`; shared counters count per VU, reported) |
 | Constant Throughput Timer | `maxRPS` for the whole test (reported) |
-| Response Assertion (code, text, headers), JSON Assertion, Duration Assertion | `status`, `body`, `header`, `jsonpath`, `duration` assertions |
-| JSON Extractor, Regular Expression Extractor, Boundary Extractor | `jsonpath` and `regex` extractors |
+| JSON Extractor, Regular Expression Extractor, Boundary Extractor | `extract` post-processors (`jsonpath`, `regex`), run before assertions as in JMeter |
+| Response Assertion (code, text, headers), JSON Assertion, Duration Assertion | `assert` post-processors (`status`, `body`, `header`, `jsonpath`, `duration`) |
 | `${var}`, `${__UUID()}`, `${__Random(…)}`, `${__time()}`, `${__P(name,default)}` | `{{var}}`, `{{$guid}}`, `{{$randomInt}}`, `{{$timestamp}}`, `{{name}}` (numbers use the default) |
 | If/While conditions (`${__jexl3(…)}` or JavaScript) | Converted to Pyro expressions where possible (`"${status}" == "200"` → `status == 200`); others become `true` and are reported |
 
-Skipped and reported: JSR223/BeanShell elements (rewrite them as [script steps](load-engine.md#script-steps)),
-non-HTTP samplers, Module/Include Controllers, Kerberos auth, XPath extractors, negated text
+Skipped and reported: JSR223/BeanShell elements (Groovy can't run in Pyro's JavaScript engine: rewrite them as
+`script` processors or [script steps](load-engine.md#script-steps)),
+non-HTTP samplers, Module/Include Controllers, Kerberos auth, negated text
 assertions. Cookie, cache and listener elements are ignored (Pyro keeps cookies per VU and
 has its own results). Disabled elements are left out.
 

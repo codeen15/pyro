@@ -149,6 +149,47 @@ func TestHMACPluginAuthOnHTTP(t *testing.T) {
 	}
 }
 
+// A processor plugin before the request (sign a value into a variable) and
+// after it (verify the response's signature header).
+func TestHMACProcessorPreAndPost(t *testing.T) {
+	sign := func(msg string) string {
+		mac := hmac.New(sha256.New, []byte("k3y"))
+		mac.Write([]byte(msg))
+		return hex.EncodeToString(mac.Sum(nil))
+	}
+	var got string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.Header.Get("X-Sig")
+		body := `{"ok":true}`
+		sig := sign(body)
+		if r.URL.Query().Get("tamper") != "" {
+			sig = "bad"
+		}
+		w.Header().Set("X-Signature", sig)
+		fmt.Fprint(w, body)
+	}))
+	defer ts.Close()
+	e := pluginEngine(t)
+	proc := model.Processor{Type: "plugin:hmac-var", Options: map[string]string{"secret": "{{secret}}", "message": "order-{{id}}", "var": "sig"}}
+	req := &model.Request{Method: "GET", URL: ts.URL, Headers: []model.KeyValue{{Key: "X-Sig", Value: "{{sig}}"}}, Pre: []model.Processor{proc}, Post: []model.Processor{proc}}
+	v := engine.NewVars(&model.Environment{Variables: []model.Variable{{Key: "secret", Value: "k3y"}, {Key: "id", Value: "7"}}}, nil)
+	res := e.Send(context.Background(), engine.SendInput{Request: req, Vars: v})
+	if res.Error != "" || len(res.ScriptErrors) > 0 {
+		t.Fatal(res.Error, res.ScriptErrors)
+	}
+	if got != sign("order-7") {
+		t.Fatalf("pre-processor variable: header %q", got)
+	}
+	if len(res.Tests) != 1 || !res.Tests[0].Passed || res.Tests[0].Source != "plugin" {
+		t.Fatalf("post-processor test: %+v", res.Tests)
+	}
+	req.URL = ts.URL + "/?tamper=1"
+	res = e.Send(context.Background(), engine.SendInput{Request: req, Vars: v})
+	if len(res.Tests) != 1 || res.Tests[0].Passed {
+		t.Fatalf("tampered signature should fail: %+v", res.Tests)
+	}
+}
+
 func TestPluginsUnavailable(t *testing.T) {
 	e := engine.New(httpdriver.New(httpdriver.Options{}))
 	res := e.Send(context.Background(), engine.SendInput{Request: &model.Request{Kind: "plugin:tcp", URL: "tcp://x:1"}})

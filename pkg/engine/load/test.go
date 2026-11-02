@@ -19,6 +19,7 @@ import (
 	"github.com/codeen15/pyro/pkg/engine/metrics"
 	"github.com/codeen15/pyro/pkg/engine/model"
 	"github.com/codeen15/pyro/pkg/engine/plugin"
+	"github.com/codeen15/pyro/pkg/engine/process"
 	"github.com/codeen15/pyro/pkg/engine/protocol/httpdriver"
 )
 
@@ -283,8 +284,11 @@ func (t *Test) resolveSteps(steps []Step) error {
 				if err != nil {
 					return fmt.Errorf("request %s: %w", p, err)
 				}
+				if err := process.ValidateTimer(process.EffectiveTimer(target.Request, target.Chain)); err != nil {
+					return fmt.Errorf("request %s: %w", p, err)
+				}
 				t.targets[p] = target
-				t.scripted[p] = hasScripts(target)
+				t.scripted[p] = engine.UsesScripts(target.Request, target.Chain)
 			}
 		}
 		if st.ScriptFile != "" {
@@ -314,18 +318,6 @@ func (t *Test) resolveSteps(steps []Step) error {
 		}
 	}
 	return nil
-}
-
-func hasScripts(t Target) bool {
-	if s := t.Request.Scripts; s != nil && (s.Pre != "" || s.Post != "") {
-		return true
-	}
-	for _, c := range t.Chain {
-		if c != nil && c.Scripts != nil && (c.Scripts.Pre != "" || c.Scripts.Post != "") {
-			return true
-		}
-	}
-	return false
 }
 
 func (t *Test) program(src string) (*vm.Program, error) {

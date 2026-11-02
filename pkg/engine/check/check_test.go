@@ -83,3 +83,25 @@ func TestExtract(t *testing.T) {
 		t.Fatalf("problems = %v", problems)
 	}
 }
+
+func TestExtractBoundaryAndXPath(t *testing.T) {
+	r := Wrap(&protocol.Response{Status: 200, Body: []byte(`<order id="9"><item sku="A-1">Widget</item><item sku="B-2">Gadget</item></order>`)})
+	vars, problems := Extract([]model.Extractor{
+		{Var: "sku", From: "xpath", Path: "//item[2]/@sku"},
+		{Var: "first", From: "xpath", Path: "/order/item"},
+		{Var: "count", From: "xpath", Path: "count(//item)"},
+		{Var: "name", From: "boundary", Left: `sku="A-1">`, Right: "<"},
+		{Var: "tail", From: "boundary", Left: "Gadget"},
+		{Var: "none", From: "xpath", Path: "//missing"},
+		{Var: "bad", From: "xpath", Path: "//["},
+	}, r)
+	want := map[string]string{"sku": "B-2", "first": "Widget", "count": "2", "name": "Widget", "tail": "</item></order>"}
+	for k, v := range want {
+		if vars[k] != v {
+			t.Errorf("%s = %q, want %q", k, vars[k], v)
+		}
+	}
+	if len(problems) != 2 {
+		t.Fatalf("problems = %v", problems)
+	}
+}

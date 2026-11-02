@@ -14,6 +14,45 @@ test("send a request and see its tests pass", async ({ page }) => {
   await expect(page.locator(".response")).toContainText("status eq 200");
 });
 
+test("pre and post processors and think time", async ({ page }) => {
+  await page.getByRole("button", { name: "List items" }).click();
+
+  // Pre: a variable used by the query string, and a think time for load tests.
+  await page.getByRole("tab", { name: /Pre-processors/ }).click();
+  await page.getByRole("button", { name: "Add pre-processor" }).click();
+  await page.getByRole("menuitem", { name: /Set variables/ }).click();
+  await page.getByLabel("Variables key 1").fill("pg");
+  await page.getByLabel("Variables value 1").fill("7");
+  await pickOption(page, page.getByRole("combobox", { name: "Think time" }), "Constant");
+  await page.getByLabel("Delay", { exact: true }).fill("200ms");
+  await expect(page.locator(".timer-summary")).toHaveText("Waits 200 ms before the request in load tests");
+
+  await page.getByRole("tab", { name: /Params/ }).click();
+  await page.getByLabel("Query parameters value 1").fill("{{pg}}");
+
+  // Post: the saved assertions show up as cards; drop the one expecting page 2.
+  await page.getByRole("tab", { name: /Post-processors/ }).click();
+  await expect(page.locator(".proc-card")).toHaveCount(2);
+  await page.getByRole("button", { name: "Remove Assertion" }).nth(1).click();
+  await page.getByRole("button", { name: "Add post-processor" }).click();
+  await page.getByRole("menuitem", { name: /Extract a value/ }).click();
+  await page.getByLabel("Extract path").fill("$.query.page");
+  await page.getByLabel("Into variable").fill("seen");
+  await page.getByRole("button", { name: "Add post-processor" }).click();
+  await page.getByRole("menuitem", { name: /Assertion/ }).click();
+  const added = page.locator(".proc-card").last();
+  await pickOption(page, added.getByRole("combobox", { name: "Check" }), "JSON path");
+  await added.getByLabel("Assertion path").fill("$.query.page");
+  await added.getByLabel("Expected value").fill("7");
+
+  await page.getByRole("button", { name: "Send" }).click();
+  await expect(page.locator(".response")).toContainText('"page": "7"');
+  await page.getByRole("tab", { name: /Tests/ }).last().click();
+  await expect(page.locator(".test-list li.is-pass", { hasText: "$.query.page eq 7" })).toBeVisible();
+  await expect(page.locator(".test-list li.is-fail")).toHaveCount(0);
+  await expect(page.locator(".tests-view")).toContainText("{{seen}}");
+});
+
 test("run a collection", async ({ page }) => {
   const row = page.locator(".row-wrap", { hasText: "Shop" });
   await row.hover();

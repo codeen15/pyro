@@ -2,7 +2,7 @@ name: hmac
 version: 0.1.0
 abi: 1
 title: HMAC signature
-description: Signs requests with an HMAC-SHA256 of the method, URL, timestamp and body.
+description: Signs requests with an HMAC-SHA256 of the method, URL, timestamp and body; a processor signs values into variables and verifies signed responses.
 author: Pyro
 license: Apache-2.0
 module: hmac.wasm
@@ -14,4 +14,12 @@ provides:
       - { key: keyId, label: Key ID, type: string }
       - { key: secret, label: Secret, type: secret }
       - { key: header, label: Signature header, type: string, default: X-Signature }
+  - kind: processor
+    id: hmac-var
+    title: HMAC sign / verify
+    fields:
+      - { key: secret, label: Secret, type: secret }
+      - { key: message, label: Message to sign (pre), type: string, help: "Variables are filled in; the HMAC is stored in the variable below." }
+      - { key: var, label: Variable (pre), type: string, default: signature }
+      - { key: header, label: Signature header to verify (post), type: string, default: X-Signature }
 capabilities: {}

@@ -21,8 +21,9 @@ const ManifestFile = "pyro-plugin.yaml"
 
 // Kinds a plugin may provide.
 const (
-	KindProtocol = "protocol"
-	KindAuth     = "auth"
+	KindProtocol  = "protocol"
+	KindAuth      = "auth"
+	KindProcessor = "processor"
 )
 
 type Manifest struct {
@@ -48,8 +49,11 @@ type Provide struct {
 	ID             string `yaml:"id" json:"id"`
 	Title          string `yaml:"title,omitempty" json:"title,omitempty"`
 	URLPlaceholder string `yaml:"urlPlaceholder,omitempty" json:"urlPlaceholder,omitempty"`
-	// Fields are stored in request.options (protocol) or auth.params (auth).
+	// Fields are stored in request.options (protocol), auth.params (auth)
+	// or the processor's options (processor).
 	Fields []Field `yaml:"fields,omitempty" json:"fields,omitempty"`
+	// Phases lists where a processor can run: pre, post (default both).
+	Phases []string `yaml:"phases,omitempty" json:"phases,omitempty"`
 }
 
 // Field describes a form input the UI renders.
@@ -145,8 +149,13 @@ func ParseManifest(data []byte) (*Manifest, error) {
 	}
 	seen := map[string]bool{}
 	for _, p := range m.Provides {
-		if p.Kind != KindProtocol && p.Kind != KindAuth {
-			problems = append(problems, fmt.Sprintf("provides %q: kind must be protocol or auth", p.ID))
+		if p.Kind != KindProtocol && p.Kind != KindAuth && p.Kind != KindProcessor {
+			problems = append(problems, fmt.Sprintf("provides %q: kind must be protocol, auth or processor", p.ID))
+		}
+		for _, ph := range p.Phases {
+			if p.Kind != KindProcessor || (ph != "pre" && ph != "post") {
+				problems = append(problems, fmt.Sprintf("provides %q: phases are pre and post, for processors only", p.ID))
+			}
 		}
 		if !idRe.MatchString(p.ID) {
 			problems = append(problems, fmt.Sprintf("provides id %q is invalid", p.ID))

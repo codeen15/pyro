@@ -17,6 +17,7 @@ import (
 	"github.com/codeen15/pyro/pkg/engine"
 	"github.com/codeen15/pyro/pkg/engine/metrics"
 	"github.com/codeen15/pyro/pkg/engine/model"
+	"github.com/codeen15/pyro/pkg/engine/process"
 	"github.com/codeen15/pyro/pkg/engine/protocol"
 	"github.com/codeen15/pyro/pkg/engine/script"
 	"github.com/codeen15/pyro/pkg/engine/vars"
@@ -223,6 +224,13 @@ func (v *vu) request(ctx context.Context, st *Step, group string) error {
 	name := st.Name
 	if name == "" {
 		name = target.Path
+	}
+	// The request's timer runs first, like a JMeter timer before its sampler;
+	// it is never counted as response time.
+	if d := process.Sample(process.EffectiveTimer(target.Request, target.Chain), v.rnd); d > 0 {
+		if err := sleep(ctx, d); err != nil {
+			return err
+		}
 	}
 	if err := v.t.pace.wait(ctx, v.stopping); err != nil {
 		return err

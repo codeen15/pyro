@@ -339,3 +339,43 @@ thresholds:
 		t.Fatalf("status=%s threshold=%+v", res.Status, th)
 	}
 }
+
+// A request's own timer runs before it in every iteration, isn't counted as
+// response time, and pre-processors (a counter) keep per-VU state.
+func TestRequestTimerAndProcessors(t *testing.T) {
+	tg := newTarget(t, 0)
+	chain := []*model.Collection{{Variables: []model.Variable{{Key: "base", Value: tg.URL}}, Think: &model.Timer{Type: model.TimerConstant, Delay: "100ms"}}}
+	req := &model.Request{Kind: model.KindHTTP, Name: "OK", URL: "{{base}}/ok?n={{n}}",
+		Pre:  []model.Processor{{Type: model.ProcCounter, Counter: &model.Counter{Var: "n", Start: 1}}},
+		Post: []model.Processor{{Type: model.ProcAssert, Assert: &model.Assertion{Type: "status", Value: "200"}}}}
+	res := run(t, tg.URL, `
+scenarios:
+  s:
+    executor: per-vu-iterations
+    vus: 2
+    iterations: 3
+    flow: [ { request: c/ok } ]
+`, func(o *Options) {
+		o.Resolve = func(p string) (Target, error) { return Target{Path: p, Request: req, Chain: chain}, nil }
+	})
+	if res.Status != StatusPassed || res.Metrics["http_reqs"].Value != 6 {
+		t.Fatalf("status=%s reqs=%v reason=%s", res.Status, res.Metrics["http_reqs"].Value, res.Reason)
+	}
+	// 3 sequential iterations × 100ms think per VU: at least 300ms, while the
+	// response times stay far below the think time.
+	if res.Duration < 0.3 || res.Metrics["http_req_duration"].P95 > 50 {
+		t.Fatalf("duration=%vs p95=%vms", res.Duration, res.Metrics["http_req_duration"].P95)
+	}
+	if res.Metrics["checks"].Value == 0 {
+		t.Fatalf("assert processor should record checks: %+v", res.Metrics["checks"])
+	}
+
+	bad := *chain[0]
+	bad.Think = &model.Timer{Type: "sometimes"}
+	p, _ := ParsePlan([]byte("scenarios:\n  s:\n    executor: per-vu-iterations\n    vus: 1\n    iterations: 1\n    flow: [ { request: c/ok } ]\n"), nil)
+	if _, err := Start(p, Options{Resolve: func(p string) (Target, error) {
+		return Target{Path: p, Request: &model.Request{Kind: model.KindHTTP, URL: tg.URL}, Chain: []*model.Collection{&bad}}, nil
+	}}); err == nil || !strings.Contains(err.Error(), "timer") {
+		t.Fatalf("invalid timer should fail to start: %v", err)
+	}
+}

@@ -76,7 +76,7 @@ thresholds:
 | Step | Meaning |
 |---|---|
 | `request: <path>` | Run a workspace request (scripts, assertions and extractors included). Options: `once`, `hold` (streams), `send` (messages to send on a stream), `name` (metric tag override). |
-| `think: {min,max}` / `think: 2s` | Pause, uniformly random between min and max. |
+| `think: {min,max}` / `think: 2s` | Pause, uniformly random between min and max. Requests can also carry their own JMeter-style timer (constant, uniform, Gaussian, Poisson), run before every send of that request; see [data-model.md](data-model.md#think-time-and-prepost-processors). |
 | `loop: {count \| while, steps}` | Repeat steps a fixed number of times, or while an expression is true. |
 | `if: {expr, then, else}` | Branch on an expression over variables, e.g. `status == 200 && cartSize > 0`. Expressions see every variable (numeric strings compare as numbers) plus `status` and `duration` (ms) of the last response and `iteration`. |
 | `weighted: [{weight, steps}]` | Choose one branch at random by weight, like JMeter's throughput controller. |

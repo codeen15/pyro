@@ -3,12 +3,15 @@
 package check
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"regexp"
 	"strconv"
 	"strings"
 
+	"github.com/antchfx/xmlquery"
+	"github.com/antchfx/xpath"
 	"github.com/ohler55/ojg/jp"
 	"github.com/ohler55/ojg/oj"
 
@@ -227,7 +230,7 @@ func Extract(ex []model.Extractor, r *Response) (map[string]string, []string) {
 		case err != nil:
 			problems = append(problems, fmt.Sprintf("%s: %v", e.Var, err))
 		case !ok:
-			problems = append(problems, fmt.Sprintf("%s: nothing matched %s %s", e.Var, e.From, e.Path))
+			problems = append(problems, fmt.Sprintf("%s: nothing matched %s %s", e.Var, e.From, describeSource(e)))
 		default:
 			vars[e.Var] = v
 		}
@@ -257,6 +260,68 @@ func extractOne(e model.Extractor, r *Response) (string, bool, error) {
 			return string(m[1]), true, nil
 		}
 		return string(m[0]), true, nil
+	case "boundary":
+		return boundary(string(r.Body), e.Left, e.Right)
+	case "xpath":
+		return xpathFirst(r.Body, e.Path)
 	}
 	return "", false, fmt.Errorf("unknown source %q", e.From)
+}
+
+func describeSource(e model.Extractor) string {
+	if e.From == "boundary" {
+		return strconv.Quote(e.Left) + " … " + strconv.Quote(e.Right)
+	}
+	return e.Path
+}
+
+// boundary returns the text between the first left and the next right,
+// like JMeter's Boundary Extractor. An empty bound matches the start or end.
+func boundary(body, left, right string) (string, bool, error) {
+	if left == "" && right == "" {
+		return "", false, fmt.Errorf("set a left or right boundary")
+	}
+	i := 0
+	if left != "" {
+		j := strings.Index(body, left)
+		if j < 0 {
+			return "", false, nil
+		}
+		i = j + len(left)
+	}
+	if right == "" {
+		return body[i:], true, nil
+	}
+	j := strings.Index(body[i:], right)
+	if j < 0 {
+		return "", false, nil
+	}
+	return body[i : i+j], true, nil
+}
+
+// xpathFirst evaluates an XPath 1.0 expression on an XML body and returns
+// the first match's text (or the value of a non-node expression).
+func xpathFirst(body []byte, expr string) (string, bool, error) {
+	compiled, err := xpath.Compile(expr)
+	if err != nil {
+		return "", false, fmt.Errorf("invalid XPath: %v", err)
+	}
+	doc, err := xmlquery.Parse(bytes.NewReader(body))
+	if err != nil {
+		return "", false, fmt.Errorf("body isn't XML: %v", err)
+	}
+	switch v := compiled.Evaluate(xmlquery.CreateXPathNavigator(doc)).(type) {
+	case *xpath.NodeIterator:
+		if !v.MoveNext() {
+			return "", false, nil
+		}
+		return v.Current().Value(), true, nil
+	case string:
+		return v, v != "", nil
+	case float64:
+		return strconv.FormatFloat(v, 'f', -1, 64), true, nil
+	case bool:
+		return strconv.FormatBool(v), true, nil
+	}
+	return "", false, nil
 }
