@@ -38,6 +38,13 @@ TypeScript client in `web/src/api.ts`.
 | GET | `/api/v1/history/{id}` | Full stored send result (bodies capped at 256 KB) |
 | DELETE | `/api/v1/history` | Clear this workspace's history |
 | POST | `/api/v1/import?filename=&into=` | The file as the body (≤ 50 MB): Postman collection or environment, OpenAPI/Swagger, HAR or cURL text; the format is detected. `filename` names cURL/HAR collections; `into` adds the requests to an existing collection or folder. `201` with the import report (`into: true` when added); `422` if the format isn't recognised. |
+| PUT | `/api/v1/collections/{slug}` | Save collection settings (`collection.yaml`) |
+| GET, PUT | `/api/v1/folders/{path}` | Folder settings (`folder.yaml`; a folder without one reads as `{name}`) |
+| GET | `/api/v1/collections/{slug}/docs` | Generated HTML API reference (`?download=1`) |
+| GET | `/api/v1/mocks` | Running mock servers `[{collection, running, url}]` |
+| POST | `/api/v1/mocks` | Body `{collection, port?, delayMs?}`: start a mock on 127.0.0.1 (`409` if one runs) |
+| GET | `/api/v1/mocks/{slug}` | `{running, url, routes, hits}` (`running: false` when none) |
+| DELETE | `/api/v1/mocks/{slug}` | Stop it |
 | GET | `/api/v1/collections/{slug}/export` | `{filename, content, report}`: the collection as Postman v2.1 JSON (`content`) and what didn't convert |
 | GET | `/api/v1/environments/{name}/export` | `{filename, content}`: the environment as Postman environment JSON |
 | POST | `/api/v1/oauth2/token` | Body `{path?, request?, environment?, fetch?, clear?}`: the OAuth 2.0 token for the request's effective auth: `{oauth, grant, token?, expired?, interactive, inherited, redirectUri, unresolved?}` (`oauth: false` when its auth isn't OAuth 2.0). `fetch` gets a new one (non-interactive grants), `clear` forgets it |

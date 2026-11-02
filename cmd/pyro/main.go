@@ -52,7 +52,7 @@ func rootCmd() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
-	root.AddCommand(serveCmd(), initCmd(), importCmd(), exportCmd(), runCmd(), loadCmd(), agentCmd(), pluginCmd(), versionCmd())
+	root.AddCommand(serveCmd(), initCmd(), importCmd(), exportCmd(), runCmd(), loadCmd(), agentCmd(), mockCmd(), docsCmd(), pluginCmd(), versionCmd())
 	return root
 }
 

@@ -2783,3 +2783,29 @@ fieldset legend {
   color: var(--brick-muted);
   font-size: 11.5px;
 }
+
+.rail-head-actions {
+  display: flex;
+  gap: 2px;
+}
+
+/* Mock server */
+.mock-start {
+  display: grid;
+  gap: 4px;
+  max-width: 520px;
+  margin-top: 12px;
+}
+.mock-start .btn {
+  justify-self: start;
+  margin-top: 6px;
+}
+.mock-running {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.settings-page .tab-panel {
+  padding-top: 14px;
+}

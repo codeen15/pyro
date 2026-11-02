@@ -15,6 +15,8 @@ import (
 	"github.com/codeen15/pyro/pkg/engine"
 	"github.com/codeen15/pyro/pkg/engine/model"
 	"github.com/codeen15/pyro/pkg/engine/protocol/httpdriver"
+
+	"time"
 )
 
 const testToken = "secret"
@@ -167,5 +169,68 @@ func TestRejectsNonLoopbackHost(t *testing.T) {
 	req.Host = "pyro.internal:7878"
 	if res, err := http.DefaultClient.Do(req); err != nil || res.StatusCode != 200 {
 		t.Errorf("AnyHost: %v %v", res.StatusCode, err)
+	}
+}
+
+func TestCollectionAndFolderSettings(t *testing.T) {
+	ts := newTestServer(t)
+	do(t, ts, "PUT", "/api/v1/requests/demo/orders/create", `{"name":"Create","url":"http://x"}`, true)
+	_, body := do(t, ts, "GET", "/api/v1/folders/demo/orders", "", true)
+	if !strings.Contains(body, `"name":"orders"`) {
+		t.Fatalf("folder without folder.yaml: %s", body)
+	}
+	res, body := do(t, ts, "PUT", "/api/v1/folders/demo/orders", `{"name":"Orders","auth":{"type":"bearer","params":{"token":"{{t}}"}},"variables":[{"key":"v","value":"1"}]}`, true)
+	if res.StatusCode != 200 {
+		t.Fatalf("put folder: %d %s", res.StatusCode, body)
+	}
+	_, body = do(t, ts, "GET", "/api/v1/workspace", "", true)
+	if !strings.Contains(body, `"name":"Orders"`) {
+		t.Fatalf("tree shows the folder's name: %s", body)
+	}
+	if res, _ := do(t, ts, "GET", "/api/v1/folders/demo", "", true); res.StatusCode != 400 {
+		t.Fatalf("collection as folder: %d", res.StatusCode)
+	}
+	if res, _ := do(t, ts, "PUT", "/api/v1/folders/demo/nope", `{"name":"x"}`, true); res.StatusCode != 404 {
+		t.Fatalf("missing folder: %d", res.StatusCode)
+	}
+}
+
+func TestMockServerAPI(t *testing.T) {
+	ts := newTestServer(t)
+	do(t, ts, "PUT", "/api/v1/collections/demo", `{"name":"Demo","variables":[{"key":"baseUrl","value":"https://api.test/v2"}]}`, true)
+	do(t, ts, "PUT", "/api/v1/requests/demo/get-user", `{"name":"Get user","method":"GET","url":"{{baseUrl}}/users/{{id}}","examples":[{"name":"200 OK","status":200,"headers":[{"key":"Content-Type","value":"application/json"}],"body":"{\"id\":7}"}]}`, true)
+	res, body := do(t, ts, "POST", "/api/v1/mocks", `{"collection":"demo"}`, true)
+	var started struct{ URL string }
+	json.Unmarshal([]byte(body), &started)
+	if res.StatusCode != 201 || !strings.HasPrefix(started.URL, "http://127.0.0.1:") {
+		t.Fatalf("start: %d %s", res.StatusCode, body)
+	}
+	if res, _ := do(t, ts, "POST", "/api/v1/mocks", `{"collection":"demo"}`, true); res.StatusCode != 409 {
+		t.Fatalf("second start: %d", res.StatusCode)
+	}
+	resp, err := http.Get(started.URL + "/v2/users/42")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != 200 || string(b) != `{"id":7}` {
+		t.Fatalf("mocked: %d %s", resp.StatusCode, b)
+	}
+	// A newly saved example is served without restarting (routes refresh within a second).
+	do(t, ts, "PUT", "/api/v1/requests/demo/ping", `{"name":"Ping","url":"{{baseUrl}}/ping","examples":[{"name":"pong","status":200,"body":"pong"}]}`, true)
+	time.Sleep(1100 * time.Millisecond)
+	if resp, err := http.Get(started.URL + "/v2/ping"); err != nil || resp.StatusCode != 200 {
+		t.Fatalf("new example: %v %v", resp, err)
+	}
+	_, body = do(t, ts, "GET", "/api/v1/mocks/demo", "", true)
+	if !strings.Contains(body, `"path":"/v2/users/{id}"`) || !strings.Contains(body, `"example":"200 OK"`) {
+		t.Fatalf("mock view: %s", body)
+	}
+	if res, _ := do(t, ts, "DELETE", "/api/v1/mocks/demo", "", true); res.StatusCode != 204 {
+		t.Fatalf("stop: %d", res.StatusCode)
+	}
+	if _, err := http.Get(started.URL + "/v2/ping"); err == nil {
+		t.Fatal("mock still answering after stop")
 	}
 }

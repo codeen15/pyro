@@ -290,6 +290,41 @@ export interface SessionVariables {
   collections: Record<string, Record<string, string | null>>;
 }
 
+/** collection.yaml / folder.yaml: settings their requests inherit. */
+export interface CollectionSettings {
+  name: string;
+  description?: string;
+  variables?: Variable[];
+  auth?: Auth;
+  scripts?: { pre?: string; post?: string };
+  order?: string[];
+}
+
+export interface MockRoute {
+  method: string;
+  path: string;
+  request: string;
+  name: string;
+  examples: Example[];
+}
+
+export interface MockHit {
+  at: string;
+  method: string;
+  path: string;
+  status: number;
+  example?: string;
+  request?: string;
+}
+
+export interface MockView {
+  collection: string;
+  running: boolean;
+  url: string;
+  routes?: MockRoute[];
+  hits?: MockHit[];
+}
+
 export interface ExportView {
   filename: string;
   content: unknown;
@@ -618,6 +653,11 @@ export const api = {
     if (opts.into) q.set("into", opts.into);
     return call<ImportReport>("POST", `/import${q.size ? `?${q}` : ""}`, text, true);
   },
+  collection: (slug: string) => call<CollectionSettings>("GET", `/collections/${encodeURIComponent(slug)}`),
+  saveCollection: (slug: string, c: CollectionSettings) => call<CollectionSettings>("PUT", `/collections/${encodeURIComponent(slug)}`, c),
+  createCollection: (slug: string, name: string) => call<CollectionSettings>("POST", "/collections", { slug, name }),
+  folder: (path: string) => call<CollectionSettings>("GET", `/folders/${enc(path)}`),
+  saveFolder: (path: string, c: CollectionSettings) => call<CollectionSettings>("PUT", `/folders/${enc(path)}`, c),
   exportCollection: (slug: string) => call<ExportView>("GET", `/collections/${encodeURIComponent(slug)}/export`),
   openSession: (body: { path?: string; request?: PyroRequest; environment?: string }) => call<OpenResult>("POST", "/sessions", body),
   sessionState: (id: string) => call<SessionState>("GET", `/sessions/${id}`),
@@ -647,6 +687,16 @@ export const api = {
   loadRun: (id: string) => call<LoadRunView>("GET", `/loadruns/${id}`),
   stopLoadRun: (id: string, abort = false) => call<void>("POST", `/loadruns/${id}/stop${abort ? "?abort=1" : ""}`),
   deleteLoadRun: (id: string) => call<void>("DELETE", `/loadruns/${id}`),
+  /** Fetches a collection's generated HTML API reference. */
+  collectionDocs: async (slug: string) => {
+    const res = await fetch(`/api/v1/collections/${encodeURIComponent(slug)}/docs`, { headers: token ? { "X-Pyro-Token": token } : {} });
+    if (!res.ok) throw new ApiError(res.status, (await res.json().catch(() => ({}))).error ?? res.statusText);
+    return res.text();
+  },
+  mocks: () => call<MockView[]>("GET", "/mocks"),
+  mock: (slug: string) => call<MockView>("GET", `/mocks/${encodeURIComponent(slug)}`),
+  startMock: (collection: string, opts: { port?: number; delayMs?: number } = {}) => call<MockView>("POST", "/mocks", { collection, ...opts }),
+  stopMock: (slug: string) => call<void>("DELETE", `/mocks/${encodeURIComponent(slug)}`),
   /** Fetches the HTML report (the token can't ride on a plain link). */
   loadReport: async (id: string) => {
     const res = await fetch(`/api/v1/loadruns/${id}/report`, { headers: token ? { "X-Pyro-Token": token } : {} });

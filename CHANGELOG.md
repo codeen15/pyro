@@ -25,6 +25,10 @@ First public release.
 - Cookie manager (cookies survive restarts); saved response examples (also imported from Postman and OpenAPI and
   exported to Postman); a light theme.
 
+- Collection and folder settings (variables, auth, scripts, description) in the UI.
+- Generated HTML API docs (`pyro docs`) and a mock server answering from saved examples
+  (`pyro mock`), both also in the UI.
+
 **Load testing**
 - Five executors (constant and ramping VUs, per-VU iterations, constant and ramping arrival
   rate), a flow language (think time, groups, loops, conditions, weighted choices, once,

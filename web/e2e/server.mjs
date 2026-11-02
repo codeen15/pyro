@@ -72,7 +72,7 @@ write("pyro.yaml", "name: E2E\nversion: 1\n");
 write("collections/shop/collection.yaml", `name: Shop\nvariables:\n  - { key: base, value: "http://127.0.0.1:${TARGET}" }\n`);
 write(
   "collections/shop/list-items.req.yaml",
-  `kind: http\nname: List items\nmethod: GET\nurl: "{{base}}/items"\nquery:\n  - { key: page, value: "2" }\nassertions:\n  - { type: status, value: "200" }\n  - { type: jsonpath, path: "$.query.page", value: "2" }\n`,
+  `kind: http\nname: List items\nmethod: GET\nurl: "{{base}}/items"\nquery:\n  - { key: page, value: "2" }\nassertions:\n  - { type: status, value: "200" }\n  - { type: jsonpath, path: "$.query.page", value: "2" }\nexamples:\n  - { name: Two items, status: 200, headers: [ { key: Content-Type, value: application/json } ], body: '[{"id":1},{"id":2}]' }\n`,
 );
 write(
   "collections/shop/create-order.req.yaml",

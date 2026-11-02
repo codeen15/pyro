@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Activity, ChevronRight, Download, Folder, FolderOpen, Gauge, Layers, Play, Plug, Plus, Puzzle, Radio, RefreshCw, Trash2, TriangleAlert } from "lucide-react";
+import { Activity, BookOpen, ChevronRight, Download, Settings2, Folder, FolderOpen, Gauge, Layers, Play, Plug, Plus, Puzzle, Radio, RefreshCw, Trash2, TriangleAlert } from "lucide-react";
 import { PluginsRail } from "./Plugins";
 import { api, saveFile, type TreeNode, type WorkspaceInfo } from "../api";
 import { formatMs, heatOf } from "../heat";
 import { useApp } from "../store";
+import { slugify } from "../loadProfiles";
 
 export function Sidebar({ ws }: { ws: WorkspaceInfo | undefined }) {
   const tab = useApp((s) => s.sidebarTab);
@@ -49,12 +50,30 @@ function Collections({ ws }: { ws: WorkspaceInfo | undefined }) {
     },
   });
 
+  const newCollection = async () => {
+    const name = prompt("Name of the new collection")?.trim();
+    if (!name) return;
+    const taken = new Set(ws?.collections.map((c) => c.path));
+    let slug = slugify(name);
+    for (let i = 2; taken.has(slug); i++) slug = `${slugify(name)}-${i}`;
+    try {
+      await api.createCollection(slug, name);
+      await qc.invalidateQueries({ queryKey: ["workspace"] });
+      select(`settings:${slug}`);
+    } catch (e) {
+      alert((e as Error).message);
+    }
+  };
+
   if (!ws) return <TreeSkeleton />;
   if (ws.collections.length === 0) {
     return (
       <div className="rail-empty">
         <p>No collections yet.</p>
-        <p className="muted">Import a Postman collection from the top bar, or create a folder under <code>collections/</code> in the workspace.</p>
+        <p className="muted">Import one (Postman, OpenAPI, HAR or cURL) from the top bar, or start an empty one.</p>
+        <button className="btn ghost small" onClick={newCollection}>
+          <Plus size={13} /> New collection
+        </button>
       </div>
     );
   }
@@ -62,9 +81,14 @@ function Collections({ ws }: { ws: WorkspaceInfo | undefined }) {
     <div className="rail-scroll">
       <div className="rail-head">
         <span className="muted small">{ws.collections.length} collection{ws.collections.length > 1 ? "s" : ""}</span>
-        <button className="icon-btn" onClick={() => qc.invalidateQueries({ queryKey: ["workspace"] })} aria-label="Reload from disk" title="Reload from disk">
-          <RefreshCw size={13} />
-        </button>
+        <span className="rail-head-actions">
+          <button className="icon-btn" onClick={newCollection} aria-label="New collection" title="New collection">
+            <Plus size={14} />
+          </button>
+          <button className="icon-btn" onClick={() => qc.invalidateQueries({ queryKey: ["workspace"] })} aria-label="Reload from disk" title="Reload from disk">
+            <RefreshCw size={13} />
+          </button>
+        </span>
       </div>
       <ul className="tree" role="tree" aria-label="Collections">
         {ws.collections.map((n) => (
@@ -120,6 +144,28 @@ function TreeItem({
           <button className="icon-btn" onClick={() => onCreate(node)} aria-label={`New request in ${node.name}`} title="New request">
             <Plus size={14} />
           </button>
+          <button className="icon-btn" onClick={() => onSelect(`settings:${node.path}`)} aria-label={`Settings for ${node.name}`} title="Variables, auth and scripts">
+            <Settings2 size={13} />
+          </button>
+          {node.type === "collection" && (
+            <button
+              className="icon-btn"
+              aria-label={`API docs for ${node.name}`}
+              title="Open generated API docs"
+              onClick={async () => {
+                try {
+                  const html = await api.collectionDocs(node.path);
+                  const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
+                  window.open(url, "_blank", "noopener");
+                  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+                } catch (e) {
+                  alert((e as Error).message);
+                }
+              }}
+            >
+              <BookOpen size={13} />
+            </button>
+          )}
           {node.type === "collection" && <ExportButton slug={node.path} name={node.name} />}
         </span>
       </div>

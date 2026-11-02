@@ -66,6 +66,7 @@ type Server struct {
 	sessions *sessionRegistry
 	runs     *runRegistry
 	loads    *loadRegistry
+	mocks    *mockRegistry
 
 	cookieMu    sync.Mutex
 	cookieTimer *time.Timer
@@ -81,6 +82,7 @@ func New(cfg Config) *Server {
 		sessions: &sessionRegistry{byID: map[string]*liveSession{}},
 		runs:     &runRegistry{byID: map[string]*liveRun{}},
 		loads:    &loadRegistry{byID: map[string]*liveLoad{}},
+		mocks:    &mockRegistry{bySlg: map[string]*runningMock{}},
 	}
 	s.persistCookies()
 	return s
@@ -89,6 +91,7 @@ func New(cfg Config) *Server {
 // Close ends open sessions and cancels running collection runs.
 func (s *Server) Close() {
 	s.flushCookies()
+	s.closeMocks()
 	s.closeAllSessions()
 	s.runs.mu.Lock()
 	for _, run := range s.runs.byID {
@@ -123,6 +126,13 @@ func (s *Server) Handler() http.Handler {
 		r.Get("/collections/{slug}", s.getCollection)
 		r.Put("/collections/{slug}", s.putCollection)
 		r.Get("/collections/{slug}/export", s.exportCollection)
+		r.Get("/collections/{slug}/docs", s.collectionDocs)
+		r.Get("/mocks", s.listMocks)
+		r.Post("/mocks", s.startMock)
+		r.Get("/mocks/{slug}", s.getMock)
+		r.Delete("/mocks/{slug}", s.stopMock)
+		r.Get("/folders/*", s.getFolder)
+		r.Put("/folders/*", s.putFolder)
 
 		r.Get("/requests/*", s.getRequest)
 		r.Put("/requests/*", s.putRequest)
@@ -420,3 +430,24 @@ func spaHandler(ui fs.FS) http.Handler {
 // SetAgentHub attaches agents that connect out (set after New, once the
 // agent listener is up).
 func (s *Server) SetAgentHub(h *agent.Hub) { s.cfg.AgentHub = h }
+
+func (s *Server) getFolder(w http.ResponseWriter, r *http.Request) {
+	f, err := s.ws.ReadFolder(reqPath(r))
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, f)
+}
+
+func (s *Server) putFolder(w http.ResponseWriter, r *http.Request) {
+	var f model.Collection
+	if !decode(w, r, &f) {
+		return
+	}
+	if err := s.ws.WriteFolder(reqPath(r), &f); err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, f)
+}

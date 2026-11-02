@@ -367,6 +367,46 @@ func (w *Workspace) DeleteEnvironment(name string) error {
 	return nil
 }
 
+// ReadFolder loads a folder's settings (folder.yaml); a folder without one
+// has empty settings named after its directory.
+func (w *Workspace) ReadFolder(p string) (*model.Collection, error) {
+	p = strings.Trim(p, "/")
+	if !strings.Contains(p, "/") {
+		return nil, fmt.Errorf("%q is a collection, not a folder: %w", p, ErrInvalidPath)
+	}
+	dir, err := w.resolve(collectionsDir, p)
+	if err != nil {
+		return nil, err
+	}
+	if st, err := os.Stat(dir); err != nil || !st.IsDir() {
+		return nil, fmt.Errorf("folder %q: %w", p, ErrNotFound)
+	}
+	f := &model.Collection{}
+	if err := readYAML(filepath.Join(dir, FolderFile), f); err != nil && !errors.Is(err, ErrNotFound) {
+		return nil, err
+	}
+	if f.Name == "" {
+		f.Name = path.Base(p)
+	}
+	return f, nil
+}
+
+// WriteFolder saves a folder's settings to folder.yaml.
+func (w *Workspace) WriteFolder(p string, f *model.Collection) error {
+	p = strings.Trim(p, "/")
+	if !strings.Contains(p, "/") {
+		return fmt.Errorf("%q is a collection, not a folder: %w", p, ErrInvalidPath)
+	}
+	dir, err := w.resolve(collectionsDir, p)
+	if err != nil {
+		return err
+	}
+	if st, err := os.Stat(dir); err != nil || !st.IsDir() {
+		return fmt.Errorf("folder %q: %w", p, ErrNotFound)
+	}
+	return writeYAML(filepath.Join(dir, FolderFile), f)
+}
+
 // ReadGlobals loads globals.yaml (workspace-wide variables). A missing
 // file means no globals.
 func (w *Workspace) ReadGlobals() (*model.Environment, error) {

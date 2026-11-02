@@ -2,16 +2,16 @@
 
 Pyro is an API client (REST, WebSocket, Socket.IO, Postman import) and load-testing
 tool (stress, spike, soak, concurrency) with WASM plugins. A single Go binary runs the
-engine and serves a React web UI on localhost. **Current phase: 8 (protocol and load depth) done; next: push to GitHub, check CI, tag v0.1.0**
+engine and serves a React web UI on localhost. **Current phase: 9 (collaboration and docs) done; next: push to GitHub, check CI, tag v0.1.0**
 (see `docs/roadmap.md`). Product context: `PRODUCT.md`; visual system: `DESIGN.md`.
 
 ## Layout
-- `cmd/pyro`: CLI (cobra): `serve`, `init`, `import`, `export`, `run`, `load`, `agent`, `plugin`, `version`
+- `cmd/pyro`: CLI (cobra): `serve`, `init`, `import`, `export`, `run`, `load`, `agent`, `mock`, `docs`, `plugin`, `version`
 - `pkg/engine/...`: the engine, a library with no dependency on server/CLI/UI. `model/` is the shared data model;
   `engine.go` is the send pipeline, `session.go` opens WS/SIO sessions; `vars/`, `auth/`, `check/` (assertions,
   extractors), `script/` (goja + pm.* shim, vendored chai), `runner/`, `report/` (JUnit, JSON, load HTML),
   `load/` (plans, executors, VUs, thresholds, segments and workers for distributed runs), `metrics/` (HDR histograms,
-  deltas), `agent/` (distributed load agents), `output/` (InfluxDB, Prometheus, NDJSON/CSV live outputs), `plugin/` (wazero host), `importer/{postman,openapi,har,curl,auto}/`, `exporter/postman/`,
+  deltas), `agent/` (distributed load agents), `output/` (InfluxDB, Prometheus, NDJSON/CSV live outputs), `plugin/` (wazero host), `importer/{postman,openapi,har,curl,auto}/`, `exporter/postman/`, `docs/` (HTML API reference), `mock/` (mock server from examples),
   `protocol/{httpdriver,wsdriver,sioclient}/`.
 - `internal/store`: workspace persistence (YAML files, path safety, atomic writes, `Import`)
 - `internal/history`: request history and saved load runs in SQLite (`~/.pyro/pyro.db`)
@@ -70,6 +70,7 @@ cd web && npm run e2e   # browser tests (needs bin/pyro and npx playwright insta
 - `docs/load-engine.md`: executors, flow DSL, metrics, thresholds
 - `docs/plugins.md`: plugin kinds, ABI v1, manifest, security
 - `docs/postman-import.md`: Postman mapping, `pm.*` support, import report
+- `docs/docs-and-mocks.md`: collection settings UI, generated API docs, mock servers
 - `docs/import-export.md`: OpenAPI/Swagger, HAR and cURL import; import into a collection; Postman export
 - `docs/roadmap.md`: phases, exit criteria, risks
 - `docs/releasing.md`: tagging, the release workflow, archive contents

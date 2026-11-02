@@ -166,3 +166,48 @@ test("theme choice applies and persists", async ({ page }) => {
   await page.selectOption('select[aria-label="Theme"]', "system");
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
 });
+
+test("edit collection settings and create a collection", async ({ page }) => {
+  const row = page.locator(".row-wrap", { hasText: "Shop" });
+  await row.hover();
+  await row.getByRole("button", { name: "Settings for Shop" }).click();
+  await expect(page.getByLabel("Collection name")).toHaveValue("Shop");
+  await page.getByRole("tab", { name: /Variables/ }).click();
+  await expect(page.getByLabel("Value of base")).toHaveValue("http://127.0.0.1:7891");
+  await page.getByRole("button", { name: "Add variable" }).click();
+  await page.getByLabel("Variable name").last().fill("region");
+  await page.getByLabel("Value of region").fill("eu");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Saved" })).toBeVisible();
+  await page.reload();
+  await page.getByRole("tab", { name: /Variables/ }).click();
+  await expect(page.getByLabel("Value of region")).toHaveValue("eu");
+
+  page.once("dialog", (d) => d.accept("Billing API"));
+  await page.getByRole("button", { name: "New collection" }).click();
+  await expect(page.getByLabel("Collection name")).toHaveValue("Billing API");
+  await expect(page.locator(".tree")).toContainText("Billing API");
+});
+
+test("API docs and mock server from examples", async ({ page, context }) => {
+  const row = page.locator(".row-wrap", { hasText: "Shop" });
+  await row.hover();
+  const [docs] = await Promise.all([context.waitForEvent("page"), row.getByRole("button", { name: "API docs for Shop" }).click()]);
+  await docs.waitForLoadState();
+  await expect(docs).toHaveTitle("Shop · API reference");
+  await expect(docs.locator("section.req", { hasText: "List items" })).toContainText("Two items");
+  await docs.close();
+
+  await row.hover();
+  await row.getByRole("button", { name: "Settings for Shop" }).click();
+  await page.getByRole("tab", { name: "Mock server" }).click();
+  await page.getByRole("button", { name: "Start mock server" }).click();
+  const url = (await page.locator(".mock-running code").textContent())!;
+  await expect(page.locator(".mock-panel")).toContainText("/items");
+  const res = await page.request.get(url + "/items");
+  expect(res.status()).toBe(200);
+  expect(await res.text()).toBe('[{"id":1},{"id":2}]');
+  await expect(page.locator(".mock-panel")).toContainText("GET /items", { timeout: 5000 });
+  await page.getByRole("button", { name: "Stop" }).click();
+  await expect(page.getByRole("button", { name: "Start mock server" })).toBeVisible();
+});

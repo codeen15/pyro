@@ -15,6 +15,7 @@ import { InstallPlugin, PluginPage } from "./components/Plugins";
 import { ImportPage } from "./components/ImportPage";
 import { VariablesPage } from "./components/Variables";
 import { CookiesPage } from "./components/Cookies";
+import { SettingsPage } from "./components/Settings";
 
 export function App() {
   const health = useQuery({ queryKey: ["health"], queryFn: api.health, refetchInterval: 10_000 });
@@ -40,6 +41,8 @@ export function App() {
           <ImportResult report={report.data} mode={report.mode} onClose={() => setReport(null)} />
         ) : selected?.startsWith("vars:") ? (
           <VariablesPage target={selected.slice(5)} />
+        ) : selected?.startsWith("settings:") ? (
+          <SettingsPage key={selected} path={selected.slice(9)} />
         ) : selected === "cookies" ? (
           <CookiesPage />
         ) : selected === "import" ? (
