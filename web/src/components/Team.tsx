@@ -669,7 +669,7 @@ function useTeamEmail() {
 export function AccountPage() {
   const me = useTeam((s) => s.me);
   const setTeam = useTeam((s) => s.set);
-  const { message } = AntApp.useApp();
+  const { message, modal } = AntApp.useApp();
   const [pwForm] = Form.useForm();
   const [busy, setBusy] = useState(false);
   if (!me) return null;
@@ -740,6 +740,27 @@ export function AccountPage() {
         ) : (
           <p className="muted small">You sign in through {me.user.provider.toUpperCase()}; change your password there.</p>
         )}
+        <div className="account-form">
+          <h2>Sessions</h2>
+          <p className="muted small">Signs you out on every browser and revokes API tokens issued to you, including here.</p>
+          <Button
+            danger
+            onClick={() =>
+              modal.confirm({
+                title: "Sign out everywhere?",
+                content: "Every browser and API client signed in as you has to sign in again.",
+                okText: "Sign out everywhere",
+                okButtonProps: { danger: true },
+                onOk: async () => {
+                  await team.logoutEverywhere();
+                  window.location.assign("/");
+                },
+              })
+            }
+          >
+            Sign out everywhere
+          </Button>
+        </div>
       </section>
     </div>
   );

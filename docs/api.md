@@ -16,9 +16,12 @@ TypeScript client in `web/src/api.ts`.
 The team server puts accounts and workspaces in front of the same project API. Source:
 `internal/team/server.go`.
 
-- **Sign-in:** a session cookie `pyro_session` (HttpOnly, SameSite=Lax, Secure behind https),
-  valid for 14 days from the last use. There is no session token.
-- **CSRF:** every request other than GET/HEAD/OPTIONS must send `X-Pyro-CSRF: 1`. When an
+- **Sign-in uses JWTs.** An **access token** is a JWT (HS256, issuer `pyro`, 15 minutes; claims `sub`, `name`, `admin`, `iat`, `iat_ms`, `exp`, `jti`). A **refresh token** is an opaque random value. Only its SHA-256 hash is stored (the `sessions` table), and it lasts 14 days from its last use.
+  - **Browsers** get both as HttpOnly cookies: `pyro_access` (the JWT) and `pyro_session` (the refresh token). Both are SameSite=Lax, and Secure behind https. When the access token has expired, the next request mints a new one from the refresh cookie, so the UI never handles tokens.
+  - **API clients and the CLI** send `Authorization: Bearer <access token>`. They get tokens from `POST /api/v1/auth/token` and renew them with `POST /api/v1/auth/refresh`.
+  - **Revocation:** changing a password or signing out everywhere deletes refresh tokens and revokes access tokens issued earlier (`users.tokens_after`, checked on every request). Signing out deletes that refresh token. Its access token stops being renewed and expires within 15 minutes.
+  - **Signing key:** `$PYRO_JWT_SECRET` (at least 32 characters; set it when several servers share a database), otherwise `<data>/jwt.secret`, generated on first start with mode 0600.
+- **CSRF:** every cookie-authenticated request other than GET/HEAD/OPTIONS must send `X-Pyro-CSRF: 1`. Requests with a Bearer token, and `/auth/token` and `/auth/refresh`, don't need it. When an
   `Origin` header is present it must match the host. Otherwise the server answers `403`.
 - **Project API:** every endpoint below is available under `/api/v1/projects/{projectId}/…`,
   e.g. `GET /api/v1/projects/3f…/requests/shop/list-items`, and the events socket is at
@@ -35,7 +38,9 @@ The team server puts accounts and workspaces in front of the same project API. S
 | GET | `/api/v1/auth/config` | `{mode: "team", signedIn, firstUser, signup, signupPolicy, signupDomains}`. No sign-in needed |
 | POST | `/api/v1/auth/signup` | Body `{email, name?, password}` (password ≥ 10 characters). Creates the account with a personal workspace and a first project, and signs in. `403` when the sign-up policy refuses, `409` for a taken email |
 | POST | `/api/v1/auth/login` | Body `{email, password}`. `400` for wrong credentials; `429` after 10 failures per account (or 50 per IP) in 15 minutes |
-| POST | `/api/v1/auth/logout` | Ends this session |
+| POST | `/api/v1/auth/logout` | Ends this session: the refresh cookie, or `{refreshToken}` in the body. `?everywhere=1` ends all of the user's sessions and revokes their access tokens |
+| POST | `/api/v1/auth/token` | API clients: body `{email, password}` → `{accessToken, tokenType: "Bearer", expiresIn, refreshToken}`. Same rate limits as sign-in; no cookies |
+| POST | `/api/v1/auth/refresh` | Body `{refreshToken}` → a new `{accessToken, tokenType, expiresIn}`; `401` once it's expired or signed out |
 | GET | `/api/v1/me` | `{mode, user: {id, email, name, provider, admin}, workspaces}`. `401` when signed out |
 | PATCH | `/api/v1/me` | Body `{name}` |
 | POST | `/api/v1/me/password` | Body `{current, password}`. Signs out the user's other sessions |

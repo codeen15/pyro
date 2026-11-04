@@ -23,12 +23,11 @@ import (
 	"github.com/codeen15/pyro/internal/version"
 )
 
-// CookieName is the session cookie.
-const CookieName = "pyro_session"
-
-// CSRFHeader must accompany every state-changing request. Browsers can't add
-// custom headers to cross-site form posts, and the server never answers CORS
-// preflights, so its presence proves the request came from Pyro's own pages.
+// CSRFHeader must accompany every state-changing request that relies on
+// cookies. Browsers can't add custom headers to cross-site form posts, and
+// the server never answers CORS preflights, so its presence proves the
+// request came from Pyro's own pages. Requests with a Bearer token don't
+// need it: no other site can make a browser send one.
 const CSRFHeader = "X-Pyro-CSRF"
 
 // Signup policies.
@@ -58,8 +57,12 @@ type Config struct {
 	IdleClose time.Duration
 	// Mailer sends invite emails (nil: invites are links to copy).
 	Mailer Mailer
-	UI     fs.FS
-	Logger *slog.Logger
+	// JWTSecret signs access tokens (LoadSecret); at least 32 bytes.
+	JWTSecret []byte
+	// AccessTTL is how long an access token lasts (0 = 15 minutes).
+	AccessTTL time.Duration
+	UI        fs.FS
+	Logger    *slog.Logger
 }
 
 // Server is the team server's HTTP front: sign-in, workspaces, projects, and
@@ -71,6 +74,7 @@ type Server struct {
 	loadSlots chan struct{}
 	byEmail   *limiter
 	byIP      *limiter
+	tokens    *issuer
 
 	mu       sync.Mutex
 	projects map[string]*openProject
@@ -97,8 +101,15 @@ func New(cfg Config) *Server {
 		cfg.IdleClose = 30 * time.Minute
 	}
 	cfg.PublicURL = strings.TrimSuffix(cfg.PublicURL, "/")
+	if cfg.AccessTTL <= 0 {
+		cfg.AccessTTL = defaultAccessTTL
+	}
+	if len(cfg.JWTSecret) < minSecret {
+		panic("team: JWTSecret must be at least 32 bytes (use LoadSecret)")
+	}
 	s := &Server{
-		cfg: cfg, st: cfg.Store, log: cfg.Logger,
+		tokens: &issuer{secret: cfg.JWTSecret, ttl: cfg.AccessTTL},
+		cfg:    cfg, st: cfg.Store, log: cfg.Logger,
 		loadSlots: make(chan struct{}, cfg.MaxLoads),
 		byEmail:   newLimiter(10, 15*time.Minute),
 		byIP:      newLimiter(50, 15*time.Minute),
@@ -210,6 +221,8 @@ func (s *Server) Handler() http.Handler {
 	r.Post("/api/v1/auth/signup", s.signup)
 	r.Post("/api/v1/auth/login", s.login)
 	r.Post("/api/v1/auth/logout", s.logout)
+	r.Post("/api/v1/auth/token", s.issueToken)
+	r.Post("/api/v1/auth/refresh", s.refreshToken)
 	r.Get("/api/v1/invites/{token}", s.previewInvite)
 
 	r.Group(func(r chi.Router) {
@@ -253,8 +266,12 @@ func (s *Server) Handler() http.Handler {
 // another origin.
 func (s *Server) csrf(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.Method {
-		case http.MethodGet, http.MethodHead, http.MethodOptions:
+		switch {
+		case r.Method == http.MethodGet, r.Method == http.MethodHead, r.Method == http.MethodOptions:
+		case bearer(r) != "":
+			// Not ambient: a cross-site page can't make the browser send it.
+		case r.URL.Path == "/api/v1/auth/token", r.URL.Path == "/api/v1/auth/refresh":
+			// Credentials travel in the body and tokens come back in it, never as cookies.
 		default:
 			if r.Header.Get(CSRFHeader) == "" {
 				writeError(w, http.StatusForbidden, "missing "+CSRFHeader+" header")
@@ -285,17 +302,13 @@ func current(r *http.Request) authed {
 
 func (s *Server) requireUser(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		c, err := r.Cookie(CookieName)
+		u, h, err := s.authenticate(w, r)
 		if err != nil {
-			writeError(w, http.StatusUnauthorized, "sign in to continue")
-			return
-		}
-		u, h, err := s.st.SessionUser(r.Context(), c.Value)
-		if err != nil {
-			if !errors.Is(err, ErrNotFound) {
-				s.log.Error("session lookup failed", "err", err)
+			if errors.Is(err, ErrNotFound) {
+				writeError(w, http.StatusUnauthorized, "sign in to continue")
+			} else {
+				writeError(w, http.StatusUnauthorized, "your session has ended; sign in again")
 			}
-			writeError(w, http.StatusUnauthorized, "your session has ended; sign in again")
 			return
 		}
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), userKey{}, authed{u, h})))
@@ -306,16 +319,80 @@ func (s *Server) secureCookies(r *http.Request) bool {
 	return r.TLS != nil || strings.HasPrefix(s.cfg.PublicURL, "https://")
 }
 
+// setSession signs a browser in: a refresh token and an access JWT, both in
+// HttpOnly cookies.
 func (s *Server) setSession(w http.ResponseWriter, r *http.Request, u *User) error {
 	tok, err := s.st.CreateSession(r.Context(), u.ID, clientIP(r), r.UserAgent())
 	if err != nil {
 		return err
 	}
 	http.SetCookie(w, &http.Cookie{
-		Name: CookieName, Value: tok, Path: "/", HttpOnly: true, Secure: s.secureCookies(r),
+		Name: RefreshCookie, Value: tok, Path: "/", HttpOnly: true, Secure: s.secureCookies(r),
 		SameSite: http.SameSiteLaxMode, MaxAge: int(sessionTTL.Seconds()),
 	})
-	return nil
+	return s.setAccessCookie(w, r, u)
+}
+
+func (s *Server) clearCookies(w http.ResponseWriter, r *http.Request) {
+	for _, name := range []string{AccessCookie, RefreshCookie} {
+		http.SetCookie(w, &http.Cookie{Name: name, Value: "", Path: "/", HttpOnly: true, Secure: s.secureCookies(r), SameSite: http.SameSiteLaxMode, MaxAge: -1})
+	}
+}
+
+// tokenView is what API clients get from /auth/token and /auth/refresh.
+type tokenView struct {
+	AccessToken  string `json:"accessToken"`
+	TokenType    string `json:"tokenType"`
+	ExpiresIn    int    `json:"expiresIn"` // seconds
+	RefreshToken string `json:"refreshToken,omitempty"`
+}
+
+// issueToken signs an API client in: email and password in, an access JWT
+// and a refresh token out (no cookies).
+func (s *Server) issueToken(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Email    string `json:"email"`
+		Password string `json:"password"`
+	}
+	if !decode(w, r, &body) {
+		return
+	}
+	u, ok := s.checkLogin(w, r, body.Email, body.Password)
+	if !ok {
+		return
+	}
+	refresh, err := s.st.CreateSession(r.Context(), u.ID, clientIP(r), r.UserAgent())
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	s.writeToken(w, u, refresh)
+}
+
+// refreshToken trades a refresh token for a new access JWT.
+func (s *Server) refreshToken(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		RefreshToken string `json:"refreshToken"`
+	}
+	if !decode(w, r, &body) {
+		return
+	}
+	u, _, err := s.st.SessionUser(r.Context(), body.RefreshToken)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "the refresh token is invalid or has expired; sign in again")
+		return
+	}
+	s.writeToken(w, u, "")
+}
+
+func (s *Server) writeToken(w http.ResponseWriter, u *User, refresh string) {
+	access, exp, err := s.tokens.mint(u)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, tokenView{AccessToken: access, TokenType: "Bearer", ExpiresIn: int(time.Until(exp).Seconds()), RefreshToken: refresh})
 }
 
 func clientIP(r *http.Request) string {
@@ -356,11 +433,8 @@ func (s *Server) authConfig(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	signedIn := false
-	if c, err := r.Cookie(CookieName); err == nil {
-		_, _, err := s.st.SessionUser(r.Context(), c.Value)
-		signedIn = err == nil
-	}
+	_, _, err = s.authenticate(w, r)
+	signedIn := err == nil
 	writeJSON(w, http.StatusOK, map[string]any{
 		"mode":          "team",
 		"signedIn":      signedIn,
@@ -429,6 +503,25 @@ func (s *Server) signup(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, s.meView(r.Context(), u))
 }
 
+// checkLogin verifies an email and password, rate-limited per account and IP.
+func (s *Server) checkLogin(w http.ResponseWriter, r *http.Request, email, password string) (*User, bool) {
+	email, ip := strings.ToLower(strings.TrimSpace(email)), clientIP(r)
+	if s.byEmail.blocked(email) || s.byIP.blocked(ip) {
+		writeError(w, http.StatusTooManyRequests, "too many failed sign-ins; wait 15 minutes and try again")
+		return nil, false
+	}
+	u, err := s.st.Authenticate(r.Context(), email, password)
+	if err != nil {
+		s.byEmail.fail(email)
+		s.byIP.fail(ip)
+		// 400, not 401: 401 means "your session ended" to the UI.
+		writeError(w, http.StatusBadRequest, err.Error())
+		return nil, false
+	}
+	s.byEmail.reset(email)
+	return u, true
+}
+
 func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Email    string `json:"email"`
@@ -437,20 +530,10 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &body) {
 		return
 	}
-	email, ip := strings.ToLower(strings.TrimSpace(body.Email)), clientIP(r)
-	if s.byEmail.blocked(email) || s.byIP.blocked(ip) {
-		writeError(w, http.StatusTooManyRequests, "too many failed sign-ins; wait 15 minutes and try again")
+	u, ok := s.checkLogin(w, r, body.Email, body.Password)
+	if !ok {
 		return
 	}
-	u, err := s.st.Authenticate(r.Context(), email, body.Password)
-	if err != nil {
-		s.byEmail.fail(email)
-		s.byIP.fail(ip)
-		// 400, not 401: 401 means "your session ended" to the UI.
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	s.byEmail.reset(email)
 	if err := s.setSession(w, r, u); err != nil {
 		s.fail(w, err)
 		return
@@ -458,11 +541,31 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.meView(r.Context(), u))
 }
 
+// logout ends a session: the browser's refresh cookie, or an API client's
+// refresh token in the body. ?everywhere=1 (signed in) ends all of the
+// user's sessions and revokes their access tokens.
 func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
-	if c, err := r.Cookie(CookieName); err == nil {
+	var body struct {
+		RefreshToken string `json:"refreshToken,omitempty"`
+	}
+	if r.ContentLength > 0 && !decode(w, r, &body) {
+		return
+	}
+	if r.URL.Query().Get("everywhere") != "" {
+		if u, _, err := s.authenticate(w, r); err == nil {
+			if err := s.st.SignOutEverywhere(r.Context(), u.ID); err != nil {
+				s.fail(w, err)
+				return
+			}
+		}
+	}
+	if c, err := r.Cookie(RefreshCookie); err == nil {
 		_ = s.st.DeleteSession(r.Context(), c.Value)
 	}
-	http.SetCookie(w, &http.Cookie{Name: CookieName, Value: "", Path: "/", HttpOnly: true, Secure: s.secureCookies(r), SameSite: http.SameSiteLaxMode, MaxAge: -1})
+	if body.RefreshToken != "" {
+		_ = s.st.DeleteSession(r.Context(), body.RefreshToken)
+	}
+	s.clearCookies(w, r)
 	w.WriteHeader(http.StatusNoContent)
 }
 

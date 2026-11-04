@@ -94,11 +94,13 @@ type User struct {
 	Disabled bool      `json:"disabled,omitempty"`
 	Created  time.Time `json:"created"`
 
-	pwHash string
+	pwHash      string
+	tokensAfter int64
 }
 
 func (r *userRow) user() *User {
-	return &User{ID: r.ID, Email: r.Email, Name: r.Name, Provider: r.Provider, Admin: r.Admin, Disabled: r.Disabled, Created: time.Unix(r.Created, 0), pwHash: r.PwHash}
+	return &User{ID: r.ID, Email: r.Email, Name: r.Name, Provider: r.Provider, Admin: r.Admin, Disabled: r.Disabled, Created: time.Unix(r.Created, 0),
+		pwHash: r.PwHash, tokensAfter: r.TokensAfter}
 }
 
 // CountUsers reports how many accounts exist (the first becomes admin).
@@ -223,7 +225,8 @@ func (s *Store) Authenticate(ctx context.Context, email, password string) (*User
 var errBadLogin = errors.New("wrong email or password")
 
 // SetPassword replaces a local account's password and signs it out everywhere
-// except keepSession (a session hash; "" signs out every session).
+// except keepSession (a session hash; "" signs out every session): refresh
+// tokens are deleted and earlier access tokens revoked.
 func (s *Store) SetPassword(ctx context.Context, userID, password, keepSession string) error {
 	if err := checkPassword(password); err != nil {
 		return err
@@ -232,7 +235,8 @@ func (s *Store) SetPassword(ctx context.Context, userID, password, keepSession s
 	if err != nil {
 		return err
 	}
-	res, err := s.db.NewUpdate().Model((*userRow)(nil)).Set("pw_hash = ?", hash).Set("provider = 'local'").Where("id = ?", userID).Exec(ctx)
+	res, err := s.db.NewUpdate().Model((*userRow)(nil)).Set("pw_hash = ?", hash).Set("provider = 'local'").
+		Set("tokens_after = ?", time.Now().UnixMilli()).Where("id = ?", userID).Exec(ctx)
 	if err != nil {
 		return err
 	}
@@ -240,6 +244,16 @@ func (s *Store) SetPassword(ctx context.Context, userID, password, keepSession s
 		return ErrNotFound
 	}
 	_, err = s.db.NewDelete().Model((*sessionRow)(nil)).Where(`"user" = ? AND hash != ?`, userID, keepSession).Exec(ctx)
+	return err
+}
+
+// SignOutEverywhere deletes every refresh token and revokes access tokens
+// issued until now.
+func (s *Store) SignOutEverywhere(ctx context.Context, userID string) error {
+	if _, err := s.db.NewUpdate().Model((*userRow)(nil)).Set("tokens_after = ?", time.Now().UnixMilli()).Where("id = ?", userID).Exec(ctx); err != nil {
+		return err
+	}
+	_, err := s.db.NewDelete().Model((*sessionRow)(nil)).Where(`"user" = ?`, userID).Exec(ctx)
 	return err
 }
 

@@ -142,3 +142,22 @@ func CreateIndex(ctx context.Context, tx bun.IDB, model any, name string, column
 	_, err := q.Exec(ctx)
 	return err
 }
+
+// AddColumn adds a column unless the table already has it (tables created
+// from a newer model already do). ddl is the column definition, e.g.
+// "tokens_after BIGINT NOT NULL DEFAULT 0".
+func AddColumn(ctx context.Context, tx bun.IDB, table, column, ddl string) error {
+	var n int
+	q := `SELECT COUNT(*) FROM pragma_table_info(?) WHERE name = ?`
+	if IsPostgres(tx) {
+		q = `SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = ? AND column_name = ?`
+	}
+	if err := tx.NewRaw(q, table, column).Scan(ctx, &n); err != nil {
+		return err
+	}
+	if n > 0 {
+		return nil
+	}
+	_, err := tx.NewRaw("ALTER TABLE ? ADD COLUMN "+ddl, bun.Ident(table)).Exec(ctx)
+	return err
+}

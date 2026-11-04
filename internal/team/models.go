@@ -8,7 +8,7 @@ import (
 	"github.com/codeen15/pyro/internal/db"
 )
 
-// Tables. Times are Unix seconds. "user" is a reserved word in PostgreSQL,
+// Tables. Times are Unix seconds (tokens_after: milliseconds). "user" is a reserved word in PostgreSQL,
 // so hand-written SQL quotes it ("user"); Bun quotes model columns itself.
 
 type userRow struct {
@@ -22,6 +22,8 @@ type userRow struct {
 	Admin         bool   `bun:"admin,notnull,default:false"`
 	Disabled      bool   `bun:"disabled,notnull,default:false"`
 	Created       int64  `bun:"created,notnull"`
+	// TokensAfter revokes access tokens issued before it (Unix milliseconds).
+	TokensAfter int64 `bun:"tokens_after,notnull,default:0"`
 }
 
 type sessionRow struct {
@@ -125,5 +127,8 @@ var migrations = []db.Migration{
 			}
 		}
 		return nil
+	}},
+	{Name: "2-tokens-after", Up: func(ctx context.Context, tx bun.Tx) error {
+		return db.AddColumn(ctx, tx, "users", "tokens_after", "tokens_after BIGINT NOT NULL DEFAULT 0")
 	}},
 }

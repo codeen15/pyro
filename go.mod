@@ -10,6 +10,7 @@ require (
 	github.com/dop251/goja v0.0.0-20261031103838-cf2ff0ec0b31
 	github.com/expr-lang/expr v1.17.8
 	github.com/go-chi/chi/v5 v5.5.0
+	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/jackc/pgx/v5 v5.12.0
 	github.com/joho/godotenv v1.5.1
 	github.com/ohler55/ojg v1.28.9

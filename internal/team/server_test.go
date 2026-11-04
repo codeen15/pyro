@@ -30,6 +30,9 @@ func newTeam(t *testing.T, cfg Config) (*httptest.Server, *Store) {
 		t.Fatal(err)
 	}
 	cfg.DataDir, cfg.Store = dir, st
+	if cfg.JWTSecret == nil {
+		cfg.JWTSecret = []byte("test-secret-test-secret-test-secret!")
+	}
 	cfg.Project = func(ws *store.Workspace, id string) server.Config {
 		return server.Config{Engine: engine.New(httpdriver.New(httpdriver.Options{FileRoot: ws.Root})), History: hist}
 	}
