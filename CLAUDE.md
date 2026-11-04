@@ -2,7 +2,7 @@
 
 Pyro is an API client (REST, WebSocket, Socket.IO, Postman import) and load-testing
 tool (stress, spike, soak, concurrency) with WASM plugins. A single Go binary runs the
-engine and serves a React web UI on localhost. **Current phase: 14 (workspaces and sharing) done; next: 15 (LDAP/OIDC), 16 (test reports)**
+engine and serves a React web UI on localhost. **Current phase: 15 (enterprise sign-in) done; next: 16 (test reports)**
 (see `docs/roadmap.md`). Product context: `PRODUCT.md`; visual system: `DESIGN.md`.
 
 ## Layout
@@ -21,7 +21,9 @@ engine and serves a React web UI on localhost. **Current phase: 14 (workspaces a
   acting for a `Principal`. `roles.go` gives every route a minimum role (`TestEveryRouteHasARole` enforces it);
   `changes.go` adds ETags/If-Match conflicts, `tree` change events and the `OnChange` activity hook.
 - `internal/team`: the team server: accounts, argon2id passwords, JWT sign-in (`jwt.go`: 15-min HS256 access tokens + hashed
-  refresh tokens; HttpOnly cookies for browsers, `Authorization: Bearer` for API clients), CSRF, workspaces, members, invites, activity and projects
+  refresh tokens; HttpOnly cookies for browsers, `Authorization: Bearer` for API clients), LDAP (`ldap.go`), OpenID Connect (`oidc.go`),
+  personal access tokens, password resets and the admin API (`accounts.go`, `admin.go`), CSRF, workspaces, members, invites, activity and projects.
+  Tests use an in-process LDAP server (gldap) and a fake OIDC provider (`oidc_test.go`)
   (SQLite, `<data>/pyro.db`). It proxies `/api/v1/projects/{id}/*` to that project's `internal/server.Server`, and
   project folders live in `<data>/projects/<id>/`.
 - `internal/version`: build metadata (set via ldflags)

@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
@@ -57,6 +58,13 @@ type Config struct {
 	IdleClose time.Duration
 	// Mailer sends invite emails (nil: invites are links to copy).
 	Mailer Mailer
+	// Directory signs people in with LDAP / Active Directory (NewLDAP).
+	Directory Directory
+	// OIDC are single sign-on providers (OpenID Connect).
+	OIDC []OIDCProvider
+	// DatabaseKind and LDAPURL are shown on the admin page.
+	DatabaseKind string
+	LDAPURL      string
 	// JWTSecret signs access tokens (LoadSecret); at least 32 bytes.
 	JWTSecret []byte
 	// AccessTTL is how long an access token lasts (0 = 15 minutes).
@@ -75,6 +83,7 @@ type Server struct {
 	byEmail   *limiter
 	byIP      *limiter
 	tokens    *issuer
+	oidc      oidcClients
 
 	mu       sync.Mutex
 	projects map[string]*openProject
@@ -108,8 +117,8 @@ func New(cfg Config) *Server {
 		panic("team: JWTSecret must be at least 32 bytes (use LoadSecret)")
 	}
 	s := &Server{
-		tokens: &issuer{secret: cfg.JWTSecret, ttl: cfg.AccessTTL},
-		cfg:    cfg, st: cfg.Store, log: cfg.Logger,
+		tokens: &issuer{secret: cfg.JWTSecret, ttl: cfg.AccessTTL}, oidc: oidcClients{byID: map[string]*oidc.Provider{}},
+		cfg: cfg, st: cfg.Store, log: cfg.Logger,
 		loadSlots: make(chan struct{}, cfg.MaxLoads),
 		byEmail:   newLimiter(10, 15*time.Minute),
 		byIP:      newLimiter(50, 15*time.Minute),
@@ -223,6 +232,11 @@ func (s *Server) Handler() http.Handler {
 	r.Post("/api/v1/auth/logout", s.logout)
 	r.Post("/api/v1/auth/token", s.issueToken)
 	r.Post("/api/v1/auth/refresh", s.refreshToken)
+	r.Post("/api/v1/auth/forgot", s.forgotPassword)
+	r.Get("/api/v1/auth/reset/{token}", s.previewReset)
+	r.Post("/api/v1/auth/reset", s.resetPassword)
+	r.Get("/auth/oidc/{id}/start", s.oidcStart)
+	r.Get("/auth/oidc/{id}/callback", s.oidcCallback)
 	r.Get("/api/v1/invites/{token}", s.previewInvite)
 
 	r.Group(func(r chi.Router) {
@@ -230,6 +244,16 @@ func (s *Server) Handler() http.Handler {
 		r.Get("/api/v1/me", s.me)
 		r.Patch("/api/v1/me", s.patchMe)
 		r.Post("/api/v1/me/password", s.changePassword)
+		r.Get("/api/v1/me/tokens", s.listAPITokens)
+		r.Post("/api/v1/me/tokens", s.createAPIToken)
+		r.Delete("/api/v1/me/tokens/{id}", s.revokeAPIToken)
+		r.Route("/api/v1/admin", func(r chi.Router) {
+			r.Use(s.requireAdmin)
+			r.Get("/users", s.adminUsers)
+			r.Patch("/users/{id}", s.adminUpdateUser)
+			r.Post("/users/{id}/reset-link", s.adminResetLink)
+			r.Get("/settings", s.adminSettings)
+		})
 		r.Get("/api/v1/workspaces", s.listWorkspaces)
 		r.Post("/api/v1/workspaces", s.createWorkspace)
 		r.Patch("/api/v1/workspaces/{ws}", s.renameWorkspace)
@@ -443,6 +467,8 @@ func (s *Server) authConfig(w http.ResponseWriter, r *http.Request) {
 		"signupPolicy":  s.cfg.Signup,
 		"signupDomains": s.cfg.SignupDomains,
 		"email":         s.cfg.Mailer != nil,
+		"ldap":          s.cfg.Directory != nil,
+		"providers":     s.providerList(),
 		"version":       version.Version,
 	})
 }
@@ -511,11 +537,34 @@ func (s *Server) checkLogin(w http.ResponseWriter, r *http.Request, email, passw
 		return nil, false
 	}
 	u, err := s.st.Authenticate(r.Context(), email, password)
+	if err != nil && s.cfg.Directory != nil {
+		// Not a local account (or not this password): ask the directory,
+		// unless a local account owns this address.
+		if local, lerr := s.st.UserByEmail(r.Context(), email); lerr != nil || local.Provider != "local" {
+			du, derr := s.cfg.Directory.Authenticate(r.Context(), email, password)
+			switch {
+			case derr == nil:
+				u, err = s.st.UpsertExternal(r.Context(), External{Provider: "ldap", Subject: du.DN, Email: du.Email, Name: du.Name, Admin: du.Admin, LinkByEmail: true})
+				if err != nil {
+					writeError(w, http.StatusForbidden, strings.TrimPrefix(err.Error(), ErrInvalid.Error()+": "))
+					return nil, false
+				}
+			case !errors.Is(derr, errDirectoryLogin):
+				s.log.Error("LDAP sign-in failed", "err", derr)
+				writeError(w, http.StatusBadGateway, "the company directory couldn't be reached; try again, or tell your Pyro administrator")
+				return nil, false
+			}
+		}
+	}
 	if err != nil {
 		s.byEmail.fail(email)
 		s.byIP.fail(ip)
 		// 400, not 401: 401 means "your session ended" to the UI.
-		writeError(w, http.StatusBadRequest, err.Error())
+		msg := err.Error()
+		if s.cfg.Directory != nil {
+			msg = "wrong username or password"
+		}
+		writeError(w, http.StatusBadRequest, msg)
 		return nil, false
 	}
 	s.byEmail.reset(email)

@@ -153,6 +153,10 @@ func (s *Server) setAccessCookie(w http.ResponseWriter, r *http.Request, u *User
 func (s *Server) authenticate(w http.ResponseWriter, r *http.Request) (*User, string, error) {
 	ctx := r.Context()
 	if tok := bearer(r); tok != "" {
+		if strings.HasPrefix(tok, PATPrefix) {
+			u, err := s.st.UserByAPIToken(ctx, tok)
+			return u, "", err
+		}
 		u, err := s.userFromAccess(ctx, tok)
 		return u, "", err
 	}

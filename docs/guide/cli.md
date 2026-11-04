@@ -47,6 +47,7 @@ Manage a team server's accounts (on the server machine; works while it runs). Al
 | `create-user <email>` | Create an account; asks for the password (`--name`, `--admin`) |
 | `reset-password <email>` | Set a new password and sign the account out everywhere |
 | `set-admin <email>` | Make the account a server administrator (`--revoke` to undo) |
+| `disable <email>`, `enable <email>` | Turn an account off (signing it out everywhere) or back on |
 | `users` | List accounts |
 
 ## pyro init

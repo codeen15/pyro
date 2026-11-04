@@ -4510,3 +4510,31 @@ input[type="checkbox"] {
   gap: 8px;
   margin-top: 16px;
 }
+.sso-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.sso-divider.ant-divider {
+  margin: 12px 0 4px;
+}
+.auth-hint .ant-btn-link {
+  padding: 0;
+  height: auto;
+}
+.admin-search {
+  max-width: 320px;
+  margin-bottom: 12px;
+}
+.admin-settings {
+  max-width: 720px;
+}
+.admin-page > .muted {
+  margin: 16px 0 0;
+}
+.api-tokens .ant-table-wrapper {
+  margin-bottom: 12px;
+}
+.account-page .api-tokens {
+  max-width: 640px;
+}

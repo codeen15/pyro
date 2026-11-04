@@ -32,6 +32,20 @@ generate a lot of traffic. Its defences, by boundary:
     before the user's last password change or sign-out-everywhere.
   - The signing key comes from `PYRO_JWT_SECRET` or `<data>/jwt.secret` (mode 0600). Anyone
     with it can forge tokens, so protect the data directory and the environment.
+- **LDAP:** Pyro never sends an empty password (servers treat that as an anonymous bind),
+  escapes the username in the search filter, and refuses ambiguous matches. Use `ldaps://` or
+  `startTLS`, and keep the service account read-only.
+- **OpenID Connect:**
+  - sign-in uses the authorization code flow with PKCE (S256), a random state and nonce
+    carried in a short-lived signed cookie, and full ID token verification (signature,
+    issuer, audience, expiry, nonce);
+  - an SSO sign-in takes over an existing account with the same email only if the provider
+    marks the email verified, or the provider is set to `trustEmail`;
+  - `allowedDomains` limits who can sign in.
+- **Personal access tokens:** `pyro_pat_` plus 256 random bits, stored as SHA-256 hashes.
+  They can expire and be revoked, and stop working when the account is disabled. Password
+  reset links are single-use, hashed, and expire after 1 hour (emailed) or 24 hours
+  (admin-made). "Forgot password" answers the same way for every address.
 - State-changing requests authenticated by cookie need the `X-Pyro-CSRF` header and a
   same-origin `Origin`, so other sites can't act with a member's cookie. Bearer-token
   requests are exempt, because a browser never adds that header on its own. The server

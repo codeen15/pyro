@@ -22,6 +22,7 @@ import { SettingsPage } from "./components/Settings";
 import { DocsPage } from "./components/DocsPage";
 import { AccountPage, ProjectSwitcher, ProjectsPage, UserMenu, WorkspacePage } from "./components/Team";
 import { useCanEdit, useTeam } from "./team";
+import { AdminPage } from "./components/Admin";
 
 // Lists that follow other members' changes. Open editors (environment,
 // settings, load test) aren't refetched under someone's typing; their saves
@@ -114,6 +115,8 @@ export function App() {
           <ProjectsPage />
         ) : selected?.startsWith("workspace:") && teamMode ? (
           <WorkspacePage key={selected} id={selected.slice(10)} />
+        ) : selected === "admin" && teamMode ? (
+          <AdminPage />
         ) : selected === "account" && teamMode ? (
           <AccountPage />
         ) : selected === "import" ? (
