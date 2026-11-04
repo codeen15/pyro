@@ -1,6 +1,6 @@
 # Changelog
 
-## v0.1.0 (unreleased)
+## v0.1.0 (2026-11-04)
 
 First public release.
 
@@ -26,6 +26,17 @@ First public release.
   exported to Postman); a light theme.
 
 - Collection and folder settings (variables, auth, scripts, description) in the UI.
+- Folders inside collections; deleting requests, folders and collections; a request's type
+  (HTTP, WebSocket, Socket.IO, plugin) is chosen once, when it's created.
+- `{{variables}}` are coloured by whether they're defined, with a hover card to see and edit
+  the value where it lives.
+- JMeter-style think time (constant, uniform, Gaussian, Poisson timers) and ordered pre- and
+  post-processors (scripts, set variables, counters, extractors incl. boundary and XPath,
+  assertions) on requests, folders and collections; a `processor` plugin kind.
+- Socket.IO messages with several typed arguments (text, JSON, number, boolean, binary) and
+  WebSocket payloads as text, JSON or binary, as in Postman.
+- An Ant Design interface with the Pyro brand, light and dark, and Hugeicons.
+- A complete user guide, in `docs/guide/` and in the app under **Docs**.
 - Generated HTML API docs (`pyro docs`) and a mock server answering from saved examples
   (`pyro mock`), both also in the UI.
 
@@ -40,13 +51,41 @@ First public release.
 - Script steps: JavaScript with a `pyro.*` API (requests, checks, groups, custom metrics).
 - A requests-per-second cap (`maxRPS`, `--max-rps`, `loadMaxRPS` in `pyro.yaml`).
 - Live outputs to InfluxDB, Prometheus remote write, NDJSON and CSV.
+- Test data from CSV files (header row or JMeter-style variable names, any delimiter),
+  mapped to variables; Socket.IO and WebSocket steps that send messages.
+- Load tests can be renamed, duplicated and deleted.
 - The load generator's own CPU and memory, with a warning when it saturates.
 
+**Test reports**
+- Every collection run is saved as a report (secrets masked) and listed with load test runs:
+  pass rate, failures, comparison with the previous run, shareable links.
+- Save as PDF (printable HTML), Excel workbooks, CSV, JUnit and JSON, from the app and from
+  `pyro run` / `pyro load` (`--html`, `--xlsx`, `--csv`); `--report-to` uploads CI runs to a
+  team server.
+
+**Team server** (`pyro serve --team`)
+- Accounts with email and password, LDAP / Active Directory, or single sign-on with OpenID
+  Connect (Entra ID, Google, Keycloak…); first account is the administrator.
+- Sign-in with JWTs: short-lived access tokens and refresh tokens in HttpOnly cookies for
+  browsers, Bearer tokens and personal access tokens (`pyro_pat_…`) for scripts and CI.
+- Personal and team workspaces holding projects (each one an ordinary workspace folder),
+  with Owner, Editor and Viewer roles enforced on every route.
+- Invites by link or email, members and roles, an activity log, moving and copying
+  collections between projects, moving projects, project zip download and upload.
+- Safe concurrent editing: saves that would overwrite someone's newer change ask first;
+  everyone's sidebar follows changes live.
+- An administration page (users, administrators, disabling accounts, password reset links),
+  "forgot password" emails, `pyro admin` commands.
+- SQLite by default or PostgreSQL (`PYRO_DATABASE_URL`) through the Bun ORM; settings from
+  `server.yaml`, environment variables or a `.env` file.
+
 **Plugins**
-- WebAssembly plugins (wazero) adding request types and auth types, with capability
+- WebAssembly plugins (wazero) adding request types, auth types and processors, with capability
   approval, a Go SDK, `pyro plugin` commands, archives and index installs. Examples: raw
   TCP and HMAC signing.
 
 **Security**
 - Loopback-only server with a session token and DNS-rebinding protection; request bodies
   can't read files outside the workspace by default; see [SECURITY.md](SECURITY.md).
+- Team server: argon2id passwords, CSRF protection, rate-limited sign-in, hashed tokens and
+  invite links, per-route roles with a test that every route has one.
