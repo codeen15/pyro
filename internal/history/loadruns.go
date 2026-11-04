@@ -7,25 +7,26 @@ import (
 	"errors"
 	"time"
 
+	"github.com/uptrace/bun"
+
 	"github.com/codeen15/pyro/pkg/engine/load"
 )
 
-const loadRunsSchema = `
-CREATE TABLE IF NOT EXISTS loadruns (
-	id         TEXT PRIMARY KEY,
-	workspace  TEXT NOT NULL,
-	test       TEXT NOT NULL,
-	name       TEXT NOT NULL,
-	started    INTEGER NOT NULL,
-	status     TEXT NOT NULL,
-	duration   REAL NOT NULL,
-	requests   INTEGER NOT NULL,
-	p95        REAL NOT NULL,
-	error_rate REAL NOT NULL,
-	max_vus    INTEGER NOT NULL,
-	result     BLOB NOT NULL
-);
-CREATE INDEX IF NOT EXISTS loadruns_ws ON loadruns(workspace, started DESC);`
+type loadRunRow struct {
+	bun.BaseModel `bun:"table:loadruns"`
+	ID            string  `bun:"id,pk"`
+	Workspace     string  `bun:"workspace,notnull"`
+	Test          string  `bun:"test,notnull"`
+	Name          string  `bun:"name,notnull"`
+	Started       int64   `bun:"started,notnull"` // unix milliseconds
+	Status        string  `bun:"status,notnull"`
+	Duration      float64 `bun:"duration,notnull"`
+	Requests      int64   `bun:"requests,notnull"`
+	P95           float64 `bun:"p95,notnull"`
+	ErrorRate     float64 `bun:"error_rate,notnull"`
+	MaxVUs        int     `bun:"max_vus,notnull"`
+	Result        []byte  `bun:"result,notnull"`
+}
 
 // LoadRun is a saved load test run (list row).
 type LoadRun struct {
@@ -41,23 +42,22 @@ type LoadRun struct {
 	MaxVUs    int       `json:"maxVUs"`
 }
 
-func (s *Store) initLoadRuns() error {
-	_, err := s.db.Exec(loadRunsSchema)
-	return err
-}
-
-// AddLoadRun saves a finished load test.
+// AddLoadRun saves a finished load test (replacing a run with the same id).
 func (s *Store) AddLoadRun(ctx context.Context, workspace, id, test string, r *load.Result) error {
 	blob, err := json.Marshal(r)
 	if err != nil {
 		return err
 	}
 	m := r.Metrics
-	_, err = s.db.ExecContext(ctx, `INSERT OR REPLACE INTO loadruns
-		(id, workspace, test, name, started, status, duration, requests, p95, error_rate, max_vus, result)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		id, workspace, test, r.Name, r.StartedAt.UnixMilli(), r.Status, r.Duration,
-		int64(m["http_reqs"].Value), m["http_req_duration"].P95, m["http_req_failed"].Value, r.MaxVUs, blob)
+	row := &loadRunRow{
+		ID: id, Workspace: workspace, Test: test, Name: r.Name, Started: r.StartedAt.UnixMilli(), Status: r.Status, Duration: r.Duration,
+		Requests: int64(m["http_reqs"].Value), P95: m["http_req_duration"].P95, ErrorRate: m["http_req_failed"].Value, MaxVUs: r.MaxVUs, Result: blob,
+	}
+	q := s.db.NewInsert().Model(row).On("CONFLICT (id) DO UPDATE")
+	for _, c := range []string{"workspace", "test", "name", "started", "status", "duration", "requests", "p95", "error_rate", "max_vus", "result"} {
+		q = q.Set(c + " = EXCLUDED." + c)
+	}
+	_, err = q.Exec(ctx)
 	return err
 }
 
@@ -66,30 +66,26 @@ func (s *Store) LoadRuns(ctx context.Context, workspace, test string, limit int)
 	if limit <= 0 || limit > 200 {
 		limit = 50
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT id, test, name, started, status, duration, requests, p95, error_rate, max_vus
-		FROM loadruns WHERE workspace = ? AND (? = '' OR test = ?) ORDER BY started DESC LIMIT ?`, workspace, test, test, limit)
-	if err != nil {
+	var rows []loadRunRow
+	q := s.db.NewSelect().Model(&rows).ExcludeColumn("result").Where("workspace = ?", workspace).Order("started DESC").Limit(int64(limit))
+	if test != "" {
+		q = q.Where("test = ?", test)
+	}
+	if err := q.Scan(ctx); err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	out := []LoadRun{}
-	for rows.Next() {
-		var r LoadRun
-		var started int64
-		if err := rows.Scan(&r.ID, &r.Test, &r.Name, &started, &r.Status, &r.Duration, &r.Requests, &r.P95, &r.ErrorRate, &r.MaxVUs); err != nil {
-			return nil, err
-		}
-		r.StartedAt = time.UnixMilli(started)
-		out = append(out, r)
+	out := make([]LoadRun, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, LoadRun{ID: r.ID, Test: r.Test, Name: r.Name, StartedAt: time.UnixMilli(r.Started), Status: r.Status, Duration: r.Duration,
+			Requests: r.Requests, P95: r.P95, ErrorRate: r.ErrorRate, MaxVUs: r.MaxVUs})
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
 // LoadRunResult returns a saved run's full result.
 func (s *Store) LoadRunResult(ctx context.Context, workspace, id string) (*load.Result, string, error) {
-	var blob []byte
-	var test string
-	err := s.db.QueryRowContext(ctx, `SELECT test, result FROM loadruns WHERE workspace = ? AND id = ?`, workspace, id).Scan(&test, &blob)
+	var row loadRunRow
+	err := s.db.NewSelect().Model(&row).Column("test", "result").Where("workspace = ? AND id = ?", workspace, id).Scan(ctx)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, "", ErrNotFound
 	}
@@ -97,10 +93,10 @@ func (s *Store) LoadRunResult(ctx context.Context, workspace, id string) (*load.
 		return nil, "", err
 	}
 	var r load.Result
-	return &r, test, json.Unmarshal(blob, &r)
+	return &r, row.Test, json.Unmarshal(row.Result, &r)
 }
 
 func (s *Store) DeleteLoadRun(ctx context.Context, workspace, id string) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM loadruns WHERE workspace = ? AND id = ?`, workspace, id)
+	_, err := s.db.NewDelete().Model((*loadRunRow)(nil)).Where("workspace = ? AND id = ?", workspace, id).Exec(ctx)
 	return err
 }

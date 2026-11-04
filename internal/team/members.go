@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/uptrace/bun"
+
 	"github.com/codeen15/pyro/internal/server"
 )
 
@@ -21,113 +23,102 @@ type Member struct {
 
 // Members lists a workspace's members, owners first.
 func (s *Store) Members(ctx context.Context, wsID string) ([]Member, error) {
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT u.id, u.email, u.name, m.role, m.added FROM members m JOIN users u ON u.id = m.user
-		WHERE m.ws = ? ORDER BY CASE m.role WHEN 'owner' THEN 0 WHEN 'editor' THEN 1 ELSE 2 END, u.name COLLATE NOCASE`, wsID)
+	var rows []struct {
+		UserID string `bun:"user_id"`
+		Email  string `bun:"email"`
+		Name   string `bun:"name"`
+		Role   string `bun:"role"`
+		Added  int64  `bun:"added"`
+	}
+	err := s.db.NewSelect().TableExpr("members AS m").Join(`JOIN users AS u ON u.id = m."user"`).
+		ColumnExpr("u.id AS user_id, u.email, u.name, m.role, m.added").Where("m.ws = ?", wsID).
+		OrderExpr("CASE m.role WHEN 'owner' THEN 0 WHEN 'editor' THEN 1 ELSE 2 END, lower(u.name)").Scan(ctx, &rows)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	out := []Member{}
-	for rows.Next() {
-		var m Member
-		var added int64
-		if err := rows.Scan(&m.UserID, &m.Email, &m.Name, &m.Role, &added); err != nil {
-			return nil, err
-		}
-		m.Added = time.Unix(added, 0)
-		out = append(out, m)
+	out := make([]Member, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, Member{UserID: r.UserID, Email: r.Email, Name: r.Name, Role: r.Role, Added: time.Unix(r.Added, 0)})
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
-func (s *Store) workspaceKind(ctx context.Context, q interface {
-	QueryRowContext(context.Context, string, ...any) *sql.Row
-}, wsID string) (string, error) {
+func workspaceKind(ctx context.Context, q bun.IDB, wsID string) (string, error) {
 	var kind string
-	err := q.QueryRowContext(ctx, `SELECT kind FROM workspaces WHERE id = ?`, wsID).Scan(&kind)
-	if errors.Is(err, sql.ErrNoRows) {
-		return "", ErrNotFound
-	}
-	return kind, err
+	err := q.NewSelect().Model((*workspaceRow)(nil)).Column("kind").Where("id = ?", wsID).Scan(ctx, &kind)
+	return kind, notFound(err)
 }
 
 // WorkspaceName returns a workspace's name and kind.
 func (s *Store) WorkspaceName(ctx context.Context, wsID string) (string, string, error) {
-	var name, kind string
-	err := s.db.QueryRowContext(ctx, `SELECT name, kind FROM workspaces WHERE id = ?`, wsID).Scan(&name, &kind)
-	if errors.Is(err, sql.ErrNoRows) {
-		return "", "", ErrNotFound
+	var w workspaceRow
+	if err := s.db.NewSelect().Model(&w).Where("id = ?", wsID).Scan(ctx); err != nil {
+		return "", "", notFound(err)
 	}
-	return name, kind, err
+	return w.Name, w.Kind, nil
 }
 
 // ownersAfter counts owners left if userID's role became newRole.
-func ownersAfter(ctx context.Context, tx *sql.Tx, wsID, userID, newRole string) (int, error) {
-	var n int
-	err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM members WHERE ws = ? AND role = 'owner' AND user != ?`, wsID, userID).Scan(&n)
+func ownersAfter(ctx context.Context, tx bun.IDB, wsID, userID, newRole string) (int, error) {
+	n, err := tx.NewSelect().Model((*memberRow)(nil)).Where(`ws = ? AND role = 'owner' AND "user" != ?`, wsID, userID).Count(ctx)
 	if newRole == "owner" {
 		n++
 	}
-	return n, err
+	return int(n), err
 }
+
+var errNeedOwner = errors.New("a workspace needs at least one owner; make someone else an owner first")
 
 // SetRole changes a member's role. A workspace always keeps one owner.
 func (s *Store) SetRole(ctx context.Context, wsID, userID string, role server.Role) error {
 	if role < server.RoleViewer || role > server.RoleOwner {
 		return invalid("role must be owner, editor or viewer")
 	}
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	n, err := ownersAfter(ctx, tx, wsID, userID, role.String())
-	if err != nil {
-		return err
-	}
-	if n == 0 {
-		return invalid("a workspace needs at least one owner; make someone else an owner first")
-	}
-	res, err := tx.ExecContext(ctx, `UPDATE members SET role = ? WHERE ws = ? AND user = ?`, role.String(), wsID, userID)
-	if err != nil {
-		return err
-	}
-	if c, _ := res.RowsAffected(); c == 0 {
-		return ErrNotFound
-	}
-	return tx.Commit()
+	return s.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		n, err := ownersAfter(ctx, tx, wsID, userID, role.String())
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return invalid("%s", errNeedOwner)
+		}
+		res, err := tx.NewUpdate().Model((*memberRow)(nil)).Set("role = ?", role.String()).Where(`ws = ? AND "user" = ?`, wsID, userID).Exec(ctx)
+		if err != nil {
+			return err
+		}
+		if c, _ := res.RowsAffected(); c == 0 {
+			return ErrNotFound
+		}
+		return nil
+	})
 }
 
 // RemoveMember takes someone out of a workspace (or lets them leave).
 func (s *Store) RemoveMember(ctx context.Context, wsID, userID string) error {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	kind, err := s.workspaceKind(ctx, tx, wsID)
-	if err != nil {
-		return err
-	}
-	if kind == "personal" {
-		return invalid("nobody can leave a personal workspace")
-	}
-	n, err := ownersAfter(ctx, tx, wsID, userID, "")
-	if err != nil {
-		return err
-	}
-	if n == 0 {
-		return invalid("a workspace needs at least one owner; make someone else an owner first")
-	}
-	res, err := tx.ExecContext(ctx, `DELETE FROM members WHERE ws = ? AND user = ?`, wsID, userID)
-	if err != nil {
-		return err
-	}
-	if c, _ := res.RowsAffected(); c == 0 {
-		return ErrNotFound
-	}
-	return tx.Commit()
+	return s.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		kind, err := workspaceKind(ctx, tx, wsID)
+		if err != nil {
+			return err
+		}
+		if kind == "personal" {
+			return invalid("nobody can leave a personal workspace")
+		}
+		n, err := ownersAfter(ctx, tx, wsID, userID, "")
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return invalid("%s", errNeedOwner)
+		}
+		res, err := tx.NewDelete().Model((*memberRow)(nil)).Where(`ws = ? AND "user" = ?`, wsID, userID).Exec(ctx)
+		if err != nil {
+			return err
+		}
+		if c, _ := res.RowsAffected(); c == 0 {
+			return ErrNotFound
+		}
+		return nil
+	})
 }
 
 // Invite is an invitation to a workspace (the token itself is never stored).
@@ -154,7 +145,7 @@ const maxInviteTTL = 30 * 24 * time.Hour
 
 // CreateInvite makes an invite and returns its token (shown once).
 func (s *Store) CreateInvite(ctx context.Context, wsID, by string, o InviteOptions) (string, *Invite, error) {
-	kind, err := s.workspaceKind(ctx, s.db, wsID)
+	kind, err := workspaceKind(ctx, s.db, wsID)
 	if err != nil {
 		return "", nil, err
 	}
@@ -164,7 +155,7 @@ func (s *Store) CreateInvite(ctx context.Context, wsID, by string, o InviteOptio
 	if o.Role < server.RoleViewer || o.Role > server.RoleOwner {
 		return "", nil, invalid("role must be owner, editor or viewer")
 	}
-	o.Email = strings.TrimSpace(o.Email)
+	o.Email = strings.ToLower(strings.TrimSpace(o.Email))
 	if o.Email != "" {
 		if !validEmail(o.Email) {
 			return "", nil, invalid("enter a valid email address")
@@ -183,9 +174,8 @@ func (s *Store) CreateInvite(ctx context.Context, wsID, by string, o InviteOptio
 	tok := randomToken()
 	now := time.Now().Truncate(time.Second)
 	inv := &Invite{ID: newID(), Email: o.Email, Role: o.Role.String(), CreatedBy: by, Created: now, Expires: now.Add(o.TTL), MaxUses: o.MaxUses}
-	_, err = s.db.ExecContext(ctx, `INSERT INTO invites (id, hash, ws, email, role, created_by, created, expires, max_uses) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		inv.ID, hashToken(tok), wsID, inv.Email, inv.Role, by, now.Unix(), inv.Expires.Unix(), inv.MaxUses)
-	if err != nil {
+	row := &inviteRow{ID: inv.ID, Hash: hashToken(tok), WS: wsID, Email: inv.Email, Role: inv.Role, CreatedBy: by, Created: now.Unix(), Expires: inv.Expires.Unix(), MaxUses: inv.MaxUses}
+	if _, err := s.db.NewInsert().Model(row).Exec(ctx); err != nil {
 		return "", nil, err
 	}
 	return tok, inv, nil
@@ -193,31 +183,28 @@ func (s *Store) CreateInvite(ctx context.Context, wsID, by string, o InviteOptio
 
 // Invites lists a workspace's open invites.
 func (s *Store) Invites(ctx context.Context, wsID string) ([]Invite, error) {
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT i.id, i.email, i.role, COALESCE(u.name, ''), i.created, i.expires, i.max_uses, i.uses
-		FROM invites i LEFT JOIN users u ON u.id = i.created_by
-		WHERE i.ws = ? AND i.revoked = 0 AND i.expires > ? AND (i.max_uses = 0 OR i.uses < i.max_uses)
-		ORDER BY i.created DESC`, wsID, time.Now().Unix())
+	var rows []struct {
+		inviteRow `bun:",extend"`
+		ByName    sql.NullString `bun:"by_name"`
+	}
+	err := s.db.NewSelect().TableExpr("invites AS i").Join("LEFT JOIN users AS u ON u.id = i.created_by").
+		ColumnExpr("i.*, u.name AS by_name").
+		Where("i.ws = ? AND i.revoked = ? AND i.expires > ?", wsID, false, time.Now().Unix()).
+		Where("(i.max_uses = 0 OR i.uses < i.max_uses)").OrderExpr("i.created DESC").Scan(ctx, &rows)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	out := []Invite{}
-	for rows.Next() {
-		var inv Invite
-		var created, expires int64
-		if err := rows.Scan(&inv.ID, &inv.Email, &inv.Role, &inv.CreatedBy, &created, &expires, &inv.MaxUses, &inv.Uses); err != nil {
-			return nil, err
-		}
-		inv.Created, inv.Expires = time.Unix(created, 0), time.Unix(expires, 0)
-		out = append(out, inv)
+	out := make([]Invite, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, Invite{ID: r.ID, Email: r.Email, Role: r.Role, CreatedBy: r.ByName.String, Created: time.Unix(r.Created, 0),
+			Expires: time.Unix(r.Expires, 0), MaxUses: r.MaxUses, Uses: r.Uses})
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
 // RevokeInvite cancels an invite.
 func (s *Store) RevokeInvite(ctx context.Context, wsID, id string) error {
-	res, err := s.db.ExecContext(ctx, `UPDATE invites SET revoked = 1 WHERE ws = ? AND id = ?`, wsID, id)
+	res, err := s.db.NewUpdate().Model((*inviteRow)(nil)).Set("revoked = ?", true).Where("ws = ? AND id = ?", wsID, id).Exec(ctx)
 	if err != nil {
 		return err
 	}
@@ -246,67 +233,67 @@ func (s *Store) InviteByToken(ctx context.Context, tok string) (*InvitePreview, 
 	return inviteByToken(ctx, s.db, tok)
 }
 
-func inviteByToken(ctx context.Context, q interface {
-	QueryRowContext(context.Context, string, ...any) *sql.Row
-}, tok string) (*InvitePreview, error) {
-	var p InvitePreview
-	var expires int64
-	var revoked bool
-	err := q.QueryRowContext(ctx, `
-		SELECT i.id, w.id, w.name, i.role, i.email, COALESCE(u.name, ''), i.expires, i.max_uses, i.uses, i.revoked
-		FROM invites i JOIN workspaces w ON w.id = i.ws LEFT JOIN users u ON u.id = i.created_by
-		WHERE i.hash = ?`, hashToken(tok)).Scan(&p.inviteID, &p.WorkspaceID, &p.Workspace, &p.Role, &p.Email, &p.InvitedBy, &expires, &p.maxUses, &p.uses, &revoked)
+func inviteByToken(ctx context.Context, q bun.IDB, tok string) (*InvitePreview, error) {
+	var row struct {
+		inviteRow `bun:",extend"`
+		WSName    string         `bun:"ws_name"`
+		ByName    sql.NullString `bun:"by_name"`
+	}
+	err := q.NewSelect().TableExpr("invites AS i").Join("JOIN workspaces AS w ON w.id = i.ws").
+		Join("LEFT JOIN users AS u ON u.id = i.created_by").
+		ColumnExpr("i.*, w.name AS ws_name, u.name AS by_name").Where("i.hash = ?", hashToken(tok)).Scan(ctx, &row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, errInviteGone
 	}
 	if err != nil {
 		return nil, err
 	}
-	p.Expires = time.Unix(expires, 0)
-	if revoked || time.Now().After(p.Expires) || (p.maxUses > 0 && p.uses >= p.maxUses) {
+	p := &InvitePreview{Workspace: row.WSName, WorkspaceID: row.WS, Role: row.Role, Email: row.Email, InvitedBy: row.ByName.String,
+		Expires: time.Unix(row.Expires, 0), inviteID: row.ID, maxUses: row.MaxUses, uses: row.Uses}
+	if row.Revoked || time.Now().After(p.Expires) || (p.maxUses > 0 && p.uses >= p.maxUses) {
 		return nil, errInviteGone
 	}
-	return &p, nil
+	return p, nil
 }
 
 // AcceptInvite adds the user to the invite's workspace. Someone already in
 // it keeps the higher of their current and the invited role.
 func (s *Store) AcceptInvite(ctx context.Context, tok string, u *User) (*InvitePreview, error) {
-	tx, err := s.db.BeginTx(ctx, nil)
+	var p *InvitePreview
+	err := s.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		var err error
+		if p, err = inviteByToken(ctx, tx, tok); err != nil {
+			return err
+		}
+		if p.Email != "" && !strings.EqualFold(p.Email, u.Email) {
+			return invalid("this invite is for %s; sign in with that address", p.Email)
+		}
+		var cur string
+		err = tx.NewSelect().Model((*memberRow)(nil)).Column("role").Where(`ws = ? AND "user" = ?`, p.WorkspaceID, u.ID).Scan(ctx, &cur)
+		switch {
+		case errors.Is(err, sql.ErrNoRows):
+			if _, err := tx.NewInsert().Model(&memberRow{WS: p.WorkspaceID, UserID: u.ID, Role: p.Role, Added: time.Now().Unix()}).Exec(ctx); err != nil {
+				return err
+			}
+		case err != nil:
+			return err
+		case server.ParseRole(p.Role) > server.ParseRole(cur):
+			if _, err := tx.NewUpdate().Model((*memberRow)(nil)).Set("role = ?", p.Role).Where(`ws = ? AND "user" = ?`, p.WorkspaceID, u.ID).Exec(ctx); err != nil {
+				return err
+			}
+		}
+		_, err = tx.NewUpdate().Model((*inviteRow)(nil)).Set("uses = uses + 1").Where("id = ?", p.inviteID).Exec(ctx)
+		return err
+	})
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback()
-	p, err := inviteByToken(ctx, tx, tok)
-	if err != nil {
-		return nil, err
-	}
-	if p.Email != "" && !strings.EqualFold(p.Email, u.Email) {
-		return nil, invalid("this invite is for %s; sign in with that address", p.Email)
-	}
-	var cur string
-	err = tx.QueryRowContext(ctx, `SELECT role FROM members WHERE ws = ? AND user = ?`, p.WorkspaceID, u.ID).Scan(&cur)
-	switch {
-	case errors.Is(err, sql.ErrNoRows):
-		if _, err := tx.ExecContext(ctx, `INSERT INTO members (ws, user, role, added) VALUES (?, ?, ?, ?)`, p.WorkspaceID, u.ID, p.Role, time.Now().Unix()); err != nil {
-			return nil, err
-		}
-	case err != nil:
-		return nil, err
-	case server.ParseRole(p.Role) > server.ParseRole(cur):
-		if _, err := tx.ExecContext(ctx, `UPDATE members SET role = ? WHERE ws = ? AND user = ?`, p.Role, p.WorkspaceID, u.ID); err != nil {
-			return nil, err
-		}
-	}
-	if _, err := tx.ExecContext(ctx, `UPDATE invites SET uses = uses + 1 WHERE id = ?`, p.inviteID); err != nil {
-		return nil, err
-	}
-	return p, tx.Commit()
+	return p, nil
 }
 
 // MoveProject puts a project in another workspace.
 func (s *Store) MoveProject(ctx context.Context, projectID, wsID string) error {
-	res, err := s.db.ExecContext(ctx, `UPDATE projects SET ws = ? WHERE id = ?`, wsID, projectID)
+	res, err := s.db.NewUpdate().Model((*projectRow)(nil)).Set("ws = ?", wsID).Where("id = ?", projectID).Exec(ctx)
 	if err != nil {
 		return err
 	}
@@ -327,9 +314,17 @@ type Activity struct {
 
 // Record adds an audit entry (errors are the caller's to log).
 func (s *Store) Record(ctx context.Context, userID, wsID, projectID, action, target string) error {
-	_, err := s.db.ExecContext(ctx, `INSERT INTO audit (at, user, ws, project, action, target) VALUES (?, ?, ?, ?, ?, ?)`,
-		time.Now().Unix(), userID, wsID, projectID, action, target)
+	_, err := s.db.NewInsert().Model(&auditRow{At: time.Now().Unix(), UserID: userID, WS: wsID, Project: projectID, Action: tidy(action), Target: tidy(target)}).Exec(ctx)
 	return err
+}
+
+// RecordProject adds an audit entry for a project, in its current workspace.
+func (s *Store) RecordProject(ctx context.Context, userID, projectID, action, target string) error {
+	var ws string
+	if err := s.db.NewSelect().Model((*projectRow)(nil)).Column("ws").Where("id = ?", projectID).Scan(ctx, &ws); err != nil {
+		return notFound(err)
+	}
+	return s.Record(ctx, userID, ws, projectID, action, target)
 }
 
 // ActivityLog lists a workspace's recent changes, newest first.
@@ -337,30 +332,27 @@ func (s *Store) ActivityLog(ctx context.Context, wsID string, limit int) ([]Acti
 	if limit <= 0 || limit > 500 {
 		limit = 100
 	}
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT a.at, COALESCE(u.name, 'someone'), COALESCE(p.name, ''), a.action, a.target
-		FROM audit a LEFT JOIN users u ON u.id = a.user LEFT JOIN projects p ON p.id = a.project
-		WHERE a.ws = ? ORDER BY a.id DESC LIMIT ?`, wsID, limit)
+	var rows []struct {
+		At      int64          `bun:"at"`
+		User    sql.NullString `bun:"user_name"`
+		Project sql.NullString `bun:"project_name"`
+		Action  string         `bun:"action"`
+		Target  string         `bun:"target"`
+	}
+	err := s.db.NewSelect().TableExpr("audit AS a").
+		Join(`LEFT JOIN users AS u ON u.id = a."user"`).Join("LEFT JOIN projects AS p ON p.id = a.project").
+		ColumnExpr("a.at, u.name AS user_name, p.name AS project_name, a.action, a.target").
+		Where("a.ws = ?", wsID).OrderExpr("a.id DESC").Limit(int64(limit)).Scan(ctx, &rows)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	out := []Activity{}
-	for rows.Next() {
-		var a Activity
-		var at int64
-		if err := rows.Scan(&at, &a.User, &a.Project, &a.Action, &a.Target); err != nil {
-			return nil, err
+	out := make([]Activity, 0, len(rows))
+	for _, r := range rows {
+		user := r.User.String
+		if user == "" {
+			user = "someone"
 		}
-		a.At = time.Unix(at, 0)
-		out = append(out, a)
+		out = append(out, Activity{At: time.Unix(r.At, 0), User: user, Project: r.Project.String, Action: r.Action, Target: r.Target})
 	}
-	return out, rows.Err()
-}
-
-// RecordProject adds an audit entry for a project, in its current workspace.
-func (s *Store) RecordProject(ctx context.Context, userID, projectID, action, target string) error {
-	_, err := s.db.ExecContext(ctx, `INSERT INTO audit (at, user, ws, project, action, target)
-		SELECT ?, ?, ws, id, ?, ? FROM projects WHERE id = ?`, time.Now().Unix(), userID, action, target, projectID)
-	return err
+	return out, nil
 }

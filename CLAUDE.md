@@ -14,7 +14,9 @@ engine and serves a React web UI on localhost. **Current phase: 14 (workspaces a
   deltas), `agent/` (distributed load agents), `output/` (InfluxDB, Prometheus, NDJSON/CSV live outputs), `plugin/` (wazero host), `importer/{postman,openapi,har,curl,jmeter,auto}/`, `exporter/postman/`, `docs/` (HTML API reference), `mock/` (mock server from examples),
   `protocol/{httpdriver,wsdriver,sioclient}/`.
 - `internal/store`: workspace persistence (YAML files, path safety, atomic writes, `Import`)
-- `internal/history`: request history and saved load runs in SQLite (`~/.pyro/pyro.db`)
+- `internal/db`: opens SQLite or PostgreSQL behind the Bun ORM; `db.Migrate` runs each store's schema steps.
+  `internal/db/dbtest` gives tests a fresh database (PostgreSQL when `PYRO_TEST_POSTGRES_URL` is set).
+- `internal/history`: request history, saved load runs and cookie jars (`~/.pyro/pyro.db` locally; the team server's database)
 - `internal/server`: the project REST API `/api/v1` (chi), token auth, embedded SPA. In team mode one `Server` per project,
   acting for a `Principal`. `roles.go` gives every route a minimum role (`TestEveryRouteHasARole` enforces it);
   `changes.go` adds ETags/If-Match conflicts, `tree` change events and the `OnChange` activity hook.
@@ -56,6 +58,9 @@ cd web && npm run e2e   # browser tests (needs bin/pyro and npx playwright insta
 - Distributed load tests: agents send metric deltas (`metrics.SeriesDelta`), never summaries, so the controller's
   percentiles stay exact. Agent tests run in-process (`httptest` agents); `pkg/engine/load` tests use an in-memory worker.
 - No CGO: dependencies must be pure Go. Builds use `CGO_ENABLED=0`.
+- Database code uses Bun models and the query builder so it runs on SQLite and PostgreSQL. Schema changes are new
+  `db.Migration` steps appended to the store's list; never edit old steps. Quote the reserved column `"user"` in hand-written SQL.
+  Times are Unix integers. Test stores with `dbtest.Open`. CI also runs them on PostgreSQL.
 - Security boundaries (see SECURITY.md): body files stay inside the workspace (`httpdriver.ResolveFile`); the server
   rejects non-loopback Host headers unless `AnyHost`; plugin index URLs must be https except on loopback.
 - Plugin tests build the example plugins with `GOOS=wasip1` (needs only the Go toolchain); the plugin package under

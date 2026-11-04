@@ -5,10 +5,8 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
-	"database/sql"
 	"encoding/base64"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -96,13 +94,12 @@ func (s *Store) CreateSession(ctx context.Context, userID, ip, ua string) (strin
 	if len(ua) > 200 {
 		ua = ua[:200]
 	}
-	_, err := s.db.ExecContext(ctx, `INSERT INTO sessions (hash, user, expires, created, ip, ua) VALUES (?, ?, ?, ?, ?, ?)`,
-		hashToken(tok), userID, now.Add(sessionTTL).Unix(), now.Unix(), ip, ua)
-	if err != nil {
+	row := &sessionRow{Hash: hashToken(tok), UserID: userID, Expires: now.Add(sessionTTL).Unix(), Created: now.Unix(), IP: ip, UA: ua}
+	if _, err := s.db.NewInsert().Model(row).Exec(ctx); err != nil {
 		return "", err
 	}
 	// Opportunistic cleanup of expired sessions.
-	_, _ = s.db.ExecContext(ctx, `DELETE FROM sessions WHERE expires < ?`, now.Unix())
+	_, _ = s.db.NewDelete().Model((*sessionRow)(nil)).Where("expires < ?", now.Unix()).Exec(ctx)
 	return tok, nil
 }
 
@@ -113,32 +110,28 @@ func (s *Store) SessionUser(ctx context.Context, tok string) (*User, string, err
 		return nil, "", ErrNotFound
 	}
 	h := hashToken(tok)
-	var expires int64
-	row := s.db.QueryRowContext(ctx, `SELECT u.id, u.email, u.name, u.pw_hash, u.provider, u.admin, u.disabled, u.created, s.expires
-		FROM sessions s JOIN users u ON u.id = s.user WHERE s.hash = ?`, h)
-	var u User
-	var created int64
-	if err := row.Scan(&u.ID, &u.Email, &u.Name, &u.pwHash, &u.Provider, &u.Admin, &u.Disabled, &created, &expires); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, "", ErrNotFound
-		}
+	var sess sessionRow
+	if err := s.db.NewSelect().Model(&sess).Where("hash = ?", h).Scan(ctx); err != nil {
+		return nil, "", notFound(err)
+	}
+	u, err := s.UserByID(ctx, sess.UserID)
+	if err != nil {
 		return nil, "", err
 	}
-	u.Created = time.Unix(created, 0)
 	now := time.Now()
-	if now.Unix() > expires || u.Disabled {
-		_, _ = s.db.ExecContext(ctx, `DELETE FROM sessions WHERE hash = ?`, h)
+	if now.Unix() > sess.Expires || u.Disabled {
+		_, _ = s.db.NewDelete().Model((*sessionRow)(nil)).Where("hash = ?", h).Exec(ctx)
 		return nil, "", ErrNotFound
 	}
-	if time.Unix(expires, 0).Sub(now) < sessionTTL-sessionRefresh {
-		_, _ = s.db.ExecContext(ctx, `UPDATE sessions SET expires = ? WHERE hash = ?`, now.Add(sessionTTL).Unix(), h)
+	if time.Unix(sess.Expires, 0).Sub(now) < sessionTTL-sessionRefresh {
+		_, _ = s.db.NewUpdate().Model((*sessionRow)(nil)).Set("expires = ?", now.Add(sessionTTL).Unix()).Where("hash = ?", h).Exec(ctx)
 	}
-	return &u, h, nil
+	return u, h, nil
 }
 
 // DeleteSession signs one session out.
 func (s *Store) DeleteSession(ctx context.Context, tok string) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE hash = ?`, hashToken(tok))
+	_, err := s.db.NewDelete().Model((*sessionRow)(nil)).Where("hash = ?", hashToken(tok)).Exec(ctx)
 	return err
 }
 

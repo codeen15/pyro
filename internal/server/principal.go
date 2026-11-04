@@ -32,7 +32,7 @@ func principal(r *http.Request) Principal {
 // userKey scopes per-user data (history, cookies) inside a project.
 func (s *Server) userKey(r *http.Request) string {
 	if id := principal(r).ID; id != "" {
-		return s.key + "\x00" + id
+		return s.key + "#user:" + id
 	}
 	return s.key
 }

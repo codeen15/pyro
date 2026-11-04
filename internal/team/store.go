@@ -13,8 +13,9 @@ import (
 	"strings"
 	"time"
 
-	_ "modernc.org/sqlite"
+	"github.com/uptrace/bun"
 
+	"github.com/codeen15/pyro/internal/db"
 	"github.com/codeen15/pyro/internal/server"
 )
 
@@ -25,103 +26,62 @@ var (
 	ErrInvalid = errors.New("invalid")
 )
 
+// tidy trims a name and drops NUL characters (PostgreSQL text can't hold them).
+func tidy(s string) string { return strings.TrimSpace(strings.ReplaceAll(s, "\x00", "")) }
+
 func invalid(format string, args ...any) error {
 	return fmt.Errorf("%w: %s", ErrInvalid, fmt.Sprintf(format, args...))
 }
 
-const schema = `
-CREATE TABLE IF NOT EXISTS users (
-	id       TEXT PRIMARY KEY,
-	email    TEXT NOT NULL UNIQUE COLLATE NOCASE,
-	name     TEXT NOT NULL,
-	pw_hash  TEXT NOT NULL DEFAULT '',
-	provider TEXT NOT NULL DEFAULT 'local',
-	subject  TEXT NOT NULL DEFAULT '',
-	admin    INTEGER NOT NULL DEFAULT 0,
-	disabled INTEGER NOT NULL DEFAULT 0,
-	created  INTEGER NOT NULL
-);
-CREATE TABLE IF NOT EXISTS sessions (
-	hash    TEXT PRIMARY KEY,
-	user    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-	expires INTEGER NOT NULL,
-	created INTEGER NOT NULL,
-	ip      TEXT NOT NULL DEFAULT '',
-	ua      TEXT NOT NULL DEFAULT ''
-);
-CREATE INDEX IF NOT EXISTS sessions_user ON sessions(user);
-CREATE TABLE IF NOT EXISTS workspaces (
-	id         TEXT PRIMARY KEY,
-	name       TEXT NOT NULL,
-	kind       TEXT NOT NULL,
-	created_by TEXT NOT NULL,
-	created    INTEGER NOT NULL
-);
-CREATE TABLE IF NOT EXISTS members (
-	ws    TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
-	user  TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-	role  TEXT NOT NULL,
-	added INTEGER NOT NULL,
-	PRIMARY KEY (ws, user)
-);
-CREATE INDEX IF NOT EXISTS members_user ON members(user);
-CREATE TABLE IF NOT EXISTS projects (
-	id         TEXT PRIMARY KEY,
-	ws         TEXT NOT NULL REFERENCES workspaces(id),
-	name       TEXT NOT NULL,
-	created_by TEXT NOT NULL,
-	created    INTEGER NOT NULL
-);
-CREATE INDEX IF NOT EXISTS projects_ws ON projects(ws);
-CREATE TABLE IF NOT EXISTS invites (
-	id         TEXT PRIMARY KEY,
-	hash       TEXT NOT NULL UNIQUE,
-	ws         TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
-	email      TEXT NOT NULL DEFAULT '',
-	role       TEXT NOT NULL,
-	created_by TEXT NOT NULL,
-	created    INTEGER NOT NULL,
-	expires    INTEGER NOT NULL,
-	max_uses   INTEGER NOT NULL DEFAULT 0,
-	uses       INTEGER NOT NULL DEFAULT 0,
-	revoked    INTEGER NOT NULL DEFAULT 0
-);
-CREATE INDEX IF NOT EXISTS invites_ws ON invites(ws);
-CREATE TABLE IF NOT EXISTS audit (
-	id      INTEGER PRIMARY KEY AUTOINCREMENT,
-	at      INTEGER NOT NULL,
-	user    TEXT NOT NULL,
-	ws      TEXT NOT NULL,
-	project TEXT NOT NULL DEFAULT '',
-	action  TEXT NOT NULL,
-	target  TEXT NOT NULL DEFAULT ''
-);
-CREATE INDEX IF NOT EXISTS audit_ws ON audit(ws, id DESC);`
-
-// Store keeps accounts, workspaces and projects in SQLite.
+// Store keeps accounts, workspaces and projects in the database (SQLite or
+// PostgreSQL, through Bun).
 type Store struct {
-	db *sql.DB
+	db  *bun.DB
+	own bool
 }
 
+// Open opens (creating if needed) a SQLite database file.
 func Open(file string) (*Store, error) {
-	db, err := sql.Open("sqlite", "file:"+file+"?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)")
+	d, err := db.Open(file)
 	if err != nil {
 		return nil, err
 	}
-	db.SetMaxOpenConns(1)
-	if _, err := db.Exec(schema); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("init team db: %w", err)
+	st, err := NewStore(context.Background(), d)
+	if err != nil {
+		d.Close()
+		return nil, err
 	}
-	return &Store{db: db}, nil
+	st.own = true
+	return st, nil
 }
 
-func (s *Store) Close() error { return s.db.Close() }
+// NewStore uses an open database, creating or upgrading the tables.
+func NewStore(ctx context.Context, d *bun.DB) (*Store, error) {
+	if err := db.Migrate(ctx, d, "team", migrations); err != nil {
+		return nil, fmt.Errorf("init team db: %w", err)
+	}
+	return &Store{db: d}, nil
+}
+
+// Close closes the database if the store opened it.
+func (s *Store) Close() error {
+	if s.own {
+		return s.db.Close()
+	}
+	return nil
+}
 
 func newID() string {
 	b := make([]byte, 10)
 	_, _ = rand.Read(b)
 	return hex.EncodeToString(b)
+}
+
+func notFound(err error) error {
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrNotFound
+	}
+	return err
 }
 
 // User is an account.
@@ -137,26 +97,14 @@ type User struct {
 	pwHash string
 }
 
-const userCols = `id, email, name, pw_hash, provider, admin, disabled, created`
-
-func scanUser(row interface{ Scan(...any) error }) (*User, error) {
-	var u User
-	var created int64
-	if err := row.Scan(&u.ID, &u.Email, &u.Name, &u.pwHash, &u.Provider, &u.Admin, &u.Disabled, &created); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, ErrNotFound
-		}
-		return nil, err
-	}
-	u.Created = time.Unix(created, 0)
-	return &u, nil
+func (r *userRow) user() *User {
+	return &User{ID: r.ID, Email: r.Email, Name: r.Name, Provider: r.Provider, Admin: r.Admin, Disabled: r.Disabled, Created: time.Unix(r.Created, 0), pwHash: r.PwHash}
 }
 
 // CountUsers reports how many accounts exist (the first becomes admin).
 func (s *Store) CountUsers(ctx context.Context) (int, error) {
-	var n int
-	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM users`).Scan(&n)
-	return n, err
+	n, err := s.db.NewSelect().Model((*userRow)(nil)).Count(ctx)
+	return int(n), err
 }
 
 // NewUser describes an account to create.
@@ -170,11 +118,11 @@ type NewUser struct {
 // CreateUser adds an account with its personal workspace and a first project.
 // The very first account is always an admin.
 func (s *Store) CreateUser(ctx context.Context, nu NewUser) (*User, error) {
-	email := strings.TrimSpace(nu.Email)
+	email := strings.ToLower(strings.TrimSpace(nu.Email))
 	if !validEmail(email) {
 		return nil, invalid("enter a valid email address")
 	}
-	name := strings.TrimSpace(nu.Name)
+	name := tidy(nu.Name)
 	if name == "" {
 		name = strings.SplitN(email, "@", 2)[0]
 	}
@@ -191,39 +139,38 @@ func (s *Store) CreateUser(ctx context.Context, nu NewUser) (*User, error) {
 			return nil, err
 		}
 	}
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer tx.Rollback()
-	var n int
-	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM users`).Scan(&n); err != nil {
-		return nil, err
-	}
-	var taken int
-	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM users WHERE email = ?`, email).Scan(&taken); err != nil {
-		return nil, err
-	}
-	if taken > 0 {
-		return nil, fmt.Errorf("%w: an account with this email already exists", ErrExists)
-	}
 	now := time.Now()
-	u := &User{ID: newID(), Email: email, Name: name, Provider: nu.Provider, Admin: nu.Admin || n == 0, Created: now.Truncate(time.Second)}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO users (`+userCols+`, subject) VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)`,
-		u.ID, u.Email, u.Name, hash, u.Provider, u.Admin, now.Unix(), nu.Subject); err != nil {
-		return nil, err
-	}
-	wsID := newID()
-	if _, err := tx.ExecContext(ctx, `INSERT INTO workspaces (id, name, kind, created_by, created) VALUES (?, 'Personal', 'personal', ?, ?)`, wsID, u.ID, now.Unix()); err != nil {
-		return nil, err
-	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO members (ws, user, role, added) VALUES (?, ?, 'owner', ?)`, wsID, u.ID, now.Unix()); err != nil {
-		return nil, err
-	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO projects (id, ws, name, created_by, created) VALUES (?, ?, 'My project', ?, ?)`, newID(), wsID, u.ID, now.Unix()); err != nil {
-		return nil, err
-	}
-	return u, tx.Commit()
+	var u *User
+	err := s.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		n, err := tx.NewSelect().Model((*userRow)(nil)).Count(ctx)
+		if err != nil {
+			return err
+		}
+		taken, err := tx.NewSelect().Model((*userRow)(nil)).Where("lower(email) = ?", email).Count(ctx)
+		if err != nil {
+			return err
+		}
+		if taken > 0 {
+			return fmt.Errorf("%w: an account with this email already exists", ErrExists)
+		}
+		row := &userRow{ID: newID(), Email: email, Name: name, PwHash: hash, Provider: nu.Provider, Subject: nu.Subject, Admin: nu.Admin || n == 0, Created: now.Unix()}
+		if _, err := tx.NewInsert().Model(row).Exec(ctx); err != nil {
+			return err
+		}
+		ws := &workspaceRow{ID: newID(), Name: "Personal", Kind: "personal", CreatedBy: row.ID, Created: now.Unix()}
+		if _, err := tx.NewInsert().Model(ws).Exec(ctx); err != nil {
+			return err
+		}
+		if _, err := tx.NewInsert().Model(&memberRow{WS: ws.ID, UserID: row.ID, Role: "owner", Added: now.Unix()}).Exec(ctx); err != nil {
+			return err
+		}
+		if _, err := tx.NewInsert().Model(&projectRow{ID: newID(), WS: ws.ID, Name: "My project", CreatedBy: row.ID, Created: now.Unix()}).Exec(ctx); err != nil {
+			return err
+		}
+		u = row.user()
+		return nil
+	})
+	return u, err
 }
 
 func validEmail(e string) bool {
@@ -231,30 +178,33 @@ func validEmail(e string) bool {
 	return at > 0 && at < len(e)-1 && !strings.ContainsAny(e, " \t\r\n<>") && len(e) <= 254
 }
 
+func (s *Store) userWhere(ctx context.Context, where string, arg any) (*User, error) {
+	var row userRow
+	if err := s.db.NewSelect().Model(&row).Where(where, arg).Scan(ctx); err != nil {
+		return nil, notFound(err)
+	}
+	return row.user(), nil
+}
+
 func (s *Store) UserByEmail(ctx context.Context, email string) (*User, error) {
-	return scanUser(s.db.QueryRowContext(ctx, `SELECT `+userCols+` FROM users WHERE email = ?`, strings.TrimSpace(email)))
+	return s.userWhere(ctx, "lower(email) = ?", strings.ToLower(strings.TrimSpace(email)))
 }
 
 func (s *Store) UserByID(ctx context.Context, id string) (*User, error) {
-	return scanUser(s.db.QueryRowContext(ctx, `SELECT `+userCols+` FROM users WHERE id = ?`, id))
+	return s.userWhere(ctx, "id = ?", id)
 }
 
 // Users lists every account (admin page, CLI).
 func (s *Store) Users(ctx context.Context) ([]User, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+userCols+` FROM users ORDER BY created`)
-	if err != nil {
+	var rows []userRow
+	if err := s.db.NewSelect().Model(&rows).Order("created").Scan(ctx); err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	out := []User{}
-	for rows.Next() {
-		u, err := scanUser(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, *u)
+	out := make([]User, 0, len(rows))
+	for i := range rows {
+		out = append(out, *rows[i].user())
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
 // Authenticate checks an email and password.
@@ -282,30 +232,30 @@ func (s *Store) SetPassword(ctx context.Context, userID, password, keepSession s
 	if err != nil {
 		return err
 	}
-	res, err := s.db.ExecContext(ctx, `UPDATE users SET pw_hash = ?, provider = 'local' WHERE id = ?`, hash, userID)
+	res, err := s.db.NewUpdate().Model((*userRow)(nil)).Set("pw_hash = ?", hash).Set("provider = 'local'").Where("id = ?", userID).Exec(ctx)
 	if err != nil {
 		return err
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
 		return ErrNotFound
 	}
-	_, err = s.db.ExecContext(ctx, `DELETE FROM sessions WHERE user = ? AND hash != ?`, userID, keepSession)
+	_, err = s.db.NewDelete().Model((*sessionRow)(nil)).Where(`"user" = ? AND hash != ?`, userID, keepSession).Exec(ctx)
 	return err
 }
 
 // SetName renames an account.
 func (s *Store) SetName(ctx context.Context, userID, name string) error {
-	name = strings.TrimSpace(name)
+	name = tidy(name)
 	if name == "" {
 		return invalid("name is required")
 	}
-	_, err := s.db.ExecContext(ctx, `UPDATE users SET name = ? WHERE id = ?`, name, userID)
+	_, err := s.db.NewUpdate().Model((*userRow)(nil)).Set("name = ?", name).Where("id = ?", userID).Exec(ctx)
 	return err
 }
 
 // SetAdmin grants or removes server administration.
 func (s *Store) SetAdmin(ctx context.Context, userID string, admin bool) error {
-	res, err := s.db.ExecContext(ctx, `UPDATE users SET admin = ? WHERE id = ?`, admin, userID)
+	res, err := s.db.NewUpdate().Model((*userRow)(nil)).Set("admin = ?", admin).Where("id = ?", userID).Exec(ctx)
 	if err != nil {
 		return err
 	}
@@ -334,78 +284,66 @@ type Project struct {
 
 // Workspaces lists the user's workspaces (personal first) with their projects.
 func (s *Store) Workspaces(ctx context.Context, userID string) ([]Workspace, error) {
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT w.id, w.name, w.kind, m.role FROM workspaces w JOIN members m ON m.ws = w.id
-		WHERE m.user = ? ORDER BY w.kind = 'team', w.name COLLATE NOCASE`, userID)
+	var wsRows []struct {
+		ID   string `bun:"id"`
+		Name string `bun:"name"`
+		Kind string `bun:"kind"`
+		Role string `bun:"role"`
+	}
+	err := s.db.NewSelect().TableExpr("workspaces AS w").Join(`JOIN members AS m ON m.ws = w.id`).
+		ColumnExpr("w.id, w.name, w.kind, m.role").Where(`m."user" = ?`, userID).
+		OrderExpr("CASE WHEN w.kind = 'personal' THEN 0 ELSE 1 END, lower(w.name)").Scan(ctx, &wsRows)
 	if err != nil {
 		return nil, err
 	}
-	out := []Workspace{}
+	out := make([]Workspace, 0, len(wsRows))
 	idx := map[string]int{}
-	for rows.Next() {
-		var w Workspace
-		if err := rows.Scan(&w.ID, &w.Name, &w.Kind, &w.Role); err != nil {
-			rows.Close()
-			return nil, err
-		}
-		w.Projects = []Project{}
+	for _, w := range wsRows {
 		idx[w.ID] = len(out)
-		out = append(out, w)
+		out = append(out, Workspace{ID: w.ID, Name: w.Name, Kind: w.Kind, Role: w.Role, Projects: []Project{}})
 	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	prows, err := s.db.QueryContext(ctx, `
-		SELECT p.id, p.name, p.ws, p.created FROM projects p JOIN members m ON m.ws = p.ws
-		WHERE m.user = ? ORDER BY p.name COLLATE NOCASE`, userID)
+	var pRows []projectRow
+	err = s.db.NewSelect().Model(&pRows).ModelTableExpr("projects AS p").ColumnExpr("p.*").
+		Join(`JOIN members AS m ON m.ws = p.ws`).Where(`m."user" = ?`, userID).OrderExpr("lower(p.name)").Scan(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer prows.Close()
-	for prows.Next() {
-		var p Project
-		var created int64
-		if err := prows.Scan(&p.ID, &p.Name, &p.Workspace, &created); err != nil {
-			return nil, err
-		}
-		p.Created = time.Unix(created, 0)
-		if i, ok := idx[p.Workspace]; ok {
-			out[i].Projects = append(out[i].Projects, p)
+	for _, p := range pRows {
+		if i, ok := idx[p.WS]; ok {
+			out[i].Projects = append(out[i].Projects, Project{ID: p.ID, Name: p.Name, Workspace: p.WS, Created: time.Unix(p.Created, 0)})
 		}
 	}
-	return out, prows.Err()
+	return out, nil
 }
 
 // CreateWorkspace adds a team workspace owned by userID.
 func (s *Store) CreateWorkspace(ctx context.Context, userID, name string) (*Workspace, error) {
-	name = strings.TrimSpace(name)
+	name = tidy(name)
 	if name == "" {
 		return nil, invalid("name is required")
 	}
-	tx, err := s.db.BeginTx(ctx, nil)
+	now := time.Now().Unix()
+	w := &Workspace{ID: newID(), Name: name, Kind: "team", Role: "owner", Projects: []Project{}}
+	err := s.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		if _, err := tx.NewInsert().Model(&workspaceRow{ID: w.ID, Name: name, Kind: "team", CreatedBy: userID, Created: now}).Exec(ctx); err != nil {
+			return err
+		}
+		_, err := tx.NewInsert().Model(&memberRow{WS: w.ID, UserID: userID, Role: "owner", Added: now}).Exec(ctx)
+		return err
+	})
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback()
-	now := time.Now().Unix()
-	w := &Workspace{ID: newID(), Name: name, Kind: "team", Role: "owner", Projects: []Project{}}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO workspaces (id, name, kind, created_by, created) VALUES (?, ?, 'team', ?, ?)`, w.ID, name, userID, now); err != nil {
-		return nil, err
-	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO members (ws, user, role, added) VALUES (?, ?, 'owner', ?)`, w.ID, userID, now); err != nil {
-		return nil, err
-	}
-	return w, tx.Commit()
+	return w, nil
 }
 
 // RenameWorkspace renames a workspace.
 func (s *Store) RenameWorkspace(ctx context.Context, wsID, name string) error {
-	name = strings.TrimSpace(name)
+	name = tidy(name)
 	if name == "" {
 		return invalid("name is required")
 	}
-	res, err := s.db.ExecContext(ctx, `UPDATE workspaces SET name = ? WHERE id = ?`, name, wsID)
+	res, err := s.db.NewUpdate().Model((*workspaceRow)(nil)).Set("name = ?", name).Where("id = ?", wsID).Exec(ctx)
 	if err != nil {
 		return err
 	}
@@ -417,31 +355,33 @@ func (s *Store) RenameWorkspace(ctx context.Context, wsID, name string) error {
 
 // DeleteWorkspace removes an empty team workspace.
 func (s *Store) DeleteWorkspace(ctx context.Context, wsID string) error {
-	var kind string
-	var projects int
-	if err := s.db.QueryRowContext(ctx, `SELECT kind, (SELECT COUNT(*) FROM projects WHERE ws = ?) FROM workspaces WHERE id = ?`, wsID, wsID).Scan(&kind, &projects); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return ErrNotFound
-		}
-		return err
+	var w workspaceRow
+	if err := s.db.NewSelect().Model(&w).Where("id = ?", wsID).Scan(ctx); err != nil {
+		return notFound(err)
 	}
-	if kind == "personal" {
+	if w.Kind == "personal" {
 		return invalid("a personal workspace can't be deleted")
+	}
+	projects, err := s.db.NewSelect().Model((*projectRow)(nil)).Where("ws = ?", wsID).Count(ctx)
+	if err != nil {
+		return err
 	}
 	if projects > 0 {
 		return invalid("delete or move this workspace's projects first")
 	}
-	if _, err := s.db.ExecContext(ctx, `DELETE FROM audit WHERE ws = ?`, wsID); err != nil {
+	return s.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		if _, err := tx.NewDelete().Model((*auditRow)(nil)).Where("ws = ?", wsID).Exec(ctx); err != nil {
+			return err
+		}
+		_, err := tx.NewDelete().Model((*workspaceRow)(nil)).Where("id = ?", wsID).Exec(ctx)
 		return err
-	}
-	_, err := s.db.ExecContext(ctx, `DELETE FROM workspaces WHERE id = ?`, wsID)
-	return err
+	})
 }
 
 // Role returns the user's role in a workspace (RoleNone if not a member).
 func (s *Store) Role(ctx context.Context, wsID, userID string) (server.Role, error) {
 	var role string
-	err := s.db.QueryRowContext(ctx, `SELECT role FROM members WHERE ws = ? AND user = ?`, wsID, userID).Scan(&role)
+	err := s.db.NewSelect().Model((*memberRow)(nil)).Column("role").Where(`ws = ? AND "user" = ?`, wsID, userID).Scan(ctx, &role)
 	if errors.Is(err, sql.ErrNoRows) {
 		return server.RoleNone, nil
 	}
@@ -458,33 +398,39 @@ type ProjectInfo struct {
 
 // ProjectFor returns a project and the user's role in its workspace.
 func (s *Store) ProjectFor(ctx context.Context, projectID, userID string) (*ProjectInfo, server.Role, error) {
-	var p ProjectInfo
-	var created int64
-	var role sql.NullString
-	err := s.db.QueryRowContext(ctx, `
-		SELECT p.id, p.name, p.ws, p.created, w.name, w.kind, m.role
-		FROM projects p JOIN workspaces w ON w.id = p.ws
-		LEFT JOIN members m ON m.ws = p.ws AND m.user = ?
-		WHERE p.id = ?`, userID, projectID).Scan(&p.ID, &p.Name, &p.Workspace, &created, &p.WorkspaceName, &p.WorkspaceKind, &role)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, server.RoleNone, ErrNotFound
+	var row struct {
+		ID      string         `bun:"id"`
+		Name    string         `bun:"name"`
+		WS      string         `bun:"ws"`
+		Created int64          `bun:"created"`
+		WSName  string         `bun:"ws_name"`
+		WSKind  string         `bun:"ws_kind"`
+		Role    sql.NullString `bun:"role"`
 	}
+	err := s.db.NewSelect().TableExpr("projects AS p").
+		ColumnExpr("p.id, p.name, p.ws, p.created, w.name AS ws_name, w.kind AS ws_kind, m.role").
+		Join("JOIN workspaces AS w ON w.id = p.ws").
+		Join(`LEFT JOIN members AS m ON m.ws = p.ws AND m."user" = ?`, userID).
+		Where("p.id = ?", projectID).Scan(ctx, &row)
 	if err != nil {
-		return nil, server.RoleNone, err
+		return nil, server.RoleNone, notFound(err)
 	}
-	p.Created = time.Unix(created, 0)
-	p.Role = role.String
-	return &p, server.ParseRole(role.String), nil
+	p := &ProjectInfo{
+		Project:       Project{ID: row.ID, Name: row.Name, Workspace: row.WS, Created: time.Unix(row.Created, 0)},
+		WorkspaceName: row.WSName, WorkspaceKind: row.WSKind, Role: row.Role.String,
+	}
+	return p, server.ParseRole(row.Role.String), nil
 }
 
 // CreateProject adds a project to a workspace.
 func (s *Store) CreateProject(ctx context.Context, wsID, userID, name string) (*Project, error) {
-	name = strings.TrimSpace(name)
+	name = tidy(name)
 	if name == "" {
 		return nil, invalid("name is required")
 	}
 	p := &Project{ID: newID(), Name: name, Workspace: wsID, Created: time.Now().Truncate(time.Second)}
-	if _, err := s.db.ExecContext(ctx, `INSERT INTO projects (id, ws, name, created_by, created) VALUES (?, ?, ?, ?, ?)`, p.ID, wsID, name, userID, p.Created.Unix()); err != nil {
+	_, err := s.db.NewInsert().Model(&projectRow{ID: p.ID, WS: wsID, Name: name, CreatedBy: userID, Created: p.Created.Unix()}).Exec(ctx)
+	if err != nil {
 		return nil, err
 	}
 	return p, nil
@@ -492,16 +438,16 @@ func (s *Store) CreateProject(ctx context.Context, wsID, userID, name string) (*
 
 // RenameProject renames a project.
 func (s *Store) RenameProject(ctx context.Context, projectID, name string) error {
-	name = strings.TrimSpace(name)
+	name = tidy(name)
 	if name == "" {
 		return invalid("name is required")
 	}
-	_, err := s.db.ExecContext(ctx, `UPDATE projects SET name = ? WHERE id = ?`, name, projectID)
+	_, err := s.db.NewUpdate().Model((*projectRow)(nil)).Set("name = ?", name).Where("id = ?", projectID).Exec(ctx)
 	return err
 }
 
 // DeleteProject removes a project row (the caller removes its folder).
 func (s *Store) DeleteProject(ctx context.Context, projectID string) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM projects WHERE id = ?`, projectID)
+	_, err := s.db.NewDelete().Model((*projectRow)(nil)).Where("id = ?", projectID).Exec(ctx)
 	return err
 }

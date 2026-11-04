@@ -26,6 +26,8 @@ pyro serve -w my-api -p 0
 | `--agent-insecure` | Skip TLS verification for `https` agents |
 | `--team` | Run the multi-user [team server](team-server.md) instead of a single workspace |
 | `--data` | With `--team`: data directory (default `~/.pyro/team`) |
+| `--database` | With `--team`: PostgreSQL URL (default: SQLite in the data directory) |
+| `--env-file` | With `--team`: read settings from this file (default: `.env` in the current folder) |
 | `--config` | With `--team`: settings file (default `<data>/server.yaml`) |
 | `--public-url` | With `--team`: the address people open, e.g. `https://pyro.example.com` |
 | `--signup`, `--signup-domain` | With `--team`: who may create an account (`invite-only`, `open`, `domains`) |
@@ -38,7 +40,7 @@ pyro serve --team --host 0.0.0.0 --public-url https://pyro.example.com --signup 
 
 ## pyro admin
 Manage a team server's accounts (on the server machine; works while it runs). All take
-`--data`.
+`--data`, `--database` and `--env-file`, like `serve --team`.
 
 | Command | Does |
 |---|---|
@@ -186,6 +188,7 @@ Print the version and build information.
 |---|---|
 | `PYRO_AGENT_TOKEN` | The agent token (controller and agents) |
 | `PYRO_SMTP_PASSWORD` | Team server: password for the `smtp` settings |
+| `PYRO_DATABASE_URL`, `PYRO_DATA_DIR`, `PYRO_HOST`, `PYRO_PORT`, `PYRO_PUBLIC_URL`, … | Team server settings; see [Team server](team-server.md#settings-from-env-and-the-environment) |
 | `PYRO_INFLUXDB_TOKEN` | InfluxDB 2.x output token |
 | `PYRO_PLUGIN_INDEX` | Plugin index URL |
 | `PYRO_PLUGINS_DIR` | Where plugins are installed (default `~/.pyro/plugins`) |

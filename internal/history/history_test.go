@@ -4,11 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/codeen15/pyro/internal/db/dbtest"
 	"github.com/codeen15/pyro/pkg/engine"
 	"github.com/codeen15/pyro/pkg/engine/model"
 	"github.com/codeen15/pyro/pkg/engine/protocol"
@@ -16,11 +16,10 @@ import (
 
 func open(t *testing.T) *Store {
 	t.Helper()
-	s, err := Open(filepath.Join(t.TempDir(), "pyro.db"))
+	s, err := New(context.Background(), dbtest.Open(t))
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { s.Close() })
 	return s
 }
 
@@ -88,5 +87,20 @@ func TestBodyTruncatedAndPruned(t *testing.T) {
 	s.db.QueryRow(`SELECT COUNT(*) FROM history WHERE workspace = '/ws'`).Scan(&n)
 	if n != keepPerWorkspace {
 		t.Fatalf("kept %d rows, want %d", n, keepPerWorkspace)
+	}
+}
+
+// PostgreSQL text can't hold NUL; such characters are dropped, not fatal.
+func TestOddCharacters(t *testing.T) {
+	s := open(t)
+	ctx := context.Background()
+	r := result(200, "ok")
+	r.Sent.URL = "http://x/\x00a'b\"c;--"
+	if _, err := s.Add(ctx, "proj#user:1", "c/é ünï", "名前", r); err != nil {
+		t.Fatal(err)
+	}
+	list, err := s.List(ctx, "proj#user:1", 10)
+	if err != nil || len(list) != 1 || list[0].URL != "http://x/a'b\"c;--" || list[0].Name != "名前" {
+		t.Fatalf("got %+v %v", list, err)
 	}
 }
