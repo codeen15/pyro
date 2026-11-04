@@ -3,6 +3,7 @@ import { Alert, Button, Segmented, Skeleton, Tabs, Tag, Tooltip } from "antd";
 import { BookmarkPlus, Check, Copy, SendHorizontal, Terminal, X } from "../icons";
 import { decodeBody, type PyroResponse, type SendResult, type TestResult, type Timings } from "../api";
 import { HEAT_STEPS, formatBytes, formatMs, heatOf, type HeatStep } from "../heat";
+import { JsonTree, defaultDepth } from "./JsonTree";
 
 type Tab = "body" | "tests" | "headers" | "cookies" | "timing";
 const HOT: HeatStep[] = ["orange", "yellow", "white"];
@@ -220,19 +221,26 @@ function BodyView({ res }: { res: PyroResponse }) {
   const [mode, setMode] = useState<"pretty" | "raw">("pretty");
   const contentType = (res.headers ?? []).find((h) => h.key.toLowerCase() === "content-type")?.value ?? "";
   const bytes = useMemo(() => decodeBody(res.body), [res.body]);
-  const { text, pretty, binary } = useMemo(() => {
+  // Expand all / Collapse all remount the tree with a new starting depth.
+  const [tree, setTree] = useState<{ depth: number; n: number } | null>(null);
+  const { text, pretty, binary, json, isJson } = useMemo(() => {
     const text = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
     const binary = !contentType.startsWith("text/") && /[\x00-\x08\x0e-\x1f]/.test(text.slice(0, 2000));
     let pretty = text;
+    let json: unknown;
+    let isJson = false;
     if (/json/i.test(contentType) || /^\s*[[{]/.test(text)) {
       try {
-        pretty = JSON.stringify(JSON.parse(text), null, 2);
+        json = JSON.parse(text);
+        pretty = JSON.stringify(json, null, 2);
+        isJson = true;
       } catch {
         /* not JSON after all */
       }
     }
-    return { text, pretty, binary };
+    return { text, pretty, binary, json, isJson };
   }, [bytes, contentType]);
+  const depth = tree?.depth ?? (isJson ? defaultDepth(json) : 0);
 
   if (bytes.length === 0) return <p className="muted pad">Empty body.</p>;
   if (contentType.startsWith("image/")) {
@@ -254,6 +262,16 @@ function BodyView({ res }: { res: PyroResponse }) {
           ]}
         />
         <span className="meta">{contentType || "no content-type"}</span>
+        {isJson && mode === "pretty" && (
+          <span className="json-tools">
+            <Button type="text" onClick={() => setTree({ depth: Infinity, n: (tree?.n ?? 0) + 1 })}>
+              Expand all
+            </Button>
+            <Button type="text" onClick={() => setTree({ depth: 1, n: (tree?.n ?? 0) + 1 })}>
+              Collapse all
+            </Button>
+          </span>
+        )}
         <Tooltip title="Copy body">
           <Button type="text" icon={<Copy size={14} />} onClick={() => navigator.clipboard?.writeText(text)} aria-label="Copy body" />
         </Tooltip>
@@ -261,7 +279,13 @@ function BodyView({ res }: { res: PyroResponse }) {
       {res.bodyTruncated && (
         <p className="inline-warn">Showing the first {formatBytes(bytes.length)} of {formatBytes(res.size)}.</p>
       )}
-      <pre className="code-view mono">{mode === "pretty" ? pretty : text}</pre>
+      {mode === "pretty" && isJson ? (
+        <div className="code-view json-view">
+          <JsonTree key={`${tree?.n ?? 0}`} value={json} depth={depth} />
+        </div>
+      ) : (
+        <pre className="code-view mono">{mode === "pretty" ? pretty : text}</pre>
+      )}
     </div>
   );
 }

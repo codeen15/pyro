@@ -5,7 +5,7 @@
 | Keys | Does |
 |---|---|
 | `Ctrl` + `Enter` (`⌘` + `Enter` on macOS) | Send the request, or connect / send for WebSocket and Socket.IO |
-| `Ctrl` + `S` (`⌘` + `S`) | Save the open request or load test |
+| `Ctrl` + `S` (`⌘` + `S`) | Save the open request, load test, or collection or folder settings |
 | `↑` / `↓` on the divider | Resize the request and response panes |
 
 ## Theme
@@ -16,6 +16,7 @@ Dark. The choice is remembered per browser.
 ## Tips
 
 - **Hover any `{{variable}}`** to see its value and fix a missing one on the spot.
+- **Long names in the sidebar** are cut off at the end of the row; hover one to read it in full.
 - **Same base URL everywhere:** put it in a collection variable (`{{baseUrl}}`) and override it
   per environment.
 - **Personal tokens:** set them as *current values* on the environment page; they never reach

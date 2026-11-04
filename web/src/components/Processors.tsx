@@ -3,6 +3,7 @@ import { ArrowDown, ArrowUp, Plus, Trash2 } from "../icons";
 import type { Assertion, Counter, Extractor, KeyValue, Processor, Timer } from "../api";
 import { KVEditor } from "./KVEditor";
 import { FieldsForm, usePluginTypes } from "./Plugins";
+import { VarInput } from "../vars";
 
 // JMeter-style pre/post processors and think time, for requests and for
 // collection/folder settings. The engine runs, per level (collection →
@@ -336,18 +337,18 @@ function ExtractFields({ x, onChange }: { x: Extractor; onChange: (x: Extractor)
         <>
           <label>
             <span className="field-label">Left</span>
-            <Input className="mono" value={x.left ?? ""} onChange={(e) => set({ left: e.target.value })} placeholder={'id="'} aria-label="Left boundary" spellCheck={false} />
+            <VarInput className="mono" value={x.left ?? ""} onChange={(e) => set({ left: e.target.value })} placeholder={'id="'} aria-label="Left boundary" spellCheck={false} />
           </label>
           <label>
             <span className="field-label">Right</span>
-            <Input className="mono" value={x.right ?? ""} onChange={(e) => set({ right: e.target.value })} placeholder={'"'} aria-label="Right boundary" spellCheck={false} />
+            <VarInput className="mono" value={x.right ?? ""} onChange={(e) => set({ right: e.target.value })} placeholder={'"'} aria-label="Right boundary" spellCheck={false} />
           </label>
         </>
       ) : (
         x.from !== "status" && (
           <label className="proc-wide">
             <span className="field-label">{src.value === "xpath" ? "XPath" : src.value === "header" ? "Header" : src.value === "regex" ? "Regex" : "Path"}</span>
-            <Input className="mono" value={x.path ?? ""} onChange={(e) => set({ path: e.target.value })} placeholder={src.placeholder} aria-label="Extract path" spellCheck={false} />
+            <VarInput className="mono" value={x.path ?? ""} onChange={(e) => set({ path: e.target.value })} placeholder={src.placeholder} aria-label="Extract path" spellCheck={false} />
           </label>
         )
       )}
@@ -379,7 +380,7 @@ function AssertFields({ a, onChange }: { a: Assertion; onChange: (a: Assertion) 
       {t.needsPath && (
         <label className="proc-wide">
           <span className="field-label">{t.value === "header" ? "Header" : "Path"}</span>
-          <Input className="mono" value={a.path ?? ""} placeholder={t.placeholder} onChange={(e) => set({ path: e.target.value })} aria-label="Assertion path" spellCheck={false} />
+          <VarInput className="mono" value={a.path ?? ""} placeholder={t.placeholder} onChange={(e) => set({ path: e.target.value })} aria-label="Assertion path" spellCheck={false} />
         </label>
       )}
       <label>
@@ -389,7 +390,7 @@ function AssertFields({ a, onChange }: { a: Assertion; onChange: (a: Assertion) 
       {!noValue && (
         <label>
           <span className="field-label">Expected</span>
-          <Input className="mono" value={a.value ?? ""} onChange={(e) => set({ value: e.target.value })} aria-label="Expected value" spellCheck={false} />
+          <VarInput className="mono" value={a.value ?? ""} onChange={(e) => set({ value: e.target.value })} aria-label="Expected value" spellCheck={false} />
         </label>
       )}
     </div>

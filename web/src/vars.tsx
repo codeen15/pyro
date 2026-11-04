@@ -41,6 +41,8 @@ const DYNAMIC: Record<string, string> = {
 /** The request (or collection/folder) path whose scopes apply to inputs below. */
 const ScopeContext = createContext<string | null>(null);
 
+/** Sets whose variables {{names}} resolve against: a request path, or a
+ * collection or folder path ending in "/" (the container itself). */
 export function VarScope({ path, children }: { path: string | null; children: React.ReactNode }) {
   return <ScopeContext.Provider value={path}>{children}</ScopeContext.Provider>;
 }
@@ -61,7 +63,9 @@ export function useVariables() {
   const env = useApp((s) => s.environment);
   const segs = path?.split("/") ?? [];
   const slug = segs[0];
-  // Folder paths between the collection and the request, innermost first.
+  // Folder paths between the collection and the request, innermost first
+  // (a path ending in "/" is a collection or folder, so its last segment
+  // is a folder too: "shop/orders/" splits to ["shop", "orders", ""]).
   const folders = segs.slice(1, -1).map((_, i) => segs.slice(0, i + 2).join("/")).reverse();
 
   const session = useQuery({ queryKey: ["session-vars"], queryFn: api.sessionVariables });
@@ -335,6 +339,9 @@ function useVarOverlay(text: string, multiline: boolean) {
 
   const onMouseMove = (e: React.MouseEvent) => {
     if (!has || !mirror.current || !wrap.current) return;
+    // React bubbles events from the card (rendered in a portal) up to here;
+    // moving inside the card must not count as leaving the variable.
+    if (!wrap.current.contains(e.target as Node)) return;
     const wr = wrap.current.getBoundingClientRect();
     for (const t of mirror.current.querySelectorAll<HTMLElement>("[data-var]")) {
       for (const r of t.getClientRects()) {
@@ -363,6 +370,7 @@ function useVarOverlay(text: string, multiline: boolean) {
         placement="bottomLeft"
         arrow={false}
         destroyOnHidden
+        classNames={{ root: "var-card-pop" }}
         content={
           hover && (
             <div onMouseEnter={keepOpen} onMouseLeave={scheduleClose}>
@@ -384,7 +392,12 @@ function useVarOverlay(text: string, multiline: boolean) {
       ref: wrap,
       className: `var-field ${has ? "has-vars" : ""} ${multiline ? "is-multi" : ""}`,
       onMouseMove,
-      onMouseLeave: () => hover && scheduleClose(),
+      onMouseLeave: (e: React.MouseEvent) => {
+        // Leaving the field for the card (a portal) keeps it open.
+        const to = e.relatedTarget;
+        if (to instanceof Node && document.querySelector(".var-card-pop")?.contains(to)) return;
+        if (hover) scheduleClose();
+      },
     },
     overlay,
   };

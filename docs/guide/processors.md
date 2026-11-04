@@ -40,6 +40,8 @@ sent, as in Postman. A failing post-processor is reported with the response.
 | Response time (ms) | How long the request took |
 
 Operators: equals, not equals, contains, matches regex, `<`, `≤`, `>`, `≥`, exists, doesn't exist.
+The path and the expected value can use `{{variables}}`, e.g. expect `$.id` to equal
+`{{orderId}}` that an earlier request captured.
 Results appear on the response's **Tests** tab. A failed assertion fails the request in
 collection runs and counts toward the `checks` metric in load tests.
 
@@ -58,6 +60,7 @@ Assertions are cheaper than scripts, so prefer them in load tests.
 
 The value goes into a runtime variable, so later requests can use `{{token}}`. Extracted
 values are listed on the **Tests** tab. A path that matches nothing is reported there too.
+Paths and boundaries can use `{{variables}}`.
 
 ## Scripts
 

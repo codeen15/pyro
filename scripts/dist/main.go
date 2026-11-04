@@ -50,7 +50,7 @@ func main() {
 
 func run(version, out, only string) error {
 	if version == "" {
-		v, err := git("describe", "--tags", "--always", "--dirty")
+		v, err := git("describe", "--tags", "--match", "v[0-9]*", "--always", "--dirty") // app tags, not plugins/sdk/go/…
 		if err != nil {
 			return fmt.Errorf("no -version and git describe failed: %w", err)
 		}

@@ -818,7 +818,7 @@ export const api = {
   globals: () => call<Environment>("GET", "/globals"),
   saveGlobals: (env: Environment) => call<Environment>("PUT", "/globals", env),
   sessionVariables: () => call<SessionVariables>("GET", "/session/variables"),
-  setCurrentValue: (body: { scope: "globals" | "environment" | "collection"; name?: string; key: string; value?: string | null; reset?: boolean }) =>
+  setCurrentValue: (body: { scope: "globals" | "environment" | "collection" | "runtime"; name?: string; key: string; value?: string | null; reset?: boolean }) =>
     call<void>("PATCH", "/session/variables", body),
   send: (body: { path?: string; request?: PyroRequest; environment?: string }) => call<SendResult>("POST", "/send", body),
   history: (limit = 100) => call<HistoryEntry[]>("GET", `/history?limit=${limit}`),
