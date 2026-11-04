@@ -94,6 +94,21 @@ var migrations = []db.Migration{
 		}
 		return db.CreateIndex(ctx, tx, (*loadRunRow)(nil), "loadruns_ws", "workspace", "started DESC")
 	}},
+	{Name: "2-reports", Up: func(ctx context.Context, tx bun.Tx) error {
+		for _, c := range [][2]string{
+			{"run_by", "run_by VARCHAR NOT NULL DEFAULT ''"},
+			{"run_by_name", "run_by_name VARCHAR NOT NULL DEFAULT ''"},
+			{"environment", "environment VARCHAR NOT NULL DEFAULT ''"},
+		} {
+			if err := db.AddColumn(ctx, tx, "loadruns", c[0], c[1]); err != nil {
+				return err
+			}
+		}
+		if err := db.CreateTables(ctx, tx, (*reportRow)(nil)); err != nil {
+			return err
+		}
+		return db.CreateIndex(ctx, tx, (*reportRow)(nil), "reports_ws", "workspace", "started DESC")
+	}},
 }
 
 // Close closes the database if the store opened it.

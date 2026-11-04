@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Alert, App as AntApp, Button, Dropdown, Result, Select, Skeleton, Table, Tag, Tooltip } from "antd";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { BookOpen, Briefcase, ChevronDown, CircleCheck, Cookie, FileInput, SlidersHorizontal, X } from "./icons";
+import { BookOpen, Briefcase, ChevronDown, CircleCheck, Cookie, FileInput, MoreVertical, Report, SlidersHorizontal, X } from "./icons";
 import logo from "./assets/pyro-logo.png";
 import { api, ApiError, decodeBody, handleConflicts, type ConflictChoice, type ImportReport, type PyroResponse } from "./api";
 import { subscribe } from "./events";
@@ -23,11 +23,12 @@ import { DocsPage } from "./components/DocsPage";
 import { AccountPage, ProjectSwitcher, ProjectsPage, UserMenu, WorkspacePage } from "./components/Team";
 import { useCanEdit, useTeam } from "./team";
 import { AdminPage } from "./components/Admin";
+import { ReportPage, ReportsPage } from "./components/Reports";
 
 // Lists that follow other members' changes. Open editors (environment,
 // settings, load test) aren't refetched under someone's typing; their saves
 // are protected by versions instead.
-const LIVE_LISTS = ["workspace", "environments", "loadtests", "data-files", "loadruns"];
+const LIVE_LISTS = ["workspace", "environments", "loadtests", "data-files", "loadruns", "reports"];
 
 /** Team server: refresh when others change the project; ask before overwriting their saves. */
 function useCollaboration() {
@@ -79,8 +80,19 @@ function useCollaboration() {
   }, [me, qc, message]);
 }
 
+/** Opens a report from its address (/reports/<id>, or /p/<project>/reports/<id>). */
+function useReportLink() {
+  useEffect(() => {
+    const m = /^(\/p\/[^/]+)?\/reports\/([^/]+)$/.exec(window.location.pathname);
+    if (!m) return;
+    useApp.getState().select(`report:${decodeURIComponent(m[2])}`);
+    window.history.replaceState(null, "", (m[1] ?? "") || "/");
+  }, []);
+}
+
 export function App() {
   useCollaboration();
+  useReportLink();
   const health = useQuery({ queryKey: ["health"], queryFn: api.health, refetchInterval: 10_000 });
   const ws = useQuery({ queryKey: ["workspace"], queryFn: api.workspace });
   const selected = useApp((s) => s.selected);
@@ -115,6 +127,10 @@ export function App() {
           <ProjectsPage />
         ) : selected?.startsWith("workspace:") && teamMode ? (
           <WorkspacePage key={selected} id={selected.slice(10)} />
+        ) : selected === "reports" ? (
+          <ReportsPage />
+        ) : selected?.startsWith("report:") ? (
+          <ReportPage key={selected} id={selected.slice(7)} />
         ) : selected === "admin" && teamMode ? (
           <AdminPage />
         ) : selected === "account" && teamMode ? (
@@ -224,9 +240,26 @@ function TopBar({ workspace }: { workspace?: string }) {
         <Tooltip title="Cookies">
           <Button type="text" className="topbar-extra" icon={<Cookie size={16} />} onClick={() => go("cookies")} aria-label="Manage cookies" />
         </Tooltip>
+        <Tooltip title="Reports">
+          <Button type="text" className="topbar-extra" icon={<Report size={16} />} onClick={() => go("reports")} aria-label="Reports" />
+        </Tooltip>
         <Tooltip title="User guide">
           <Button type="text" className="topbar-extra" icon={<BookOpen size={16} />} onClick={() => go("docs")} aria-label="Docs" />
         </Tooltip>
+        {/* Phones: the buttons above fold into this menu. */}
+        <Dropdown
+          trigger={["click"]}
+          menu={{
+            items: [
+              { key: "reports", label: "Reports", icon: <Report size={14} /> },
+              { key: "cookies", label: "Cookies", icon: <Cookie size={14} /> },
+              { key: "docs", label: "User guide", icon: <BookOpen size={14} /> },
+            ],
+            onClick: ({ key }) => go(key),
+          }}
+        >
+          <Button type="text" className="topbar-more" icon={<MoreVertical size={16} />} aria-label="More" />
+        </Dropdown>
         {canEdit && (
           <Button icon={<FileInput size={14} />} onClick={() => go("import")} aria-label="Import">
             Import

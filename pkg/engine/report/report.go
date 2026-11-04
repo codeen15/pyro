@@ -113,3 +113,6 @@ func JSON(s *runner.Summary) ([]byte, error) {
 }
 
 func secs(f float64) string { return fmt.Sprintf("%.3f", f) }
+
+// JSONIndent renders any report as indented JSON.
+func JSONIndent(v any) ([]byte, error) { return json.MarshalIndent(v, "", "  ") }

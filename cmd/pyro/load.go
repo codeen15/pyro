@@ -14,6 +14,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/codeen15/pyro/internal/store"
+	"github.com/codeen15/pyro/internal/version"
 	"github.com/codeen15/pyro/pkg/engine/load"
 	"github.com/codeen15/pyro/pkg/engine/metrics"
 	"github.com/codeen15/pyro/pkg/engine/output"
@@ -23,6 +24,7 @@ import (
 func loadCmd() *cobra.Command {
 	var (
 		wsDir, envName, jsonOut, htmlOut string
+		rf                               reportFlags
 		agentToken                       string
 		agents, outs                     []string
 		maxVUs                           int
@@ -170,6 +172,16 @@ func loadCmd() *cobra.Command {
 				}
 				fmt.Printf("Report: %s\n", htmlOut)
 			}
+			meta := report.LoadMeta{Test: args[0], Environment: envName, Version: version.Version}
+			if err := writeReport(rf.xlsx, func() ([]byte, error) { return report.LoadXLSX(res, meta) }); err != nil {
+				return err
+			}
+			if err := writeReport(rf.csv, func() ([]byte, error) { return report.LoadCSV(res) }); err != nil {
+				return err
+			}
+			if err := rf.upload(map[string]any{"kind": "load", "test": strings.TrimSuffix(filepath.Base(args[0]), ".load.yaml"), "environment": envName, "result": res}); err != nil {
+				fmt.Fprintln(os.Stderr, "Warning:", err)
+			}
 			if res.Status != load.StatusPassed {
 				return errRunFailed
 			}
@@ -186,6 +198,7 @@ func loadCmd() *cobra.Command {
 	f.BoolVarP(&quiet, "quiet", "q", false, "no live progress line")
 	f.StringVar(&jsonOut, "json", "", "write the full result as JSON")
 	f.StringVar(&htmlOut, "html", "", "write a self-contained HTML report")
+	rf.register(f, false)
 	f.StringArrayVarP(&outs, "out", "o", nil, "stream live metrics: influxdb=URL, prometheus=URL, json=FILE or csv=FILE (repeatable)")
 	f.StringSliceVar(&agents, "agent", nil, "run distributed on these agents (host:port; repeat or comma-separate)")
 	f.StringVar(&agentToken, "agent-token", "", "token for the agents (default: $PYRO_AGENT_TOKEN)")

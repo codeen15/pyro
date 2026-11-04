@@ -180,6 +180,8 @@ func (s *Server) startLoadTest(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusConflict, map[string]any{"error": "a load test is already running", "running": cur.id})
 		return
 	}
+	p := principal(r)
+	who := history.Who{ID: p.ID, Name: p.Name}
 	release := func() {}
 	if slots := s.cfg.LoadSlots; slots != nil {
 		select {
@@ -232,7 +234,7 @@ func (s *Server) startLoadTest(w http.ResponseWriter, r *http.Request) {
 		}
 		if s.cfg.History != nil {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			if err := s.cfg.History.AddLoadRun(ctx, s.key, id, name, res); err != nil {
+			if err := s.cfg.History.AddLoadRunBy(ctx, s.key, id, name, res, who, envName); err != nil {
 				s.log.Warn("saving load run failed", "err", err)
 			}
 			cancel()
@@ -255,6 +257,9 @@ type loadRunView struct {
 	Live   *liveSnapshot `json:"live,omitempty"`
 	Result *load.Result  `json:"result,omitempty"`
 	Plan   *load.Plan    `json:"plan,omitempty"`
+	// RunBy and Environment come from the saved run.
+	RunBy       string `json:"runBy,omitempty"`
+	Environment string `json:"environment,omitempty"`
 }
 
 func (s *Server) getLoadRun(w http.ResponseWriter, r *http.Request) {
@@ -287,7 +292,11 @@ func (s *Server) getLoadRun(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, loadRunView{ID: id, Test: test, Status: res.Status, Result: res})
+	v := loadRunView{ID: id, Test: test, Status: res.Status, Result: res}
+	if row, ok := s.loadRunRow(r.Context(), id); ok {
+		v.RunBy, v.Environment = row.RunBy, row.Environment
+	}
+	writeJSON(w, http.StatusOK, v)
 }
 
 func (s *Server) listLoadRuns(w http.ResponseWriter, r *http.Request) {

@@ -8,6 +8,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/codeen15/pyro/internal/version"
+	"github.com/codeen15/pyro/pkg/engine/report"
 	"github.com/codeen15/pyro/pkg/engine/runner"
 )
 
@@ -24,11 +26,12 @@ type liveRun struct {
 	Status string `json:"status"` // running | finished | cancelled
 	Total  int    `json:"total"`
 
-	cancel  context.CancelFunc
-	mu      sync.Mutex
-	done    int
-	results []runner.ItemResult // trimmed, for clients that subscribe late
-	sum     *runner.Summary
+	cancel   context.CancelFunc
+	mu       sync.Mutex
+	done     int
+	results  []runner.ItemResult // trimmed, for clients that subscribe late
+	sum      *runner.Summary
+	reportID string
 }
 
 type runRegistry struct {
@@ -45,6 +48,8 @@ type runBody struct {
 	DelayMS     int                 `json:"delayMs,omitempty"`
 	Bail        bool                `json:"bail,omitempty"`
 	Think       bool                `json:"think,omitempty"`
+	// DataFile names the file Data came from (shown in the report).
+	DataFile string `json:"dataFile,omitempty"`
 }
 
 func (s *Server) startRun(w http.ResponseWriter, r *http.Request) {
@@ -79,6 +84,10 @@ func (s *Server) startRun(w http.ResponseWriter, r *http.Request) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	run := &liveRun{ID: newID(), Path: body.Path, Status: "running", Total: len(items) * iterations, cancel: cancel}
+	who := principal(r)
+	meta := report.Meta{Title: s.targetTitle(body.Path), Target: body.Path, Project: s.ws.Meta.Name, Environment: body.Environment,
+		RunBy: who.Name, DataFile: body.DataFile, Version: version.Version}
+	secrets := s.ws.SecretValues(opts.Environment, refs)
 	topic := "run:" + run.ID
 	opts.OnResult = func(ir runner.ItemResult) {
 		t := trimmed(ir)
@@ -100,8 +109,10 @@ func (s *Server) startRun(w http.ResponseWriter, r *http.Request) {
 
 	go func() {
 		sum := runner.Run(ctx, s.cfg.Engine, items, opts)
+		reportID := s.saveReport(meta, sum, secrets, who)
 		run.mu.Lock()
 		run.sum = sum
+		run.reportID = reportID
 		run.Status = "finished"
 		if sum.Stopped == "cancelled" {
 			run.Status = "cancelled"
@@ -136,6 +147,8 @@ type runView struct {
 	// Results so far (bodies trimmed); Summary is set once the run ends.
 	Results []runner.ItemResult `json:"results"`
 	Summary *runSummary         `json:"summary,omitempty"`
+	// ReportID is the saved report, once the run has ended.
+	ReportID string `json:"reportId,omitempty"`
 }
 
 // runSummary is the summary without its per-item results, which Results carries.
@@ -153,7 +166,7 @@ func (s *Server) runView(run *liveRun) runView {
 	run.mu.Lock()
 	defer run.mu.Unlock()
 	v := runView{ID: run.ID, Path: run.Path, Status: run.Status, Done: run.done, Total: run.Total,
-		Results: append([]runner.ItemResult{}, run.results...)}
+		Results: append([]runner.ItemResult{}, run.results...), ReportID: run.reportID}
 	if sm := run.sum; sm != nil {
 		v.Summary = &runSummary{sm.Iterations, sm.Requests, sm.Failed, sm.TestsPassed, sm.TestsFailed,
 			float64(sm.Duration.Microseconds()) / 1000, sm.Stopped}

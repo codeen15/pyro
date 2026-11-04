@@ -16,6 +16,7 @@ This guide explains how to use it. The same pages are available inside the app u
 | [WebSocket and Socket.IO](realtime.md) | Realtime consoles, messages and typed arguments |
 | [Processors and tests](processors.md) | Pre- and post-processors, scripts, assertions, extractors, think time |
 | [Collection runner](runner.md) | Running a collection as a test suite, data files, CI |
+| [Test reports](reports.md) | Saved runs, comparing with the previous run, PDF, Excel, CSV and JUnit, uploads from CI |
 | [Load testing](load-testing.md) | Load tests, profiles, the designer, test data, sockets, thresholds, results |
 | [Distributed load tests](distributed.md) | Running one load test across several machines, live metric outputs |
 | [Import, export, docs and mocks](import-export.md) | Postman, OpenAPI, HAR, cURL, JMeter; Postman export; API docs; mock servers |

@@ -47,6 +47,8 @@ var changeActions = map[string]string{
 	"PUT /api/v1/loadtests/{name}":        "saved load test",
 	"DELETE /api/v1/loadtests/{name}":     "deleted load test",
 	"POST /api/v1/loadtests/{name}/start": "started load test",
+	"POST /api/v1/reports":                "uploaded a report",
+	"DELETE /api/v1/reports/{id}":         "deleted a report",
 }
 
 // Change describes one successful write.

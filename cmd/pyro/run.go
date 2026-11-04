@@ -6,11 +6,13 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
 
+	"github.com/codeen15/pyro/internal/version"
 	"github.com/codeen15/pyro/pkg/engine"
 	"github.com/codeen15/pyro/pkg/engine/model"
 	"github.com/codeen15/pyro/pkg/engine/protocol/httpdriver"
@@ -27,15 +29,21 @@ func runCmd() *cobra.Command {
 		iterations                                  int
 		delay, timeout                              time.Duration
 		bail, insecure, quiet, think                bool
+		rf                                          reportFlags
 	)
 	cmd := &cobra.Command{
 		Use:   "run <collection | folder | request>",
 		Short: "Run requests as a functional test suite (for CI)",
 		Long: "Runs every request under a collection or folder path in order, with scripts,\n" +
 			"assertions and extractors. Exits 1 if any request or test fails.",
-		Example: "  pyro run payments -e staging\n  pyro run payments/orders -d data/users.csv --junit results.xml",
-		Args:    cobra.ExactArgs(1),
+		Example: "  pyro run payments -e staging\n  pyro run payments/orders -d data/users.csv --junit results.xml\n" +
+			"  pyro run payments -e staging --xlsx report.xlsx --html report.html\n" +
+			"  PYRO_TOKEN=pyro_pat_… pyro run payments --report-to https://pyro.example.com --project 3f9c…",
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := rf.check(); err != nil {
+				return err
+			}
 			ws, err := openWorkspace(wsDir)
 			if err != nil {
 				return err
@@ -92,6 +100,29 @@ func runCmd() *cobra.Command {
 					return err
 				}
 			}
+			if rf.html != "" || rf.xlsx != "" || rf.csv != "" || rf.reportTo != "" {
+				title := args[0]
+				if c, err := ws.ReadCollection(strings.Trim(args[0], "/")); err == nil && c.Name != "" {
+					title = c.Name
+				}
+				rep := report.NewRunReport(report.Meta{Title: title, Target: args[0], Project: ws.Meta.Name, Environment: envName,
+					DataFile: filepath.Base(dataFile), Version: version.Version}, sum, ws.SecretValues(opts.Environment, refs))
+				if dataFile == "" {
+					rep.DataFile = ""
+				}
+				if err := writeReport(rf.html, func() ([]byte, error) { return report.RunHTML(rep, nil) }); err != nil {
+					return err
+				}
+				if err := writeReport(rf.xlsx, func() ([]byte, error) { return report.RunXLSX(rep) }); err != nil {
+					return err
+				}
+				if err := writeReport(rf.csv, func() ([]byte, error) { return report.RunCSV(rep) }); err != nil {
+					return err
+				}
+				if err := rf.upload(map[string]any{"kind": "run", "report": rep}); err != nil {
+					fmt.Fprintln(os.Stderr, "Warning:", err)
+				}
+			}
 			if !sum.OK() || sum.Stopped == "cancelled" {
 				return errRunFailed
 			}
@@ -111,6 +142,7 @@ func runCmd() *cobra.Command {
 	f.BoolVarP(&quiet, "quiet", "q", false, "only print failures and the summary")
 	f.StringVar(&junitOut, "junit", "", "write a JUnit XML report to this file")
 	f.StringVar(&jsonOut, "json", "", "write a JSON report to this file")
+	rf.register(f, true)
 	return cmd
 }
 

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Alert, Button, Checkbox, InputNumber, Progress, Table, type TableColumnsType } from "antd";
-import { Check, FileUp, Minus, Play, Square, X } from "../icons";
+import { Check, FileUp, Minus, Play, Report, Square, X } from "../icons";
 import { api, type RunItem, type RunView as Run } from "../api";
 import { subscribe } from "../events";
 import { formatMs, heatOf } from "../heat";
@@ -13,6 +13,7 @@ import { TestsView } from "./ResponseView";
 export function RunnerView({ path }: { path: string }) {
   const qc = useQueryClient();
   const environment = useApp((s) => s.environment);
+  const select = useApp((s) => s.select);
   const [iterations, setIterations] = useState(1);
   const [delayMs, setDelayMs] = useState(0);
   const [bail, setBail] = useState(false);
@@ -21,7 +22,6 @@ export function RunnerView({ path }: { path: string }) {
   const [dataError, setDataError] = useState<string | null>(null);
   const [run, setRun] = useState<Run | null>(null);
   const [startError, setStartError] = useState<string | null>(null);
-  const [open, setOpen] = useState<number | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const runId = run?.id;
@@ -38,23 +38,24 @@ export function RunnerView({ path }: { path: string }) {
     const off = subscribe<{ done: number; total: number; item: RunItem } & Run>(`run:${runId}`, (e) => {
       if (e.type === "result") merge([e.data.item], e.data.done - 1);
       if (e.type === "finished") {
-        merge(e.data.results, 0, { status: e.data.status, summary: e.data.summary });
+        merge(e.data.results, 0, { status: e.data.status, summary: e.data.summary, reportId: e.data.reportId });
         qc.invalidateQueries({ queryKey: ["history"] });
+        qc.invalidateQueries({ queryKey: ["reports"] });
       }
     });
-    api.run(runId).then((r) => merge(r.results, 0, { status: r.status, summary: r.summary }), () => {});
+    api.run(runId).then((r) => merge(r.results, 0, { status: r.status, summary: r.summary, reportId: r.reportId }), () => {});
     return off;
   }, [runId, qc]);
 
   const start = async () => {
     setStartError(null);
-    setOpen(null);
     try {
       const r = await api.startRun({
         path,
         environment: environment ?? undefined,
         iterations: data ? undefined : iterations,
         data: data?.rows,
+        dataFile: data?.name,
         delayMs: delayMs || undefined,
         bail,
         think: think || undefined,
@@ -79,7 +80,6 @@ export function RunnerView({ path }: { path: string }) {
 
   const running = run?.status === "running";
   const stats = useMemo(() => tally(run?.results ?? []), [run]);
-  const rows = useMemo(() => toRows(run?.results ?? []), [run]);
   const pct = !run ? 0 : run.status !== "running" ? 100 : run.total > 0 ? Math.min(100, (run.done / run.total) * 100) : 0;
 
   return (
@@ -180,40 +180,13 @@ export function RunnerView({ path }: { path: string }) {
               </span>
               {run.summary && <span className="meta">{formatMs(run.summary.durationMs)}</span>}
               {run.summary?.stopped && <span className="inline-warn">{run.summary.stopped}</span>}
+              {run.reportId && (
+                <Button className="run-report-link" icon={<Report size={14} />} onClick={() => select(`report:${run.reportId}`)}>
+                  Open report
+                </Button>
+              )}
             </div>
-            <Table<Row>
-              className="runner-table"
-              size="small"
-              pagination={false}
-              scroll={{ x: "max-content" }}
-              rowKey="index"
-              dataSource={rows}
-              rowClassName={(r) => `runner-row ${r.failed ? "is-fail" : ""}`}
-              expandable={{
-                expandedRowKeys: open === null ? [] : [open],
-                expandRowByClick: true,
-                rowExpandable: (r) => !r.item.note && !!r.item.result,
-                onExpand: (expanded, r) => setOpen(expanded ? r.index : null),
-                expandedRowRender: ({ item: it }) =>
-                  it.result && (
-                    <div className="run-detail">
-                      {it.result.error && <p className="inline-error">{it.result.error}</p>}
-                      {it.result.scriptErrors?.map((e, j) => (
-                        <p key={j} className="inline-error mono">
-                          {e}
-                        </p>
-                      ))}
-                      {it.result.sent && (
-                        <p className="mono small muted">
-                          {it.result.sent.method ?? "GET"} {it.result.sent.url}
-                        </p>
-                      )}
-                      <TestsView result={it.result} />
-                    </div>
-                  ),
-              }}
-              columns={columns}
-            />
+            <RunResultsTable results={run.results} />
           </section>
         )}
       </div>
@@ -225,6 +198,47 @@ interface Row {
   index: number;
   item: RunItem;
   failed: boolean;
+}
+
+/** The results of a run: one row per request per iteration, expandable. */
+export function RunResultsTable({ results }: { results: RunItem[] }) {
+  const [open, setOpen] = useState<number | null>(null);
+  const rows = useMemo(() => toRows(results), [results]);
+  return (
+    <Table<Row>
+      className="runner-table"
+      size="small"
+      pagination={false}
+      scroll={{ x: "max-content" }}
+      rowKey="index"
+      dataSource={rows}
+      rowClassName={(r) => `runner-row ${r.failed ? "is-fail" : ""}`}
+      expandable={{
+        expandedRowKeys: open === null ? [] : [open],
+        expandRowByClick: true,
+        rowExpandable: (r) => !r.item.note && !!r.item.result,
+        onExpand: (expanded, r) => setOpen(expanded ? r.index : null),
+        expandedRowRender: ({ item: it }) =>
+          it.result && (
+            <div className="run-detail">
+              {it.result.error && <p className="inline-error">{it.result.error}</p>}
+              {it.result.scriptErrors?.map((e, j) => (
+                <p key={j} className="inline-error mono">
+                  {e}
+                </p>
+              ))}
+              {it.result.sent && (
+                <p className="mono small muted">
+                  {it.result.sent.method ?? "GET"} {it.result.sent.url}
+                </p>
+              )}
+              <TestsView result={it.result} />
+            </div>
+          ),
+      }}
+      columns={columns}
+    />
+  );
 }
 
 function toRows(results: RunItem[]): Row[] {

@@ -61,6 +61,34 @@ test("run a collection", async ({ page }) => {
   await expect(page.locator(".tests-pass", { hasText: "Passed" })).toBeVisible({ timeout: 15_000 });
   await expect(page.getByText("3 requests · 0 failed")).toBeVisible();
   await expect(page.getByText("3 tests · 0 failed")).toBeVisible();
+
+  // Every run is saved as a report the SQA team can open, export and share.
+  await page.getByRole("button", { name: "Open report" }).click();
+  await expect(page.getByRole("heading", { name: /^Shop/ })).toBeVisible();
+  await expect(page.locator(".report-detail .report-status", { hasText: "Passed" }).first()).toBeVisible();
+  await expect(page.getByText("This is the first saved run of shop.")).toBeVisible();
+  await expect(page.locator(".report-kpi", { hasText: "Pass rate" })).toContainText("100.0%");
+  await page.getByRole("button", { name: "Download" }).click();
+  const [xlsx] = await Promise.all([page.waitForEvent("download"), page.getByRole("menuitem", { name: "Excel workbook (.xlsx)" }).click()]);
+  expect(xlsx.suggestedFilename()).toMatch(/^Shop .*\.xlsx$/);
+  await page.getByRole("button", { name: "Download" }).click();
+  const [csv] = await Promise.all([page.waitForEvent("download"), page.getByRole("menuitem", { name: "CSV (.csv)" }).click()]);
+  expect(csv.suggestedFilename()).toMatch(/\.csv$/);
+
+  // A second run is compared with the first.
+  await page.locator(".row-wrap", { hasText: "Shop" }).hover();
+  await page.locator(".row-wrap", { hasText: "Shop" }).getByRole("button", { name: "Run Shop" }).click();
+  await page.getByRole("button", { name: /^Run/ }).last().click();
+  await expect(page.getByRole("button", { name: "Open report" })).toBeVisible({ timeout: 15_000 });
+  await page.getByRole("button", { name: "Open report" }).click();
+  await expect(page.getByText(/^No changes since the run on/)).toBeVisible();
+
+  // The Reports page lists both runs.
+  await page.locator(".topbar").getByRole("button", { name: "Reports", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Reports" })).toBeVisible();
+  await expect(page.locator(".report-row")).toHaveCount(2);
+  await page.getByRole("searchbox", { name: "Search reports" }).or(page.getByLabel("Search reports")).first().fill("nothing-like-this");
+  await expect(page.locator(".report-row")).toHaveCount(0);
 });
 
 test("paste a cURL command into an existing collection", async ({ page }) => {
@@ -111,7 +139,13 @@ test("fits a phone screen", async ({ page }) => {
   await noHorizontalScroll(page);
   await page.getByRole("button", { name: "Edit environments and globals" }).click();
   await noHorizontalScroll(page);
-  await page.getByRole("button", { name: "Manage cookies" }).click();
+  // Cookies, Reports and the guide fold into a menu on phones.
+  await page.getByRole("button", { name: "More", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Cookies" }).click();
+  await noHorizontalScroll(page);
+  await page.getByRole("button", { name: "More", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Reports" }).click();
+  await expect(page.getByRole("heading", { name: "Reports" })).toBeVisible();
   await noHorizontalScroll(page);
 });
 

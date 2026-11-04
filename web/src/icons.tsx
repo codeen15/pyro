@@ -5,6 +5,7 @@ import type { CSSProperties } from "react";
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 import {
   Activity01Icon,
+  Analytics01Icon,
   Alert02Icon,
   AlertCircleIcon,
   ArrowDown01Icon,
@@ -52,6 +53,7 @@ import {
   PlayIcon,
   Plug01Icon,
   PlusSignIcon,
+  PrinterIcon,
   PuzzleIcon,
   RefreshIcon,
   RotateLeft01Icon,
@@ -100,6 +102,7 @@ function wrap(icon: IconSvgElement) {
 }
 
 export const Activity = wrap(Activity01Icon);
+export const Report = wrap(Analytics01Icon);
 export const ArrowDown = wrap(ArrowDown02Icon);
 export const ArrowUp = wrap(ArrowUp02Icon);
 export const ArrowLeftRight = wrap(ArrowLeftRightIcon);
@@ -144,6 +147,7 @@ export const Plug = wrap(Plug01Icon);
 export const PlugZap = wrap(Link01Icon);
 export const Unplug = wrap(Unlink04Icon);
 export const Plus = wrap(PlusSignIcon);
+export const Printer = wrap(PrinterIcon);
 export const Puzzle = wrap(PuzzleIcon);
 export const Radio = wrap(Wifi01Icon);
 export const RefreshCw = wrap(RefreshIcon);
