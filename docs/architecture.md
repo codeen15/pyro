@@ -39,6 +39,7 @@
 | Data model | `pkg/engine/model` | ✅ Phase 0 | Workspace, Collection, Request, Environment, Auth, Body, Assertion, Extractor, Message. |
 | Workspace store | `internal/store` | ✅ Phase 0 | YAML persistence, tree listing, path safety, atomic writes. |
 | API server | `internal/server` | ✅ Phase 2 | REST under `/api/v1` (CRUD, send, history, import, sessions, runs, session variables), event WebSocket, token auth, embedded SPA. |
+| Team server | `internal/team` | ✅ Phase 13 | `pyro serve --team`: accounts, cookie sessions, CSRF, workspaces, members, projects (SQLite). Opens one `internal/server.Server` per project on demand, closes idle ones, and hands it `/api/v1/projects/{id}/*` with the user's role as a `server.Principal`. |
 | History | `internal/history` | ✅ Phase 1 | Sent requests in SQLite (`~/.pyro/pyro.db`), per workspace. |
 | Send pipeline | `pkg/engine` (`engine.Send`, `engine.Connect`) | ✅ Phase 2 | Pre scripts → resolve → auth → execute → post scripts → assertions → extractors; `Connect` opens sessions with the same resolution and auth. |
 | CLI | `cmd/pyro` | ✅ `serve`, `init`, `import`, `run`, `load`, `plugin`, `version` | `agent` comes in Phase 5. |
@@ -86,6 +87,12 @@ type Session interface {
 - **Workspace files:** human-edited YAML in a directory you can commit. See [data-model.md](data-model.md).
 - **SQLite** (`~/.pyro/pyro.db`, `modernc.org/sqlite`, from Phase 1): request history, run summaries and downsampled time series, plugin index and settings. Raw load-test samples go to NDJSON files, never written to SQLite row by row.
 
+- **Team server** (`--data`, default `~/.pyro/team`): `pyro.db` holds accounts, sessions,
+  workspaces, members and projects next to history and load runs. `projects/<id>/` is one
+  ordinary workspace folder per project, so the store, engine and importers work unchanged. A
+  project folder is named by its ID, so moving a project to another workspace only changes a
+  row.
+
 ## Technology choices
 | Choice | Why |
 |---|---|
@@ -101,6 +108,7 @@ type Session interface {
 
 ## Security model
 - `pyro serve` binds to `127.0.0.1` and prints a URL carrying a random per-launch token. Every `/api` call must send `X-Pyro-Token`. `--no-token` only works on loopback.
+- `pyro serve --team` signs people in with passwords (argon2id) and session cookies. It requires an `X-Pyro-CSRF` header on writes and checks a minimum role per project route (`internal/server/roles.go`). See SECURITY.md.
 - The store rejects path traversal (`..`, empty or `.` segments, backslashes, drive letters).
 - Plugins get only the capabilities they declare and the user approves on install.
 - Load tests against non-allow-listed hosts need confirmation.

@@ -62,16 +62,16 @@ func (s *Server) send(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	bases := s.session.apply(in.Vars, slug)
+	bases := s.sessionFor(r).apply(in.Vars, slug)
 	for k, v := range body.Runtime {
 		in.Vars.Runtime[k] = v
 	}
 
 	res := s.cfg.Engine.Send(r.Context(), in)
-	s.session.record(in.Vars, slug, bases)
+	s.sessionFor(r).record(in.Vars, slug, bases)
 	out := sendResponse{Result: res}
 	if s.cfg.History != nil && res.Sent != nil {
-		id, err := s.cfg.History.Add(r.Context(), s.ws.Root, body.Path, in.Request.Name, res)
+		id, err := s.cfg.History.Add(r.Context(), s.userKey(r), body.Path, in.Request.Name, res)
 		if err != nil {
 			s.log.Warn("recording history failed", "err", err)
 		}
@@ -86,7 +86,7 @@ func (s *Server) listHistory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	list, err := s.cfg.History.List(r.Context(), s.ws.Root, limit)
+	list, err := s.cfg.History.List(r.Context(), s.userKey(r), limit)
 	if err != nil {
 		s.fail(w, err)
 		return
@@ -100,7 +100,7 @@ func (s *Server) getHistory(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "history entry not found")
 		return
 	}
-	raw, err := s.cfg.History.Get(r.Context(), s.ws.Root, id)
+	raw, err := s.cfg.History.Get(r.Context(), s.userKey(r), id)
 	if err != nil {
 		s.fail(w, err)
 		return
@@ -111,7 +111,7 @@ func (s *Server) getHistory(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) clearHistory(w http.ResponseWriter, r *http.Request) {
 	if s.cfg.History != nil {
-		if err := s.cfg.History.Clear(r.Context(), s.ws.Root); err != nil {
+		if err := s.cfg.History.Clear(r.Context(), s.userKey(r)); err != nil {
 			s.fail(w, err)
 			return
 		}

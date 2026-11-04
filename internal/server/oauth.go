@@ -45,7 +45,7 @@ func (s *Server) oauthParams(w http.ResponseWriter, r *http.Request, body oauthB
 	if !ok {
 		return nil, oauthView{}, false
 	}
-	s.session.apply(in.Vars, slug) // current values, as a send would use
+	s.sessionFor(r).apply(in.Vars, slug) // current values, as a send would use
 	a, missing := engine.EffectiveAuth(in)
 	if a == nil || a.Type != "oauth2" {
 		if required {
@@ -72,6 +72,9 @@ func (s *Server) oauthParams(w http.ResponseWriter, r *http.Request, body oauthB
 }
 
 func (s *Server) callbackURL(r *http.Request) string {
+	if s.cfg.CallbackURL != "" {
+		return s.cfg.CallbackURL
+	}
 	return "http://" + r.Host + "/oauth2/callback"
 }
 

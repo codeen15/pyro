@@ -1,6 +1,6 @@
-import { sessionToken } from "./api";
+import { apiBase, sessionToken } from "./api";
 
-// One shared WebSocket to /api/v1/events. Components subscribe to topics
+// One shared WebSocket to <api>/events. Components subscribe to topics
 // ("session:<id>", "run:<id>"); the socket reconnects and resubscribes on drops.
 
 export interface PyroEvent<T = unknown> {
@@ -18,7 +18,7 @@ let retry = 0;
 function url() {
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
   const t = sessionToken();
-  return `${proto}//${location.host}/api/v1/events${t ? `?token=${encodeURIComponent(t)}` : ""}`;
+  return `${proto}//${location.host}${apiBase()}/events${t ? `?token=${encodeURIComponent(t)}` : ""}`;
 }
 
 function send(op: "subscribe" | "unsubscribe", topic: string) {

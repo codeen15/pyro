@@ -8,7 +8,7 @@ import { Search } from "../icons";
 const files = import.meta.glob("../../../docs/guide/*.md", { query: "?raw", import: "default", eager: true }) as Record<string, string>;
 
 /** Page order, as in the guide's README. */
-const ORDER = ["README", "getting-started", "requests", "variables", "realtime", "processors", "runner", "load-testing", "distributed", "import-export", "plugins", "cli", "workspace", "tips"];
+const ORDER = ["README", "getting-started", "requests", "variables", "realtime", "processors", "runner", "load-testing", "distributed", "import-export", "plugins", "team-server", "cli", "workspace", "tips"];
 
 const REPO = "https://github.com/codeen15/pyro/blob/main/docs/";
 

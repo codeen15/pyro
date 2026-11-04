@@ -20,6 +20,7 @@ This guide explains how to use it. The same pages are available inside the app u
 | [Distributed load tests](distributed.md) | Running one load test across several machines, live metric outputs |
 | [Import, export, docs and mocks](import-export.md) | Postman, OpenAPI, HAR, cURL, JMeter; Postman export; API docs; mock servers |
 | [Plugins](plugins.md) | Installing, approving and writing plugins |
+| [Team server](team-server.md) | Sharing Pyro with a team: accounts, workspaces, projects, roles |
 | [Command line](cli.md) | Every `pyro` command and flag |
 | [Workspace files](workspace.md) | What Pyro writes to disk, git, settings in `pyro.yaml` |
 | [Keyboard shortcuts and tips](tips.md) | Shortcuts, themes, troubleshooting |

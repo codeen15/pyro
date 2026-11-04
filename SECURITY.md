@@ -21,6 +21,29 @@ generate a lot of traffic. Its defences, by boundary:
   keeps the token mandatory; anyone with it has full access, so use it only on trusted
   networks.
 
+**The team server (`pyro serve --team`)**
+- Accounts sign in with a password (argon2id hashes) and get a random session cookie. The
+  database keeps only its SHA-256 hash. The cookie is HttpOnly and SameSite=Lax, and Secure
+  behind https.
+- State-changing requests need the `X-Pyro-CSRF` header and a same-origin `Origin`, so other
+  sites can't act with a member's cookie. The server sends no CORS headers.
+- Failed sign-ins are rate-limited per account and per IP. Unknown emails cost the same time
+  as wrong passwords.
+- Every project route has a minimum role (viewer, editor, owner, or server admin for plugins),
+  checked on every call. A test fails if a route has no entry. Non-members get 404.
+- Sign-up is invite-only by default. The first account becomes the administrator, so create
+  it before exposing the server.
+- Members make the **server** send requests and run collection scripts. Anyone with access to
+  a project can reach whatever the server's network can reach (SSRF by design), including
+  internal services and cloud metadata addresses. Run it in a network segment that matches
+  what your team is allowed to test.
+- Request bodies never read files outside their project. Mock servers are disabled. Load
+  tests are capped server-wide (`--max-loads`).
+- Serve it over HTTPS (`--tls-cert`/`--tls-key` or a reverse proxy with `--public-url
+  https://…`). Over plain HTTP, passwords and cookies can be read on the network.
+- Cookies and OAuth 2.0 tokens fetched while sending requests are shared by a project's
+  members.
+
 **Workspace content (imported collections, cloned repositories)**
 - Scripts run in an embedded JavaScript engine (goja) with no file system, process or
   environment access; `pm.sendRequest` can make HTTP requests only.
@@ -54,5 +77,5 @@ generate a lot of traffic. Its defences, by boundary:
   across untrusted networks.
 
 ## Out of scope
-Denial of service by someone who already holds a session or agent token; load tests you
+Denial of service by someone who already holds a session or agent token or a team account; load tests you
 point at systems you aren't allowed to test.

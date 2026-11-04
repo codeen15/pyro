@@ -52,6 +52,9 @@ git and review like code ([Workspace files](workspace.md)).
 - Create one for a project with `pyro init my-api --sample` (`--sample` adds an example
   collection and environment), then `pyro serve -w my-api`.
 
+**Working as a team?** Run one shared [team server](team-server.md) (`pyro serve --team`)
+instead. People sign in from their browsers, and workspaces hold projects with members and roles.
+
 ## A tour of the screen
 
 - **Top bar:** the logo (back to the start page), the workspace name, the **Environment**

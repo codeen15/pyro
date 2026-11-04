@@ -10,6 +10,41 @@ TypeScript client in `web/src/api.ts`.
 - The UI reads `?token=` once, stores it in `sessionStorage` for the tab, and removes it from the address bar.
 - `--no-token` turns the check off, and is refused unless the bind address is loopback. It exists for the Vite dev server.
 - Static UI assets (`/`, `/assets/*`) are served without a token.
+- `GET /api/v1/auth/config` returns `{"mode":"local"}`, so the UI can tell a local server from a team server.
+
+## Team server (`pyro serve --team`)
+The team server puts accounts and workspaces in front of the same project API. Source:
+`internal/team/server.go`.
+
+- **Sign-in:** a session cookie `pyro_session` (HttpOnly, SameSite=Lax, Secure behind https),
+  valid for 14 days from the last use. There is no session token.
+- **CSRF:** every request other than GET/HEAD/OPTIONS must send `X-Pyro-CSRF: 1`. When an
+  `Origin` header is present it must match the host. Otherwise the server answers `403`.
+- **Project API:** every endpoint below is available under `/api/v1/projects/{projectId}/…`,
+  e.g. `GET /api/v1/projects/3f…/requests/shop/list-items`, and the events socket is at
+  `/api/v1/projects/{projectId}/events`. Calls act as the signed-in user with their workspace
+  role (see the role table in `internal/server/roles.go`):
+  - `403` when the role is too low;
+  - `404` when the user isn't a member (the project's existence isn't confirmed).
+- The OAuth 2.0 redirect URI for a project is `<publicURL>/oauth2/p/{projectId}/callback`.
+- Errors use the same `{"error": …}` shape.
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/v1/health` | `{status, version, mode: "team"}` |
+| GET | `/api/v1/auth/config` | `{mode: "team", signedIn, firstUser, signup, signupPolicy, signupDomains}`. No sign-in needed |
+| POST | `/api/v1/auth/signup` | Body `{email, name?, password}` (password ≥ 10 characters). Creates the account with a personal workspace and a first project, and signs in. `403` when the sign-up policy refuses, `409` for a taken email |
+| POST | `/api/v1/auth/login` | Body `{email, password}`. `400` for wrong credentials; `429` after 10 failures per account (or 50 per IP) in 15 minutes |
+| POST | `/api/v1/auth/logout` | Ends this session |
+| GET | `/api/v1/me` | `{mode, user: {id, email, name, provider, admin}, workspaces}`. `401` when signed out |
+| PATCH | `/api/v1/me` | Body `{name}` |
+| POST | `/api/v1/me/password` | Body `{current, password}`. Signs out the user's other sessions |
+| GET | `/api/v1/workspaces` | The user's workspaces (personal first) with `role` and `projects` |
+| POST | `/api/v1/workspaces` | Body `{name}`: a team workspace owned by the caller |
+| PATCH / DELETE | `/api/v1/workspaces/{id}` | Rename (`{name}`) or delete an empty team workspace (owner) |
+| POST | `/api/v1/workspaces/{id}/projects` | Body `{name}`: new project (editor) |
+| GET | `/api/v1/projects/{id}` | `{id, name, workspace, workspaceName, workspaceKind, role}` |
+| PATCH / DELETE | `/api/v1/projects/{id}` | Rename (`{name}`) or delete a project and its files (owner) |
 
 ## Conventions
 - JSON in and out. Unknown request fields are rejected (`400`). Request bodies are limited to 10 MB.

@@ -650,6 +650,25 @@ const token = takeToken();
 /** The session token, for the event WebSocket (which can't send headers). */
 export const sessionToken = () => token;
 
+// Project API calls go to /api/v1 locally, or /api/v1/projects/<id> on a team
+// server once a project is open.
+let base = "/api/v1";
+
+/** Points project API calls at a team server project. */
+export function setProject(id: string) {
+  base = `/api/v1/projects/${encodeURIComponent(id)}`;
+}
+
+/** The project API's base path (for the event socket and raw fetches). */
+export const apiBase = () => base;
+
+function headers(extra?: Record<string, string>): Record<string, string> {
+  // The team server refuses writes without X-Pyro-CSRF; local mode ignores it.
+  const h: Record<string, string> = { "X-Pyro-CSRF": "1", ...extra };
+  if (token) h["X-Pyro-Token"] = token;
+  return h;
+}
+
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -661,13 +680,18 @@ export class ApiError extends Error {
   }
 }
 
-async function call<T>(method: string, path: string, body?: unknown, raw = false): Promise<T> {
-  const headers: Record<string, string> = {};
-  if (token) headers["X-Pyro-Token"] = token;
-  if (body !== undefined) headers["Content-Type"] = body instanceof Blob ? "application/zip" : "application/json";
-  const res = await fetch(`/api/v1${path}`, {
+/** Called when the team server says the session has ended. */
+let onSignedOut: (() => void) | null = null;
+export function handleSignedOut(fn: () => void) {
+  onSignedOut = fn;
+}
+
+async function call<T>(method: string, path: string, body?: unknown, raw = false, root = base): Promise<T> {
+  const h = headers();
+  if (body !== undefined) h["Content-Type"] = body instanceof Blob ? "application/zip" : "application/json";
+  const res = await fetch(`${root}${path}`, {
     method,
-    headers,
+    headers: h,
     body: body === undefined ? undefined : raw || body instanceof Blob ? (body as BodyInit) : JSON.stringify(body),
   });
   if (!res.ok) {
@@ -679,10 +703,14 @@ async function call<T>(method: string, path: string, body?: unknown, raw = false
     } catch {
       /* non-JSON error body */
     }
+    if (res.status === 401 && onSignedOut) onSignedOut();
     throw new ApiError(res.status, msg, body);
   }
   return res.status === 204 ? (undefined as T) : res.json();
 }
+
+/** Team server calls (accounts, workspaces, projects), outside any project. */
+const teamCall = <T,>(method: string, path: string, body?: unknown) => call<T>(method, path, body, false, "/api/v1");
 
 const enc = (p: string) => p.split("/").map(encodeURIComponent).join("/");
 
@@ -762,7 +790,7 @@ export const api = {
   deleteLoadRun: (id: string) => call<void>("DELETE", `/loadruns/${id}`),
   /** Fetches a collection's generated HTML API reference. */
   collectionDocs: async (slug: string) => {
-    const res = await fetch(`/api/v1/collections/${encodeURIComponent(slug)}/docs`, { headers: token ? { "X-Pyro-Token": token } : {} });
+    const res = await fetch(`${base}/collections/${encodeURIComponent(slug)}/docs`, { headers: headers() });
     if (!res.ok) throw new ApiError(res.status, (await res.json().catch(() => ({}))).error ?? res.statusText);
     return res.text();
   },
@@ -772,10 +800,87 @@ export const api = {
   stopMock: (slug: string) => call<void>("DELETE", `/mocks/${encodeURIComponent(slug)}`),
   /** Fetches the HTML report (the token can't ride on a plain link). */
   loadReport: async (id: string) => {
-    const res = await fetch(`/api/v1/loadruns/${id}/report`, { headers: token ? { "X-Pyro-Token": token } : {} });
+    const res = await fetch(`${base}/loadruns/${id}/report`, { headers: headers() });
     if (!res.ok) throw new ApiError(res.status, (await res.json().catch(() => ({}))).error ?? res.statusText);
     return res.text();
   },
+};
+
+export type MemberRole = "owner" | "editor" | "viewer";
+
+export interface TeamUser {
+  id: string;
+  email: string;
+  name: string;
+  provider: string;
+  admin: boolean;
+}
+
+export interface TeamProject {
+  id: string;
+  name: string;
+  workspace: string;
+  created: string;
+}
+
+export interface TeamWorkspace {
+  id: string;
+  name: string;
+  kind: "personal" | "team";
+  role: MemberRole;
+  projects: TeamProject[];
+}
+
+export interface Me {
+  mode: "team";
+  user: TeamUser;
+  workspaces: TeamWorkspace[];
+}
+
+export interface ProjectInfo extends TeamProject {
+  workspaceName: string;
+  workspaceKind: "personal" | "team";
+  role: MemberRole;
+}
+
+export interface AuthConfig {
+  mode: "team";
+  /** The browser already has a valid session. */
+  signedIn: boolean;
+  firstUser: boolean;
+  signup: boolean;
+  signupPolicy: "invite-only" | "open" | "domains";
+  signupDomains?: string[];
+  version: string;
+}
+
+/** Team server: sign-in, account, workspaces and projects. */
+export const team = {
+  /** Resolves to null when this is a local (single-user) Pyro. */
+  config: async (): Promise<AuthConfig | null> => {
+    try {
+      const res = await fetch("/api/v1/auth/config", { headers: headers() });
+      if (!res.ok) return null;
+      const c = await res.json();
+      return c?.mode === "team" ? c : null;
+    } catch {
+      return null;
+    }
+  },
+  signup: (b: { email: string; name: string; password: string }) => teamCall<Me>("POST", "/auth/signup", b),
+  login: (b: { email: string; password: string }) => teamCall<Me>("POST", "/auth/login", b),
+  logout: () => teamCall<void>("POST", "/auth/logout"),
+  me: () => teamCall<Me>("GET", "/me"),
+  rename: (name: string) => teamCall<Me>("PATCH", "/me", { name }),
+  changePassword: (current: string, password: string) => teamCall<void>("POST", "/me/password", { current, password }),
+  workspaces: () => teamCall<TeamWorkspace[]>("GET", "/workspaces"),
+  createWorkspace: (name: string) => teamCall<TeamWorkspace>("POST", "/workspaces", { name }),
+  renameWorkspace: (id: string, name: string) => teamCall<void>("PATCH", `/workspaces/${id}`, { name }),
+  deleteWorkspace: (id: string) => teamCall<void>("DELETE", `/workspaces/${id}`),
+  createProject: (ws: string, name: string) => teamCall<TeamProject>("POST", `/workspaces/${ws}/projects`, { name }),
+  project: (id: string) => teamCall<ProjectInfo>("GET", `/projects/${id}`),
+  renameProject: (id: string, name: string) => teamCall<void>("PATCH", `/projects/${id}`, { name }),
+  deleteProject: (id: string) => teamCall<void>("DELETE", `/projects/${id}`),
 };
 
 /** Decodes a base64 response body into bytes. */

@@ -66,7 +66,7 @@ func (s *Server) persistCookies() {
 	jar := eng.HTTP.Jar
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if data, err := h.LoadCookies(ctx, ws.Root); err != nil {
+	if data, err := h.LoadCookies(ctx, s.key); err != nil {
 		s.log.Warn("loading saved cookies failed", "err", err)
 	} else if data != nil {
 		var saved []httpdriver.Cookie
@@ -81,7 +81,7 @@ func (s *Server) persistCookies() {
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		if err := h.SaveCookies(ctx, ws.Root, data); err != nil {
+		if err := h.SaveCookies(ctx, s.key, data); err != nil {
 			s.log.Warn("saving cookies failed", "err", err)
 		}
 	}
