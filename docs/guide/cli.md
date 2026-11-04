@@ -181,7 +181,7 @@ Manage plugins ([Plugins](plugins.md)).
 | `enable <name>`, `disable <name>` | Turn a plugin on or off |
 | `remove <name>` | Uninstall |
 | `search [query]` | Search the plugin index |
-| `new <dir> --kind protocol\|auth\|processor --id <id>` | Create a plugin from a template (`--sdk` points at a local SDK copy) |
+| `new <dir> --kind protocol\|auth\|processor --id <id>` | Create a plugin from a template using the published Go SDK (`--sdk` uses a local SDK copy instead) |
 | `pack <dir>` | Package a built plugin as `.pyro-plugin` and print its sha256 |
 
 ## pyro version

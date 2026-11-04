@@ -352,6 +352,10 @@ func packCmd() *cobra.Command {
 	return cmd
 }
 
+// sdkVersion is the published Go SDK the plugin template requires (tag
+// plugins/sdk/go/<version>; bump it with each SDK release).
+const sdkVersion = "v0.1.0"
+
 func newPluginCmd() *cobra.Command {
 	var kind, id, sdk string
 	cmd := &cobra.Command{
@@ -384,7 +388,11 @@ func newPluginCmd() *cobra.Command {
 				}
 				sdk = abs
 			}
-			data := map[string]string{"ID": id, "Kind": kind, "SDK": sdk}
+			version := sdkVersion
+			if sdk != "" {
+				version = "v0.0.0" // the replace directive points at the local copy
+			}
+			data := map[string]string{"ID": id, "Kind": kind, "SDK": sdk, "SDKVersion": version}
 			files := map[string]string{"go.mod": tmplGoMod, "pyro-plugin.yaml": tmplManifest, "README.md": tmplReadme}
 			switch kind {
 			case plugin.KindProtocol:
@@ -403,17 +411,14 @@ func newPluginCmd() *cobra.Command {
 					return err
 				}
 			}
-			fmt.Printf("Created %s plugin %q in %s\nBuild:   cd %s && GOOS=wasip1 GOARCH=wasm go build -buildmode=c-shared -o %s.wasm .\nInstall: pyro plugin install %s\n",
+			fmt.Printf("Created %s plugin %q in %s\nBuild:   cd %s && go mod tidy && GOOS=wasip1 GOARCH=wasm go build -buildmode=c-shared -o %s.wasm .\nInstall: pyro plugin install %s\n",
 				kind, id, dir, dir, id, dir)
-			if sdk == "" {
-				fmt.Println("Note: the SDK module isn't published yet; pass --sdk <path to pyro/plugins/sdk/go> to use a local copy.")
-			}
 			return nil
 		},
 	}
 	cmd.Flags().StringVar(&kind, "kind", plugin.KindProtocol, "protocol, auth or processor")
 	cmd.Flags().StringVar(&id, "id", "", "the type id (plugin:<id>); default: directory name")
-	cmd.Flags().StringVar(&sdk, "sdk", "", "path to a local copy of the Go SDK (adds a replace directive)")
+	cmd.Flags().StringVar(&sdk, "sdk", "", "use a local copy of the Go SDK instead of the published "+sdkVersion+" (adds a replace directive)")
 	return cmd
 }
 
@@ -421,7 +426,7 @@ const tmplGoMod = `module example.com/pyro-plugin-{{.ID}}
 
 go 1.24
 
-require github.com/codeen15/pyro/plugins/sdk/go v0.0.0
+require github.com/codeen15/pyro/plugins/sdk/go {{.SDKVersion}}
 {{if .SDK}}
 replace github.com/codeen15/pyro/plugins/sdk/go => {{.SDK}}
 {{end}}`

@@ -2,7 +2,7 @@
 
 1. Make sure `main` is green in CI (it includes a release dry run).
 2. Move the `CHANGELOG.md` entry from "unreleased" to the version and date; commit.
-3. Tag and push:
+3. Tag and push (the plugin SDK too, if it changed; see below):
    ```sh
    git tag -a v0.1.0 -m "Pyro v0.1.0"
    git push origin v0.1.0
@@ -25,6 +25,14 @@ Targets: Linux, macOS and Windows on amd64 and arm64, all built with `CGO_ENABLE
 `-trimpath`. `THIRD_PARTY_LICENSES.txt` is generated from the Go modules compiled in and the
 npm packages bundled into the UI; the build warns about any package without a license file.
 
-The plugin SDK (`plugins/sdk/go`) is its own Go module. To make it installable with
-`go get`, tag it separately as `plugins/sdk/go/v0.1.0`; until then, `pyro plugin new` needs
-`--sdk` pointing at a checkout.
+The plugin SDK (`plugins/sdk/go`) is its own Go module, released with its own tag on the same
+commit:
+
+```sh
+git tag -a plugins/sdk/go/v0.1.0 -m "Pyro plugin SDK v0.1.0"
+git push origin plugins/sdk/go/v0.1.0
+```
+
+`pyro plugin new` writes `require github.com/codeen15/pyro/plugins/sdk/go <version>` using
+`sdkVersion` in `cmd/pyro/plugin.go`; bump it when you tag a new SDK version. Plugin authors
+then fetch it with `go mod tidy` (the repository must be public for the Go module proxy).
