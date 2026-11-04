@@ -300,10 +300,45 @@ func appendLicense(b *bytes.Buffer, title, dir string) error {
 		}
 	}
 	if !found {
+		// Some npm packages declare their license only in package.json.
+		var pkg struct {
+			License    string `json:"license"`
+			Author     any    `json:"author"`
+			Repository any    `json:"repository"`
+		}
+		if data, err := os.ReadFile(filepath.Join(dir, "package.json")); err == nil && json.Unmarshal(data, &pkg) == nil && pkg.License != "" {
+			fmt.Fprintf(b, "\n%s\n%s\nLicense: %s (declared in package.json; the package ships no license file)\n", strings.Repeat("=", 78), title, pkg.License)
+			if a := describe(pkg.Author); a != "" {
+				fmt.Fprintf(b, "Author: %s\n", a)
+			}
+			if r := describe(pkg.Repository); r != "" {
+				fmt.Fprintf(b, "Source: %s\n", r)
+			}
+			return nil
+		}
 		fmt.Fprintf(os.Stderr, "warning: no license file found for %s\n", title)
 		fmt.Fprintf(b, "\n%s\n%s\n(no license file shipped with this package; see its source)\n", strings.Repeat("=", 78), title)
 	}
 	return nil
+}
+
+// describe flattens a package.json author or repository (a string, or an
+// object with name/email or url).
+func describe(v any) string {
+	switch x := v.(type) {
+	case string:
+		return x
+	case map[string]any:
+		for _, k := range []string{"url", "name"} {
+			if s, ok := x[k].(string); ok && s != "" {
+				if e, ok := x["email"].(string); ok && k == "name" && e != "" {
+					return s + " <" + e + ">"
+				}
+				return s
+			}
+		}
+	}
+	return ""
 }
 
 func appendFile(b *bytes.Buffer, title, path string) {
