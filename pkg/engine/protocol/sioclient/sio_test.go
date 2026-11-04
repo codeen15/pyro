@@ -152,7 +152,9 @@ func TestEventsAcksAndNamespaces(t *testing.T) {
 	if m := next(t, c); m.Kind != "event" || m.Event != "echo" || m.Data != `["hi",{"n":1}]` {
 		t.Fatalf("echo = %+v", m)
 	}
-	if m := next(t, c); m.Kind != "ack" || *m.AckID != 0 || m.Data != `["got chat message"]` || m.RTT <= 0 {
+	// RTT can be 0 on Windows, whose clock may not tick between send and an
+	// in-process ack.
+	if m := next(t, c); m.Kind != "ack" || *m.AckID != 0 || m.Data != `["got chat message"]` || m.RTT < 0 {
 		t.Fatalf("ack = %+v", m)
 	}
 	if _, err := c.Send(ctx, protocol.Outgoing{Data: "x"}); err == nil {
