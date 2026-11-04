@@ -31,10 +31,11 @@ import (
 
 // teamConfig is server.yaml in the data directory; flags override it.
 type teamConfig struct {
-	PublicURL     string   `yaml:"publicURL"`
-	Signup        string   `yaml:"signup"`
-	SignupDomains []string `yaml:"signupDomains"`
-	MaxLoads      int      `yaml:"maxLoads"`
+	PublicURL     string    `yaml:"publicURL"`
+	Signup        string    `yaml:"signup"`
+	SignupDomains []string  `yaml:"signupDomains"`
+	MaxLoads      int       `yaml:"maxLoads"`
+	SMTP          team.SMTP `yaml:"smtp"`
 }
 
 type teamFlags struct {
@@ -143,7 +144,7 @@ func serveTeam(f *teamFlags, host string, port int, agents []string, agentToken 
 	}
 	ts := team.New(team.Config{
 		DataDir: dir, Store: st, PublicURL: c.PublicURL, Signup: c.Signup, SignupDomains: c.SignupDomains,
-		MaxLoads: c.MaxLoads, UI: web.Dist(),
+		MaxLoads: c.MaxLoads, UI: web.Dist(), Mailer: team.NewMailer(c.SMTP),
 		Project: func(ws *store.Workspace, id string) server.Config {
 			eng := engine.New(httpdriver.New(httpdriver.Options{FileRoot: ws.Root}))
 			eng.Plugins = plugins
@@ -172,6 +173,9 @@ func serveTeam(f *teamFlags, host string, port int, agents []string, agentToken 
 	fmt.Printf("Pyro %s team server\n  data       %s\n  open       %s/\n", version.Version, dir, addr)
 	if n == 0 {
 		fmt.Println("\nNo accounts yet: the first person to sign up becomes the administrator.")
+	}
+	if c.SMTP.Host == "" {
+		fmt.Println("\nInvite emails are off (no smtp in server.yaml); invites are links to copy.")
 	}
 	if scheme == "http" && !isLoopback(host) && !strings.HasPrefix(c.PublicURL, "https://") {
 		fmt.Println("\nWarning: serving plain HTTP on the network; passwords and session cookies travel unencrypted.\nUse --tls-cert/--tls-key, or put an HTTPS proxy in front and set --public-url.")

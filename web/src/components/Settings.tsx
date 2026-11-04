@@ -6,6 +6,8 @@ import { api, type CollectionSettings, type Variable } from "../api";
 import { AuthEditor } from "./RequestEditor";
 import { ProcessorList, TimerEditor, postList, preList, setPost, setPre } from "./Processors";
 import { MockPanel } from "./Mock";
+import { useCanEdit } from "../team";
+import { ReadOnlyBadge } from "./RequestEditor";
 
 // Settings a collection or folder passes down to its requests: variables,
 // auth, think time and pre/post processors (collection.yaml / folder.yaml).
@@ -13,6 +15,7 @@ import { MockPanel } from "./Mock";
 type Tab = "overview" | "variables" | "auth" | "pre" | "post" | "mock";
 
 export function SettingsPage({ path }: { path: string }) {
+  const canEdit = useCanEdit();
   const qc = useQueryClient();
   const isCollection = !path.includes("/");
   const key = ["settings", path];
@@ -91,9 +94,13 @@ export function SettingsPage({ path }: { path: string }) {
             </p>
           </div>
           <div className="page-actions">
-            <Button type="primary" disabled={!dirty || saving} loading={saving} icon={dirty ? <Save size={14} /> : <Check size={14} />} onClick={save}>
-              {saving ? "Saving" : dirty ? "Save" : "Saved"}
-            </Button>
+            {canEdit ? (
+              <Button type="primary" disabled={!dirty || saving} loading={saving} icon={dirty ? <Save size={14} /> : <Check size={14} />} onClick={save}>
+                {saving ? "Saving" : dirty ? "Save" : "Saved"}
+              </Button>
+            ) : (
+              <ReadOnlyBadge />
+            )}
           </div>
         </header>
         {error && <Alert type="error" showIcon title={error} />}

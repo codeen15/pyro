@@ -1,21 +1,35 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Alert, Button, Form, Input, Tabs } from "antd";
 import logo from "../assets/pyro-logo.png";
 import { team, type AuthConfig } from "../api";
 
 // Sign in / create an account on a team server.
 
-export function AuthPage({ config, onSignedIn }: { config: AuthConfig; onSignedIn: () => void }) {
-  const [tab, setTab] = useState(config.firstUser ? "signup" : "signin");
+export interface InviteContext {
+  token: string;
+  email?: string;
+  banner: ReactNode;
+}
+
+export function AuthPage({
+  config,
+  onSignedIn,
+  invite,
+}: {
+  config: AuthConfig;
+  onSignedIn: (how: "signin" | "signup") => void | Promise<void>;
+  invite?: InviteContext;
+}) {
+  const [tab, setTab] = useState(config.firstUser || invite ? "signup" : "signin");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const submit = async (fn: () => Promise<unknown>) => {
+  const submit = async (how: "signin" | "signup", fn: () => Promise<unknown>) => {
     setError(null);
     setBusy(true);
     try {
       await fn();
-      onSignedIn();
+      await onSignedIn(how);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -24,7 +38,7 @@ export function AuthPage({ config, onSignedIn }: { config: AuthConfig; onSignedI
   };
 
   const signIn = (
-    <Form layout="vertical" requiredMark={false} onFinish={(v: { email: string; password: string }) => submit(() => team.login(v))}>
+    <Form layout="vertical" requiredMark={false} initialValues={{ email: invite?.email }} onFinish={(v: { email: string; password: string }) => submit("signin", () => team.login(v))}>
       <Form.Item label="Email" name="email" rules={[{ required: true, message: "Enter your email" }]}>
         <Input type="email" autoComplete="username" autoFocus />
       </Form.Item>
@@ -42,7 +56,8 @@ export function AuthPage({ config, onSignedIn }: { config: AuthConfig; onSignedI
     <Form
       layout="vertical"
       requiredMark={false}
-      onFinish={(v: { email: string; name: string; password: string }) => submit(() => team.signup(v))}
+      initialValues={{ email: invite?.email }}
+      onFinish={(v: { email: string; name: string; password: string }) => submit("signup", () => team.signup({ ...v, invite: invite?.token }))}
     >
       {config.firstUser && (
         <Alert type="info" showIcon className="auth-alert" message="No accounts yet. The account you create becomes the server administrator." />
@@ -80,13 +95,14 @@ export function AuthPage({ config, onSignedIn }: { config: AuthConfig; onSignedI
             <p className="muted small">Team server</p>
           </div>
         </header>
+        {invite?.banner}
         {error && <Alert type="error" showIcon className="auth-alert" message={error} />}
         {items.length > 1 ? (
           <Tabs destroyOnHidden activeKey={tab} onChange={(k) => { setTab(k); setError(null); }} items={items} />
         ) : (
           items[0]?.children
         )}
-        {!config.signup && <p className="muted small auth-hint">New here? Ask a workspace owner to invite you.</p>}
+        {!config.signup && !invite && <p className="muted small auth-hint">New here? Ask a workspace owner to invite you.</p>}
       </section>
     </main>
   );

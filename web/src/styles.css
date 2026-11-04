@@ -4451,3 +4451,62 @@ input[type="checkbox"] {
     padding: 20px 16px;
   }
 }
+
+/* Workspace members, invites and activity */
+.modal-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+.modal-field > span:first-child {
+  font-weight: 500;
+}
+.invite-result > .ant-alert {
+  margin-bottom: 16px;
+}
+.invite-summary {
+  margin: 0 0 16px;
+}
+.member-name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 4px;
+  min-width: 0;
+}
+.member-email {
+  flex-basis: 100%;
+  overflow-wrap: anywhere;
+}
+.activity-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.activity-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 16px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--rule);
+}
+.activity-list li > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.activity-list time {
+  flex: none;
+}
+.transfer-warning {
+  margin-top: 16px;
+}
+.conflict-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}

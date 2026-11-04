@@ -58,6 +58,7 @@ var routeRoles = map[string]Role{
 	"PUT /api/v1/collections/{slug}":         RoleEditor,
 	"DELETE /api/v1/collections/{slug}":      RoleEditor,
 	"GET /api/v1/collections/{slug}/export":  RoleViewer,
+	"GET /api/v1/collections/{slug}/usage":   RoleViewer,
 	"GET /api/v1/collections/{slug}/docs":    RoleViewer,
 	"GET /api/v1/mocks":                      RoleViewer,
 	"POST /api/v1/mocks":                     RoleEditor,
@@ -137,6 +138,10 @@ func (s *Server) enforce(mux *chi.Mux) http.Handler {
 				writeError(w, http.StatusForbidden, forbidden(need))
 				return
 			}
+		}
+		if pattern := mux.Find(chi.NewRouteContext(), r.Method, r.URL.Path); pattern != "" {
+			s.serveTracked(mux, w, r, pattern)
+			return
 		}
 		mux.ServeHTTP(w, r)
 	})

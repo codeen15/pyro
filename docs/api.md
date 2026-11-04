@@ -45,6 +45,26 @@ The team server puts accounts and workspaces in front of the same project API. S
 | POST | `/api/v1/workspaces/{id}/projects` | Body `{name}`: new project (editor) |
 | GET | `/api/v1/projects/{id}` | `{id, name, workspace, workspaceName, workspaceKind, role}` |
 | PATCH / DELETE | `/api/v1/projects/{id}` | Rename (`{name}`) or delete a project and its files (owner) |
+| POST | `/api/v1/projects/{id}/move` | Body `{workspace}`: move the project (owner of both workspaces) |
+| POST | `/api/v1/projects/{id}/transfer` | Body `{collection, project, mode: copy\|move, environments?}`: copy or move a collection to `project` (editor there; a move also needs editor here). Returns `{slug, project}`; a clash gets `-2`, `-3`… |
+| GET | `/api/v1/projects/{id}/archive` | The project folder as a zip |
+| POST | `/api/v1/workspaces/{id}/projects/import?name=` | Body: a zipped workspace folder (≤ 200 MB). Creates a project (editor) |
+| GET | `/api/v1/workspaces/{id}/members` | `[{userId, email, name, role, added}]` |
+| PATCH / DELETE | `/api/v1/workspaces/{id}/members/{userId}` | Change a role (`{role}`, owner) or remove a member (owner, or yourself to leave). The last owner can't be demoted or removed (`400`) |
+| GET / POST | `/api/v1/workspaces/{id}/invites` | Open invites, or create one (owner): body `{role, email?, days?, maxUses?}` → `{invite, url, emailed, emailError?}`. An email invite is single-use and only for that address. Personal workspaces can't invite (`400`) |
+| DELETE | `/api/v1/workspaces/{id}/invites/{inviteId}` | Revoke |
+| GET | `/api/v1/workspaces/{id}/activity` | `[{at, user, project?, action, target?}]`, newest first |
+| GET | `/api/v1/invites/{token}` | No sign-in needed: `{workspace, workspaceId, role, email?, invitedBy, expires}`; `410` once expired, used up or revoked |
+| POST | `/api/v1/invites/{token}/accept` | Join the workspace (keeps a higher existing role) |
+
+`POST /api/v1/auth/signup` also takes `invite`, a token. It allows sign-up whatever the
+policy (for an email invite, only with that address) and joins the workspace.
+
+### Versions and change events (local and team)
+- `GET` on a request, collection, folder, environment, load test or globals returns an `ETag`.
+- `PUT` with `If-Match: <etag>` answers `409 {"error": "<name> changed this since you opened it", "conflict": true, "by"}` when the stored version has moved on. A successful `PUT` returns the new `ETag`. Without `If-Match` the save always goes through.
+- Successful writes are published on the event topic `tree` as `{"type":"changed","data":{"by","name","action","target"}}`. The UI refreshes its lists, and on a team server they go to the workspace activity log.
+- `GET /api/v1/collections/{slug}/usage` returns `{loadTests: [...]}`: the load tests whose steps use the collection.
 
 ## Conventions
 - JSON in and out. Unknown request fields are rejected (`400`). Request bodies are limited to 10 MB.

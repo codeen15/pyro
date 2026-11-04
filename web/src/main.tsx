@@ -11,6 +11,7 @@ import { handleSignedOut, setProject, team, type AuthConfig, type Me } from "./a
 import { setStorageScope } from "./store";
 import { lastProject, projectFromURL, useTeam } from "./team";
 import { AuthPage } from "./components/AuthPage";
+import { InvitePage } from "./components/InvitePage";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } },
@@ -76,10 +77,13 @@ function TeamRoot({ config }: { config: AuthConfig }) {
 }
 
 function render(config: AuthConfig | null) {
+  const invite = config && /^\/invite\/([^/]+)/.exec(window.location.pathname);
   createRoot(document.getElementById("root")!).render(
     <StrictMode>
       <QueryClientProvider client={queryClient}>
-        <ThemeRoot>{config ? <TeamRoot config={config} /> : <App />}</ThemeRoot>
+        <ThemeRoot>
+          {invite ? <InvitePage token={decodeURIComponent(invite[1])} config={config!} /> : config ? <TeamRoot config={config} /> : <App />}
+        </ThemeRoot>
       </QueryClientProvider>
     </StrictMode>,
   );

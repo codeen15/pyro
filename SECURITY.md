@@ -31,12 +31,17 @@ generate a lot of traffic. Its defences, by boundary:
   as wrong passwords.
 - Every project route has a minimum role (viewer, editor, owner, or server admin for plugins),
   checked on every call. A test fails if a route has no entry. Non-members get 404.
+- Invite tokens are random 32-byte values. Only their SHA-256 hash is stored, and they expire
+  (at most 30 days). Email invites work once and only for that address. Owners can revoke
+  them. Anyone holding a link invite can join until it expires, so share it like a password.
 - Sign-up is invite-only by default. The first account becomes the administrator, so create
   it before exposing the server.
 - Members make the **server** send requests and run collection scripts. Anyone with access to
   a project can reach whatever the server's network can reach (SSRF by design), including
   internal services and cloud metadata addresses. Run it in a network segment that matches
   what your team is allowed to test.
+- Uploaded project archives are size-limited (200 MB expanded). Their paths are checked so
+  no file lands outside the new project folder, and symlinks are skipped.
 - Request bodies never read files outside their project. Mock servers are disabled. Load
   tests are capped server-wide (`--max-loads`).
 - Serve it over HTTPS (`--tls-cert`/`--tls-key` or a reverse proxy with `--public-url

@@ -56,8 +56,10 @@ type Config struct {
 	MaxLoads int
 	// IdleClose closes a project's server after this long unused (0 = 30m).
 	IdleClose time.Duration
-	UI        fs.FS
-	Logger    *slog.Logger
+	// Mailer sends invite emails (nil: invites are links to copy).
+	Mailer Mailer
+	UI     fs.FS
+	Logger *slog.Logger
 }
 
 // Server is the team server's HTTP front: sign-in, workspaces, projects, and
@@ -173,6 +175,14 @@ func (s *Server) project(p *ProjectInfo) (*openProject, error) {
 	if s.cfg.PublicURL != "" {
 		cfg.CallbackURL = s.cfg.PublicURL + "/oauth2/p/" + p.ID + "/callback"
 	}
+	projectID := p.ID
+	cfg.OnChange = func(who server.Principal, c server.Change) {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := s.st.RecordProject(ctx, who.ID, projectID, c.Action, c.Target); err != nil {
+			s.log.Warn("recording activity failed", "err", err)
+		}
+	}
 	srv := server.New(cfg)
 	op := &openProject{srv: srv, handler: srv.Handler(), used: time.Now()}
 	s.projects[p.ID] = op
@@ -200,6 +210,7 @@ func (s *Server) Handler() http.Handler {
 	r.Post("/api/v1/auth/signup", s.signup)
 	r.Post("/api/v1/auth/login", s.login)
 	r.Post("/api/v1/auth/logout", s.logout)
+	r.Get("/api/v1/invites/{token}", s.previewInvite)
 
 	r.Group(func(r chi.Router) {
 		r.Use(s.requireUser)
@@ -211,6 +222,18 @@ func (s *Server) Handler() http.Handler {
 		r.Patch("/api/v1/workspaces/{ws}", s.renameWorkspace)
 		r.Delete("/api/v1/workspaces/{ws}", s.deleteWorkspace)
 		r.Post("/api/v1/workspaces/{ws}/projects", s.createProject)
+		r.Post("/api/v1/workspaces/{ws}/projects/import", s.importProject)
+		r.Get("/api/v1/workspaces/{ws}/members", s.listMembers)
+		r.Patch("/api/v1/workspaces/{ws}/members/{user}", s.setMemberRole)
+		r.Delete("/api/v1/workspaces/{ws}/members/{user}", s.removeMember)
+		r.Get("/api/v1/workspaces/{ws}/invites", s.listInvites)
+		r.Post("/api/v1/workspaces/{ws}/invites", s.createInvite)
+		r.Delete("/api/v1/workspaces/{ws}/invites/{id}", s.revokeInvite)
+		r.Get("/api/v1/workspaces/{ws}/activity", s.activity)
+		r.Post("/api/v1/invites/{token}/accept", s.acceptInvite)
+		r.Post("/api/v1/projects/{pid}/move", s.moveProject)
+		r.Post("/api/v1/projects/{pid}/transfer", s.transfer)
+		r.Get("/api/v1/projects/{pid}/archive", s.archive)
 		r.Get("/api/v1/projects/{pid}", s.getProject)
 		r.Patch("/api/v1/projects/{pid}", s.renameProject)
 		r.Delete("/api/v1/projects/{pid}", s.deleteProject)
@@ -345,6 +368,7 @@ func (s *Server) authConfig(w http.ResponseWriter, r *http.Request) {
 		"signup":        n == 0 || s.cfg.Signup != SignupInviteOnly,
 		"signupPolicy":  s.cfg.Signup,
 		"signupDomains": s.cfg.SignupDomains,
+		"email":         s.cfg.Mailer != nil,
 		"version":       version.Version,
 	})
 }
@@ -354,6 +378,9 @@ func (s *Server) signup(w http.ResponseWriter, r *http.Request) {
 		Email    string `json:"email"`
 		Name     string `json:"name"`
 		Password string `json:"password"`
+		// Invite is an invite token: it allows sign-up whatever the policy,
+		// and the new account joins its workspace.
+		Invite string `json:"invite,omitempty"`
 	}
 	if !decode(w, r, &body) {
 		return
@@ -362,6 +389,18 @@ func (s *Server) signup(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		s.fail(w, err)
 		return
+	}
+	if !ok && body.Invite != "" {
+		inv, err := s.st.InviteByToken(r.Context(), body.Invite)
+		if err != nil {
+			s.inviteFail(w, err)
+			return
+		}
+		if inv.Email != "" && !strings.EqualFold(inv.Email, strings.TrimSpace(body.Email)) {
+			writeError(w, http.StatusForbidden, "this invite is for "+inv.Email)
+			return
+		}
+		ok = true
 	}
 	if !ok {
 		msg := "sign-up is by invitation: ask a workspace owner for an invite link"
@@ -375,6 +414,13 @@ func (s *Server) signup(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		s.fail(w, err)
 		return
+	}
+	if body.Invite != "" {
+		if p, err := s.st.AcceptInvite(r.Context(), body.Invite, u); err != nil {
+			s.log.Warn("accepting invite at sign-up failed", "err", err)
+		} else if err := s.st.Record(r.Context(), u.ID, p.WorkspaceID, "", "joined as "+p.Role, ""); err != nil {
+			s.log.Warn("recording activity failed", "err", err)
+		}
 	}
 	if err := s.setSession(w, r, u); err != nil {
 		s.fail(w, err)
@@ -537,6 +583,7 @@ func (s *Server) renameWorkspace(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
+	s.record(r, id, "", "renamed the workspace", strings.TrimSpace(body.Name))
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -573,6 +620,7 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
+	s.record(r, wsID, p.ID, "created project", p.Name)
 	writeJSON(w, http.StatusCreated, p)
 }
 
@@ -618,6 +666,7 @@ func (s *Server) renameProject(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
+	s.record(r, p.Workspace, p.ID, "renamed project from "+p.Name, strings.TrimSpace(body.Name))
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -635,6 +684,7 @@ func (s *Server) deleteProject(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
+	s.record(r, p.Workspace, "", "deleted project", p.Name)
 	if err := os.RemoveAll(s.projectDir(p.ID)); err != nil {
 		s.log.Warn("removing project folder failed", "project", p.ID, "err", err)
 	}
@@ -658,7 +708,9 @@ func (s *Server) proxy(w http.ResponseWriter, r *http.Request) {
 	if !strings.HasPrefix(r.URL.Path, "/oauth2/") {
 		path = "/api/v1/" + chi.URLParam(r, "*")
 	}
-	r2 := r.WithContext(server.WithPrincipal(r.Context(), server.Principal{ID: u.ID, Name: u.Name, Role: role, Admin: u.Admin}))
+	// The project routes the request itself, so drop this router's context.
+	ctx := context.WithValue(r.Context(), chi.RouteCtxKey, nil)
+	r2 := r.WithContext(server.WithPrincipal(ctx, server.Principal{ID: u.ID, Name: u.Name, Role: role, Admin: u.Admin}))
 	u2 := *r.URL
 	u2.Path, u2.RawPath = path, ""
 	if raw := r.URL.RawPath; raw != "" && !strings.HasPrefix(r.URL.Path, "/oauth2/") {

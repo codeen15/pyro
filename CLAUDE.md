@@ -2,7 +2,7 @@
 
 Pyro is an API client (REST, WebSocket, Socket.IO, Postman import) and load-testing
 tool (stress, spike, soak, concurrency) with WASM plugins. A single Go binary runs the
-engine and serves a React web UI on localhost. **Current phase: 13 (team server core) done; next: 14 (workspaces and sharing), 15 (LDAP/OIDC), 16 (test reports)**
+engine and serves a React web UI on localhost. **Current phase: 14 (workspaces and sharing) done; next: 15 (LDAP/OIDC), 16 (test reports)**
 (see `docs/roadmap.md`). Product context: `PRODUCT.md`; visual system: `DESIGN.md`.
 
 ## Layout
@@ -16,8 +16,9 @@ engine and serves a React web UI on localhost. **Current phase: 13 (team server 
 - `internal/store`: workspace persistence (YAML files, path safety, atomic writes, `Import`)
 - `internal/history`: request history and saved load runs in SQLite (`~/.pyro/pyro.db`)
 - `internal/server`: the project REST API `/api/v1` (chi), token auth, embedded SPA. In team mode one `Server` per project,
-  acting for a `Principal`. `roles.go` gives every route a minimum role (`TestEveryRouteHasARole` enforces it).
-- `internal/team`: the team server: accounts, argon2id passwords, cookie sessions, CSRF, workspaces, members and projects
+  acting for a `Principal`. `roles.go` gives every route a minimum role (`TestEveryRouteHasARole` enforces it);
+  `changes.go` adds ETags/If-Match conflicts, `tree` change events and the `OnChange` activity hook.
+- `internal/team`: the team server: accounts, argon2id passwords, cookie sessions, CSRF, workspaces, members, invites, activity and projects
   (SQLite, `<data>/pyro.db`). It proxies `/api/v1/projects/{id}/*` to that project's `internal/server.Server`, and
   project folders live in `<data>/projects/<id>/`.
 - `internal/version`: build metadata (set via ldflags)

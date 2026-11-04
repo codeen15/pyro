@@ -1,13 +1,15 @@
 import { useMemo, useState } from "react";
 import { Alert, App, Button, Dropdown, Empty, Input, Modal, Skeleton, Tabs, Tooltip, type MenuProps } from "antd";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Activity, BookOpen, ChevronRight, Download, Folder, FolderOpen, FolderPlus, Gauge, Layers, MoreVertical, Play, Plus, RefreshCw, Search, Settings2, Trash2, TriangleAlert } from "../icons";
+import { Activity, ArrowLeftRight, BookOpen, ChevronRight, Download, Folder, FolderOpen, FolderPlus, Gauge, Layers, MoreVertical, Play, Plus, RefreshCw, Search, Settings2, Trash2, TriangleAlert } from "../icons";
 import { PluginsRail, usePluginTypes } from "./Plugins";
 import { LoadTestMenu } from "./LoadActions";
 import { api, saveFile, type Kind, type PyroRequest, type TreeNode, type WorkspaceInfo } from "../api";
 import { formatMs, heatOf } from "../heat";
 import { useApp } from "../store";
 import { slugify } from "../loadProfiles";
+import { useCanEdit, useTeam } from "../team";
+import { TransferModal } from "./Team";
 
 export function Sidebar({ ws }: { ws: WorkspaceInfo | undefined }) {
   const tab = useApp((s) => s.sidebarTab);
@@ -60,6 +62,8 @@ function Collections({ ws }: { ws: WorkspaceInfo | undefined }) {
   const [newName, setNewName] = useState("");
   const [newIn, setNewIn] = useState<TreeNode | null>(null);
   const [folderIn, setFolderIn] = useState<TreeNode | null>(null);
+  const [transferOf, setTransferOf] = useState<TreeNode | null>(null);
+  const canEdit = useCanEdit();
 
   const createCollection = async (name: string) => {
     const taken = new Set(ws?.collections.map((c) => c.path));
@@ -113,10 +117,16 @@ function Collections({ ws }: { ws: WorkspaceInfo | undefined }) {
     return (
       <div className="rail-empty">
         <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No collections yet">
-          <p className="muted">Import one (Postman, OpenAPI, HAR, cURL or JMeter) from the top bar, or start an empty one.</p>
-          <Button icon={<Plus size={13} />} onClick={newCollection}>
-            New collection
-          </Button>
+          {canEdit ? (
+            <>
+              <p className="muted">Import one (Postman, OpenAPI, HAR, cURL or JMeter) from the top bar, or start an empty one.</p>
+              <Button icon={<Plus size={13} />} onClick={newCollection}>
+                New collection
+              </Button>
+            </>
+          ) : (
+            <p className="muted">An editor of this workspace can add some.</p>
+          )}
         </Empty>
         {nameModal}
       </div>
@@ -134,9 +144,11 @@ function Collections({ ws }: { ws: WorkspaceInfo | undefined }) {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
-        <Tooltip title="New collection">
-          <Button icon={<Plus size={14} />} onClick={newCollection} aria-label="New collection" />
-        </Tooltip>
+        {canEdit && (
+          <Tooltip title="New collection">
+            <Button icon={<Plus size={14} />} onClick={newCollection} aria-label="New collection" />
+          </Tooltip>
+        )}
         <Tooltip title="Reload from disk">
           <Button icon={<RefreshCw size={13} />} onClick={() => qc.invalidateQueries({ queryKey: ["workspace"] })} aria-label="Reload from disk" />
         </Tooltip>
@@ -149,12 +161,13 @@ function Collections({ ws }: { ws: WorkspaceInfo | undefined }) {
       ) : (
         <ul className="tree" role="tree" aria-label="Collections">
           {nodes.map((n) => (
-            <TreeItem key={n.path} node={n} depth={0} selected={selected} onSelect={select} onCreate={setNewIn} onNewFolder={setFolderIn} forceOpen={!!q} />
+            <TreeItem key={n.path} node={n} depth={0} selected={selected} onSelect={select} onCreate={setNewIn} onNewFolder={setFolderIn} onTransfer={setTransferOf} forceOpen={!!q} />
           ))}
         </ul>
       )}
       <NewRequestModal parent={newIn} onClose={() => setNewIn(null)} />
       <NewFolderModal parent={folderIn} onClose={() => setFolderIn(null)} />
+      <TransferModal collection={transferOf} onClose={() => setTransferOf(null)} />
       {nameModal}
     </div>
   );
@@ -254,6 +267,7 @@ function TreeItem({
   onSelect,
   onCreate,
   onNewFolder,
+  onTransfer,
   forceOpen,
 }: {
   node: TreeNode;
@@ -262,8 +276,10 @@ function TreeItem({
   onSelect: (p: string) => void;
   onCreate: (parent: TreeNode) => void;
   onNewFolder: (parent: TreeNode) => void;
+  onTransfer: (collection: TreeNode) => void;
   forceOpen?: boolean;
 }) {
+  const canEdit = useCanEdit();
   const containsSelected = !!selected && selected.startsWith(node.path + "/");
   const [open, setOpen] = useState(depth === 0 || containsSelected);
   const indent = { paddingLeft: 8 + depth * 18 };
@@ -278,7 +294,7 @@ function TreeItem({
             <span className="row-label">{node.name}</span>
           </button>
           <span className="row-actions">
-            <NodeMenu node={node} onNewFolder={onNewFolder} />
+            <NodeMenu node={node} onNewFolder={onNewFolder} onTransfer={onTransfer} />
           </span>
         </div>
       </li>
@@ -298,19 +314,21 @@ function TreeItem({
           <Tooltip title="Run all requests">
             <Button type="text" icon={<Play size={12} />} onClick={() => onSelect(`run:${node.path}`)} aria-label={`Run ${node.name}`} />
           </Tooltip>
-          <Tooltip title="New request">
-            <Button type="text" icon={<Plus size={12} />} onClick={() => onCreate(node)} aria-label={`New request in ${node.name}`} />
-          </Tooltip>
+          {canEdit && (
+            <Tooltip title="New request">
+              <Button type="text" icon={<Plus size={12} />} onClick={() => onCreate(node)} aria-label={`New request in ${node.name}`} />
+            </Tooltip>
+          )}
           <Tooltip title="Variables, auth and scripts">
             <Button type="text" icon={<Settings2 size={12} />} onClick={() => onSelect(`settings:${node.path}`)} aria-label={`Settings for ${node.name}`} />
           </Tooltip>
-          <NodeMenu node={node} onNewFolder={onNewFolder} />
+          <NodeMenu node={node} onNewFolder={onNewFolder} onTransfer={onTransfer} />
         </span>
       </div>
       {expanded && node.children && node.children.length > 0 && (
         <ul role="group">
           {node.children.map((c) => (
-            <TreeItem key={c.path} node={c} depth={depth + 1} selected={selected} onSelect={onSelect} onCreate={onCreate} onNewFolder={onNewFolder} forceOpen={forceOpen} />
+            <TreeItem key={c.path} node={c} depth={depth + 1} selected={selected} onSelect={onSelect} onCreate={onCreate} onNewFolder={onNewFolder} onTransfer={onTransfer} forceOpen={forceOpen} />
           ))}
         </ul>
       )}
@@ -513,8 +531,10 @@ export function useDeleteNode() {
 }
 
 /** Row menu: new folder, docs and export (collections), delete. */
-function NodeMenu({ node, onNewFolder }: { node: TreeNode; onNewFolder: (n: TreeNode) => void }) {
+function NodeMenu({ node, onNewFolder, onTransfer }: { node: TreeNode; onNewFolder: (n: TreeNode) => void; onTransfer: (n: TreeNode) => void }) {
   const setReport = useApp((s) => s.setReport);
+  const canEdit = useCanEdit();
+  const teamMode = useTeam((s) => s.me !== null);
   const { message } = App.useApp();
   const del = useDeleteNode();
   const openDocs = async () => {
@@ -537,15 +557,20 @@ function NodeMenu({ node, onNewFolder }: { node: TreeNode; onNewFolder: (n: Tree
     }
   };
   const items: NonNullable<MenuProps["items"]> = [];
-  if (node.type !== "request") items.push({ key: "folder", icon: <FolderPlus size={14} />, label: `New folder in ${node.name}`, onClick: () => onNewFolder(node) });
+  if (node.type !== "request" && canEdit) items.push({ key: "folder", icon: <FolderPlus size={14} />, label: `New folder in ${node.name}`, onClick: () => onNewFolder(node) });
   if (node.type === "collection") {
     items.push(
       { key: "docs", icon: <BookOpen size={14} />, label: `API docs for ${node.name}`, onClick: openDocs },
       { key: "export", icon: <Download size={14} />, label: `Export ${node.name} to Postman`, onClick: exportPostman },
     );
+    if (teamMode)
+      items.push({ key: "transfer", icon: <ArrowLeftRight size={14} />, label: canEdit ? "Move or copy to…" : "Copy to…", onClick: () => onTransfer(node) });
   }
-  if (items.length) items.push({ type: "divider" });
-  items.push({ key: "delete", icon: <Trash2 size={14} />, danger: true, label: `Delete ${node.name}`, onClick: () => del(node) });
+  if (canEdit) {
+    if (items.length) items.push({ type: "divider" });
+    items.push({ key: "delete", icon: <Trash2 size={14} />, danger: true, label: `Delete ${node.name}`, onClick: () => del(node) });
+  }
+  if (!items.length) return null;
   return (
     <Dropdown trigger={["click"]} menu={{ items }}>
       <Button type="text" icon={<MoreVertical size={14} />} aria-label={`More actions for ${node.name}`} />

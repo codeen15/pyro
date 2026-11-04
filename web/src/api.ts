@@ -686,26 +686,47 @@ export function handleSignedOut(fn: () => void) {
   onSignedOut = fn;
 }
 
-async function call<T>(method: string, path: string, body?: unknown, raw = false, root = base): Promise<T> {
+// Versions (ETags) of what was last read, by URL. A save sends the version it
+// started from; the server refuses it (409) if someone saved since.
+const versions = new Map<string, string>();
+
+export type ConflictChoice = "overwrite" | "reload" | "cancel";
+let onConflict: ((message: string, url: string) => Promise<ConflictChoice>) | null = null;
+/** Asks the user what to do when a save would overwrite someone else's change. */
+export function handleConflicts(fn: typeof onConflict) {
+  onConflict = fn;
+}
+
+async function call<T>(method: string, path: string, body?: unknown, raw = false, root = base, force = false): Promise<T> {
   const h = headers();
+  const url = `${root}${path}`;
   if (body !== undefined) h["Content-Type"] = body instanceof Blob ? "application/zip" : "application/json";
-  const res = await fetch(`${root}${path}`, {
+  if (method === "PUT" && !force && versions.has(url)) h["If-Match"] = versions.get(url)!;
+  const res = await fetch(url, {
     method,
     headers: h,
     body: body === undefined ? undefined : raw || body instanceof Blob ? (body as BodyInit) : JSON.stringify(body),
   });
   if (!res.ok) {
     let msg = res.statusText;
-    let body: Record<string, unknown> | undefined;
+    let detail: Record<string, unknown> | undefined;
     try {
-      body = await res.json();
-      msg = (body?.error as string) ?? msg;
+      detail = await res.json();
+      msg = (detail?.error as string) ?? msg;
     } catch {
       /* non-JSON error body */
     }
     if (res.status === 401 && onSignedOut) onSignedOut();
-    throw new ApiError(res.status, msg, body);
+    if (res.status === 409 && detail?.conflict && onConflict) {
+      const choice = await onConflict(msg, url);
+      if (choice === "overwrite") return call<T>(method, path, body, raw, root, true);
+      if (choice === "reload") versions.delete(url);
+    }
+    throw new ApiError(res.status, msg, detail);
   }
+  const tag = res.headers.get("ETag");
+  if (tag && (method === "GET" || method === "PUT")) versions.set(url, tag);
+  else if (method === "DELETE") versions.delete(url);
   return res.status === 204 ? (undefined as T) : res.json();
 }
 
@@ -789,6 +810,7 @@ export const api = {
   stopLoadRun: (id: string, abort = false) => call<void>("POST", `/loadruns/${id}/stop${abort ? "?abort=1" : ""}`),
   deleteLoadRun: (id: string) => call<void>("DELETE", `/loadruns/${id}`),
   /** Fetches a collection's generated HTML API reference. */
+  collectionUsage: (slug: string) => call<{ loadTests: string[] }>("GET", `/collections/${encodeURIComponent(slug)}/usage`),
   collectionDocs: async (slug: string) => {
     const res = await fetch(`${base}/collections/${encodeURIComponent(slug)}/docs`, { headers: headers() });
     if (!res.ok) throw new ApiError(res.status, (await res.json().catch(() => ({}))).error ?? res.statusText);
@@ -843,8 +865,46 @@ export interface ProjectInfo extends TeamProject {
   role: MemberRole;
 }
 
+export interface Member {
+  userId: string;
+  email: string;
+  name: string;
+  role: MemberRole;
+  added: string;
+}
+
+export interface Invite {
+  id: string;
+  email?: string;
+  role: MemberRole;
+  createdBy: string;
+  created: string;
+  expires: string;
+  maxUses: number;
+  uses: number;
+}
+
+export interface InvitePreview {
+  workspace: string;
+  workspaceId: string;
+  role: MemberRole;
+  email?: string;
+  invitedBy: string;
+  expires: string;
+}
+
+export interface Activity {
+  at: string;
+  user: string;
+  project?: string;
+  action: string;
+  target?: string;
+}
+
 export interface AuthConfig {
   mode: "team";
+  /** Invite emails can be sent (SMTP is configured). */
+  email?: boolean;
   /** The browser already has a valid session. */
   signedIn: boolean;
   firstUser: boolean;
@@ -867,7 +927,7 @@ export const team = {
       return null;
     }
   },
-  signup: (b: { email: string; name: string; password: string }) => teamCall<Me>("POST", "/auth/signup", b),
+  signup: (b: { email: string; name: string; password: string; invite?: string }) => teamCall<Me>("POST", "/auth/signup", b),
   login: (b: { email: string; password: string }) => teamCall<Me>("POST", "/auth/login", b),
   logout: () => teamCall<void>("POST", "/auth/logout"),
   me: () => teamCall<Me>("GET", "/me"),
@@ -881,6 +941,32 @@ export const team = {
   project: (id: string) => teamCall<ProjectInfo>("GET", `/projects/${id}`),
   renameProject: (id: string, name: string) => teamCall<void>("PATCH", `/projects/${id}`, { name }),
   deleteProject: (id: string) => teamCall<void>("DELETE", `/projects/${id}`),
+  moveProject: (id: string, workspace: string) => teamCall<void>("POST", `/projects/${id}/move`, { workspace }),
+  transfer: (project: string, b: { collection: string; project: string; mode: "copy" | "move"; environments?: boolean }) =>
+    teamCall<{ slug: string; project: string }>("POST", `/projects/${project}/transfer`, b),
+  /** Downloads a project as a zip. */
+  archive: async (id: string) => {
+    const res = await fetch(`/api/v1/projects/${id}/archive`, { headers: headers() });
+    if (!res.ok) throw new ApiError(res.status, (await res.json().catch(() => ({}))).error ?? res.statusText);
+    return res.blob();
+  },
+  importProject: (ws: string, name: string, zip: Blob) =>
+    call<TeamProject>("POST", `/workspaces/${ws}/projects/import?name=${encodeURIComponent(name)}`, zip, true, "/api/v1"),
+  members: (ws: string) => teamCall<Member[]>("GET", `/workspaces/${ws}/members`),
+  setRole: (ws: string, user: string, role: MemberRole) => teamCall<void>("PATCH", `/workspaces/${ws}/members/${user}`, { role }),
+  removeMember: (ws: string, user: string) => teamCall<void>("DELETE", `/workspaces/${ws}/members/${user}`),
+  invites: (ws: string) => teamCall<Invite[]>("GET", `/workspaces/${ws}/invites`),
+  createInvite: (ws: string, b: { role: MemberRole; email?: string; days?: number }) =>
+    teamCall<{ invite: Invite; url: string; emailed: boolean; emailError?: string }>("POST", `/workspaces/${ws}/invites`, b),
+  revokeInvite: (ws: string, id: string) => teamCall<void>("DELETE", `/workspaces/${ws}/invites/${id}`),
+  activity: (ws: string) => teamCall<Activity[]>("GET", `/workspaces/${ws}/activity`),
+  previewInvite: async (token: string): Promise<InvitePreview> => {
+    const res = await fetch(`/api/v1/invites/${encodeURIComponent(token)}`);
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new ApiError(res.status, body.error ?? res.statusText);
+    return body;
+  },
+  acceptInvite: (token: string) => teamCall<InvitePreview>("POST", `/invites/${encodeURIComponent(token)}/accept`),
 };
 
 /** Decodes a base64 response body into bytes. */

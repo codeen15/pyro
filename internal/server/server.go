@@ -69,6 +69,9 @@ type Config struct {
 	// CallbackURL overrides the OAuth 2.0 redirect URI (the team server's
 	// public address for this project's /oauth2/callback).
 	CallbackURL string
+	// OnChange is told about every successful write (the team server's
+	// activity log).
+	OnChange func(Principal, Change)
 }
 
 type Server struct {
@@ -84,6 +87,7 @@ type Server struct {
 
 	sessionMu      sync.Mutex
 	sessionsByUser map[string]*sessionVars
+	versions       versions
 
 	cookieMu    sync.Mutex
 	cookieTimer *time.Timer
@@ -99,11 +103,11 @@ func New(cfg Config) *Server {
 	}
 	s := &Server{
 		cfg: cfg, ws: cfg.Workspace, log: cfg.Logger, key: cfg.Key, hub: newHub(),
-		sessionsByUser: map[string]*sessionVars{},
-		sessions:       &sessionRegistry{byID: map[string]*liveSession{}},
-		runs:           &runRegistry{byID: map[string]*liveRun{}},
-		loads:          &loadRegistry{byID: map[string]*liveLoad{}},
-		mocks:          &mockRegistry{bySlg: map[string]*runningMock{}},
+		sessionsByUser: map[string]*sessionVars{}, versions: versions{writer: map[string]string{}},
+		sessions: &sessionRegistry{byID: map[string]*liveSession{}},
+		runs:     &runRegistry{byID: map[string]*liveRun{}},
+		loads:    &loadRegistry{byID: map[string]*liveLoad{}},
+		mocks:    &mockRegistry{bySlg: map[string]*runningMock{}},
 	}
 	s.persistCookies()
 	return s
@@ -161,6 +165,7 @@ func (s *Server) routes(r chi.Router) {
 		r.Delete("/collections/{slug}", s.deleteCollection)
 		r.Get("/collections/{slug}/export", s.exportCollection)
 		r.Get("/collections/{slug}/docs", s.collectionDocs)
+		r.Get("/collections/{slug}/usage", s.collectionUsage)
 		r.Get("/mocks", s.listMocks)
 		r.Post("/mocks", s.startMock)
 		r.Get("/mocks/{slug}", s.getMock)
@@ -313,6 +318,22 @@ func (s *Server) createCollection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusCreated, body)
+}
+
+// collectionUsage lists the load tests that use a collection's requests
+// (they break if it moves to another project).
+func (s *Server) collectionUsage(w http.ResponseWriter, r *http.Request) {
+	slug := chi.URLParam(r, "slug")
+	if _, err := s.ws.ReadCollection(slug); err != nil {
+		s.fail(w, err)
+		return
+	}
+	tests, err := s.ws.LoadTestsUsing(slug)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"loadTests": tests})
 }
 
 func (s *Server) getCollection(w http.ResponseWriter, r *http.Request) {
@@ -554,3 +575,7 @@ func (s *Server) Busy() bool {
 	}
 	return false
 }
+
+// Workspace is the project's folder (the team server copies collections
+// between projects with it).
+func (s *Server) Workspace() *store.Workspace { return s.ws }
