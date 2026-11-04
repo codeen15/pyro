@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/coder/websocket"
+
 	"github.com/codeen15/pyro/pkg/engine"
 	"github.com/codeen15/pyro/pkg/engine/model"
 	"github.com/codeen15/pyro/pkg/engine/protocol/httpdriver"
@@ -41,7 +43,6 @@ func items(base string) []Item {
 		{Path: "c/me", Chain: chain, Request: &model.Request{Kind: model.KindHTTP, Name: "Me", URL: "{{base}}/me",
 			Headers:    []model.KeyValue{{Key: "Authorization", Value: "{{token}}"}},
 			Assertions: []model.Assertion{{Type: "status", Value: "200"}}}},
-		{Path: "c/feed", Chain: chain, Request: &model.Request{Kind: model.KindWebSocket, Name: "Feed", URL: "ws://x"}},
 	}
 }
 
@@ -57,11 +58,48 @@ func TestRunWithDataAndCarriedVariables(t *testing.T) {
 	if !reflect.DeepEqual(*log, want) {
 		t.Fatalf("server saw %v", *log)
 	}
-	if sum.Iterations != 2 || sum.Requests != 4 || sum.Failed != 0 || sum.TestsPassed != 2 || !sum.OK() || progress != 6 {
+	if sum.Iterations != 2 || sum.Requests != 4 || sum.Failed != 0 || sum.TestsPassed != 2 || !sum.OK() || progress != 4 {
 		t.Fatalf("summary = %+v progress=%d", sum, progress)
 	}
-	if sum.Results[2].Note == "" {
-		t.Fatal("websocket item should be skipped with a note")
+}
+
+// Socket steps share a connection with HTTP steps in between: connect, log
+// in over HTTP, send the token on the socket and wait for the reply, close.
+func TestSocketStepsBetweenHTTP(t *testing.T) {
+	ts, _ := target(t)
+	ws := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		c, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			return
+		}
+		for {
+			_, data, err := c.Read(context.Background())
+			if err != nil {
+				return
+			}
+			_ = c.Write(context.Background(), websocket.MessageText, []byte(`{"echo":`+string(data)+`}`))
+		}
+	}))
+	t.Cleanup(ws.Close)
+	wsURL := "ws" + strings.TrimPrefix(ws.URL, "http")
+	chain := []*model.Collection{{Variables: []model.Variable{{Key: "base", Value: ts.URL}, {Key: "ws", Value: wsURL}}}}
+	its := []Item{
+		{Path: "c/open", Chain: chain, Request: &model.Request{Kind: model.KindWebSocket, Name: "Open", URL: "{{ws}}", Connection: "chat"}},
+		{Path: "c/login", Chain: chain, Request: &model.Request{Kind: model.KindHTTP, Name: "Login", URL: "{{base}}/login?user={{user}}",
+			Extract: []model.Extractor{{Var: "token", From: "jsonpath", Path: "$.token"}}}},
+		{Path: "c/say", Chain: chain, Request: &model.Request{Kind: model.KindWebSocket, Name: "Say", Action: model.ActionSend, Connection: "chat",
+			Messages:   []model.Message{{Content: `"{{token}}"`}},
+			Wait:       &model.Wait{For: "message", JSONPath: "$.echo", Equals: "tok-{{user}}", Timeout: "2s"},
+			Assertions: []model.Assertion{{Type: "jsonpath", Path: "$.echo", Value: "tok-{{user}}"}}}},
+		{Path: "c/close", Chain: chain, Request: &model.Request{Kind: model.KindWebSocket, Name: "Close", Action: model.ActionClose, Connection: "chat"}},
+	}
+	e := engine.New(httpdriver.New(httpdriver.Options{}))
+	sum := Run(context.Background(), e, its, Options{Data: []map[string]string{{"user": "ann"}, {"user": "bob"}}})
+	if !sum.OK() || sum.Requests != 8 || sum.TestsPassed != 2 {
+		for _, r := range sum.Results {
+			t.Logf("%s: %q", r.Path, r.Result.Error)
+		}
+		t.Fatalf("summary = %+v", sum)
 	}
 }
 

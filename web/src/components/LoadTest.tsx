@@ -50,10 +50,10 @@ const EXECUTORS = [
 export function useRequestPaths() {
   const ws = useQuery({ queryKey: ["workspace"], queryFn: api.workspace });
   return useMemo(() => {
-    const out: { path: string; name: string; kind?: string }[] = [];
+    const out: { path: string; name: string; kind?: string; method?: string }[] = [];
     const walk = (n: TreeNode) =>
       n.type === "request"
-        ? out.push({ path: n.path, name: n.name, kind: n.kind })
+        ? out.push({ path: n.path, name: n.name, kind: n.kind, method: n.method })
         : n.children?.forEach(walk);
     ws.data?.collections.forEach(walk);
     return out;
@@ -449,7 +449,7 @@ function ScenarioEditor({
   name: string;
   doc: Document;
   update: (fn: (d: Document) => void) => void;
-  requests: { path: string; name: string; kind?: string }[];
+  requests: { path: string; name: string; kind?: string; method?: string }[];
 }) {
   const base = ["scenarios", name];
   const get = (k: string) => doc.getIn([...base, k]);
@@ -719,7 +719,7 @@ function FlowEditor({
   doc: Document;
   base: string[];
   update: (fn: (d: Document) => void) => void;
-  requests: { path: string; name: string; kind?: string }[];
+  requests: { path: string; name: string; kind?: string; method?: string }[];
 }) {
   const flow = doc.getIn([...base, "flow"]);
   const items = isSeq(flow) ? flow.items : [];
@@ -743,7 +743,10 @@ function FlowEditor({
           const script = m.get?.("script") as string | undefined;
           const scriptFile = m.get?.("scriptFile") as string | undefined;
           let body: React.ReactNode;
-          const streamKind = requests.find((r) => r.path === request)?.kind;
+          // Hold and send settings belong to connect requests; send, ping and
+          // close steps carry their own messages and waits.
+          const target = requests.find((r) => r.path === request);
+          const streamKind = !target?.method || target.method === "connect" ? target?.kind : undefined;
           if (script !== undefined) {
             body = (
               <div className="script-step">

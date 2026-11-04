@@ -40,8 +40,12 @@ Press **+** on a collection or folder. Choose the request type, give it a name a
 | **Socket.IO** | Socket.IO v4 servers ([WebSocket and Socket.IO](realtime.md)) |
 | Plugin types | Types added by installed plugins, such as raw TCP ([Plugins](plugins.md)) |
 
-The type can't be changed later; it's shown as a label in the request header. To use a
-different type, create a new request.
+WebSocket and Socket.IO requests also choose an action: **Connect**, **Send & receive**,
+**Ping** (WebSocket) or **Close** ([Steps on a connection](realtime.md#steps-on-a-connection)).
+The sidebar badge shows it (`WS`/`SIO` for connect, otherwise `SEND`, `PING`, `CLOSE`).
+
+The type (and action) can't be changed later; it's shown as a label in the request header. To
+use a different type, create a new request.
 
 Rename a request by clicking its title. The line under it is the request's path in the
 workspace (`collection/folder/name`), plus *unsaved* while you have changes. **Save**

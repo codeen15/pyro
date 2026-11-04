@@ -69,6 +69,10 @@ func (s *Summary) OK() bool { return s.Failed == 0 && s.TestsFailed == 0 }
 func Run(ctx context.Context, e *engine.Engine, items []Item, opts Options) *Summary {
 	sum := &Summary{StartedAt: time.Now(), Results: []ItemResult{}}
 	defer func() { sum.Duration = time.Since(sum.StartedAt) }()
+	// WebSocket and Socket.IO connections opened by connect steps stay open
+	// for later steps (across iterations) and close when the run ends.
+	conns := engine.NewConns()
+	defer conns.CloseAll()
 
 	iterations := opts.Iterations
 	if iterations <= 0 {
@@ -117,7 +121,7 @@ func Run(ctx context.Context, e *engine.Engine, items []Item, opts Options) *Sum
 					}
 				}
 			}
-			ir := runItem(ctx, e, rt, item, v, it)
+			ir := runItem(ctx, e, rt, item, v, it, conns)
 			sum.add(ir)
 			if opts.OnResult != nil {
 				opts.OnResult(ir)
@@ -151,12 +155,8 @@ func Run(ctx context.Context, e *engine.Engine, items []Item, opts Options) *Sum
 	return sum
 }
 
-func runItem(ctx context.Context, e *engine.Engine, rt *script.Runtime, item Item, v *vars.Set, iteration int) ItemResult {
+func runItem(ctx context.Context, e *engine.Engine, rt *script.Runtime, item Item, v *vars.Set, iteration int, conns *engine.Conns) ItemResult {
 	ir := ItemResult{Iteration: iteration, Path: item.Path, Name: item.Request.Name, Kind: item.Request.Kind}
-	if k := item.Request.Kind; k == model.KindWebSocket || k == model.KindSocketIO {
-		ir.Note = string(k) + " requests are skipped in collection runs"
-		return ir
-	}
 	v.Folders = v.Folders[:0]
 	for i := len(item.Chain) - 1; i >= 1; i-- {
 		if item.Chain[i] != nil && len(item.Chain[i].Variables) > 0 {
@@ -164,7 +164,7 @@ func runItem(ctx context.Context, e *engine.Engine, rt *script.Runtime, item Ite
 		}
 	}
 	ir.Result = e.Send(ctx, engine.SendInput{
-		Request: item.Request, Path: item.Path, Chain: item.Chain, Vars: v, Iteration: iteration, Script: rt,
+		Request: item.Request, Path: item.Path, Chain: item.Chain, Vars: v, Iteration: iteration, Script: rt, Conns: conns,
 	})
 	return ir
 }

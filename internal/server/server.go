@@ -87,6 +87,7 @@ type Server struct {
 
 	sessionMu      sync.Mutex
 	sessionsByUser map[string]*sessionVars
+	connsByUser    map[string]*engine.Conns // socket steps' connections
 	versions       versions
 
 	cookieMu    sync.Mutex
@@ -103,7 +104,7 @@ func New(cfg Config) *Server {
 	}
 	s := &Server{
 		cfg: cfg, ws: cfg.Workspace, log: cfg.Logger, key: cfg.Key, hub: newHub(),
-		sessionsByUser: map[string]*sessionVars{}, versions: versions{writer: map[string]string{}},
+		sessionsByUser: map[string]*sessionVars{}, connsByUser: map[string]*engine.Conns{}, versions: versions{writer: map[string]string{}},
 		sessions: &sessionRegistry{byID: map[string]*liveSession{}},
 		runs:     &runRegistry{byID: map[string]*liveRun{}},
 		loads:    &loadRegistry{byID: map[string]*liveLoad{}},
@@ -193,6 +194,7 @@ func (s *Server) routes(r chi.Router) {
 		r.Post("/import", s.importFile)
 
 		r.Post("/sessions", s.openSession)
+		r.Get("/connections", s.listConnections)
 		r.Get("/sessions/{id}", s.getSession)
 		r.Post("/sessions/{id}/send", s.sendSession)
 		r.Delete("/sessions/{id}", s.closeSession)

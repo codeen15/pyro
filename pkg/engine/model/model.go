@@ -85,6 +85,51 @@ type Request struct {
 	// Streaming protocols (WebSocket, Socket.IO).
 	Messages []Message       `yaml:"messages,omitempty" json:"messages,omitempty"`
 	SocketIO *SocketIOConfig `yaml:"socketio,omitempty" json:"socketio,omitempty"`
+
+	// Socket steps: what a WebSocket or Socket.IO request does when it runs
+	// (connect, the default; send; ping; close) and on which named
+	// connection. Send and ping without a connection open their own,
+	// just for that request. See SocketActions.
+	Action     string `yaml:"action,omitempty" json:"action,omitempty"`
+	Connection string `yaml:"connection,omitempty" json:"connection,omitempty"`
+	// Wait is what a send waits for before the next step.
+	Wait *Wait `yaml:"wait,omitempty" json:"wait,omitempty"`
+	// CloseCode and CloseReason are sent by a close step (WebSocket).
+	CloseCode   int    `yaml:"closeCode,omitempty" json:"closeCode,omitempty"`
+	CloseReason string `yaml:"closeReason,omitempty" json:"closeReason,omitempty"`
+}
+
+// Socket actions.
+const (
+	ActionConnect = "connect"
+	ActionSend    = "send"
+	ActionPing    = "ping"
+	ActionClose   = "close"
+	// DefaultConnection names a connection when Connect gives none.
+	DefaultConnection = "default"
+)
+
+// SocketAction is the request's action ("connect" when unset).
+func (r *Request) SocketAction() string {
+	if r.Action == "" {
+		return ActionConnect
+	}
+	return r.Action
+}
+
+// Wait is a send step's stop condition. For is message (a received message
+// matching every filter given), ack (the server acknowledges the last
+// message sent with ack), time (listen for Timeout, then continue) or empty
+// (don't wait). Timeout bounds message and ack waits (default 10s).
+type Wait struct {
+	For      string `yaml:"for,omitempty" json:"for,omitempty"`
+	Event    string `yaml:"event,omitempty" json:"event,omitempty"` // Socket.IO event name
+	Contains string `yaml:"contains,omitempty" json:"contains,omitempty"`
+	Regex    string `yaml:"regex,omitempty" json:"regex,omitempty"`
+	// JSONPath must exist in the message (equal Equals, when set).
+	JSONPath string `yaml:"jsonpath,omitempty" json:"jsonpath,omitempty"`
+	Equals   string `yaml:"equals,omitempty" json:"equals,omitempty"`
+	Timeout  string `yaml:"timeout,omitempty" json:"timeout,omitempty"`
 }
 
 // KeyValue is an ordered, toggleable pair (headers, query params, form fields).

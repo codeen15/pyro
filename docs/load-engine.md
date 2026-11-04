@@ -75,7 +75,7 @@ thresholds:
 ## Flow steps
 | Step | Meaning |
 |---|---|
-| `request: <path>` | Run a workspace request (scripts, assertions and extractors included). Options: `once`, `hold` (streams: keep the connection open this long), `send` (messages to send on a stream, in order: `{event, content, ack}` for Socket.IO, where `content` is the JSON array of arguments, or `{content, binary}` for WebSocket; `{{variables}}` are filled in per VU), `name` (metric tag override). |
+| `request: <path>` | Run a workspace request (scripts, assertions and extractors included). Options: `once`, `hold` (streams: keep the connection open this long), `send` (messages to send on a stream, in order: `{event, content, ack}` for Socket.IO, where `content` is the JSON array of arguments, or `{content, binary}` for WebSocket; `{{variables}}` are filled in per VU), `name` (metric tag override). `hold` and `send` apply to connect requests; a connect request without them opens its named connection for the VU, and send, ping and close requests run as steps on it (per VU, closed when the test ends). |
 | `think: {min,max}` / `think: 2s` | Pause, uniformly random between min and max. Requests can also carry their own JMeter-style timer (constant, uniform, Gaussian, Poisson), run before every send of that request; see [data-model.md](data-model.md#think-time-and-prepost-processors). |
 | `loop: {count \| while, steps}` | Repeat steps a fixed number of times, or while an expression is true. |
 | `if: {expr, then, else}` | Branch on an expression over variables, e.g. `status == 200 && cartSize > 0`. Expressions see every variable (numeric strings compare as numbers) plus `status` and `duration` (ms) of the last response and `iteration`. |
@@ -165,6 +165,8 @@ HDR histograms keyed by metric name and tags (`scenario`, `request`, `group`, `s
 | `ws_msgs_sent` / `ws_msgs_received` | counter | |
 | `dropped_iterations` | counter | Arrival-rate iterations that found no free VU. |
 | `sio_event_rtt` | trend | Socket.IO ack round trip. |
+| `ws_step_duration` / `ws_step_failed` | trend / rate | Send, ping and close steps on named connections: time per step (wait included), and the rate that failed (timeout, connection not open, assertion error). |
+| `ws_ping` | trend | WebSocket ping round trip (ping steps). |
 | `checks` | rate | Assertion pass rate. |
 | `iterations` / `iteration_duration` | counter / trend | |
 | `group_duration` | trend | Per `group`. |

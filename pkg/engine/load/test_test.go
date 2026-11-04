@@ -67,6 +67,11 @@ func resolver(base string) func(string) (Target, error) {
 		"c/login": {Kind: model.KindHTTP, Name: "Login", Method: "POST", URL: "{{base}}/login?user={{user}}", Extract: []model.Extractor{{Var: "token", From: "jsonpath", Path: "$.token"}}},
 		"c/me":    {Kind: model.KindHTTP, Name: "Me", URL: "{{base}}/me", Headers: []model.KeyValue{{Key: "Authorization", Value: "{{token}}"}}, Assertions: []model.Assertion{{Type: "body", Op: "contains", Value: "t-"}}},
 		"c/ws":    {Kind: model.KindWebSocket, Name: "WS", URL: strings.Replace(base, "http", "ws", 1) + "/ws"},
+		// Socket steps on one named connection (the /ws server echoes).
+		"c/ws-open": {Kind: model.KindWebSocket, Name: "Open", URL: strings.Replace(base, "http", "ws", 1) + "/ws", Connection: "chat"},
+		"c/ws-say": {Kind: model.KindWebSocket, Name: "Say", Action: model.ActionSend, Connection: "chat",
+			Messages: []model.Message{{Content: "{{token}}"}}, Wait: &model.Wait{For: "message", Contains: "t-", Timeout: "2s"},
+			Assertions: []model.Assertion{{Type: "body", Op: "contains", Value: "t-{{user}}"}}},
 	}
 	return func(p string) (Target, error) {
 		r, ok := reqs[p]
@@ -294,6 +299,29 @@ scenarios:
 	m := res.Metrics
 	if m["ws_sessions"].Value != 3 || m["ws_msgs_sent"].Value != 6 || m["ws_msgs_received"].Value != 6 || m["ws_session_duration"].Min < 290 {
 		t.Fatalf("ws metrics: sessions=%v sent=%v recv=%v dur=%+v", m["ws_sessions"].Value, m["ws_msgs_sent"].Value, m["ws_msgs_received"].Value, m["ws_session_duration"])
+	}
+}
+
+// Socket steps in a flow: each VU connects once, logs in over HTTP, then
+// sends its token on its own connection and waits for the echo.
+func TestSocketStepsInAFlow(t *testing.T) {
+	tg := newTarget(t, 0)
+	res := run(t, tg.URL, `
+scenarios:
+  chat:
+    executor: per-vu-iterations
+    vus: 3
+    iterations: 2
+    flow:
+      - request: c/ws-open
+        once: true
+      - request: c/login
+      - request: c/ws-say
+`)
+	m := res.Metrics
+	if m["ws_sessions"].Value != 3 || m["ws_msgs_sent"].Value != 6 || m["ws_msgs_received"].Value != 6 || m["ws_step_failed"].Value != 0 || m["checks"].Value != 1 {
+		t.Fatalf("socket steps: sessions=%v sent=%v recv=%v failed=%v checks=%v errors=%v",
+			m["ws_sessions"].Value, m["ws_msgs_sent"].Value, m["ws_msgs_received"].Value, m["ws_step_failed"].Value, m["checks"].Value, res.Errors)
 	}
 }
 

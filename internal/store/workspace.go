@@ -156,6 +156,9 @@ func (w *Workspace) walk(dir, rel string) ([]*Node, error) {
 					n.Name = r.Name
 				}
 				n.Kind, n.Method = r.Kind, r.Method
+				if r.Kind == model.KindWebSocket || r.Kind == model.KindSocketIO {
+					n.Method = r.SocketAction() // the sidebar badge shows the step
+				}
 			}
 			nodes = append(nodes, n)
 		}

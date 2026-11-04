@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Activity, ArrowLeftRight, BookOpen, ChevronRight, Download, Folder, FolderOpen, FolderPlus, Gauge, Layers, MoreVertical, Play, Plus, RefreshCw, Search, Settings2, Trash2, TriangleAlert } from "../icons";
 import { PluginsRail, usePluginTypes } from "./Plugins";
 import { LoadTestMenu } from "./LoadActions";
-import { api, saveFile, type Kind, type PyroRequest, type TreeNode, type WorkspaceInfo } from "../api";
+import { api, saveFile, type Kind, type PyroRequest, type SocketAction, type TreeNode, type WorkspaceInfo } from "../api";
 import { formatMs, heatOf } from "../heat";
 import { useApp } from "../store";
 import { slugify } from "../loadProfiles";
@@ -175,8 +175,15 @@ function Collections({ ws }: { ws: WorkspaceInfo | undefined }) {
 
 const BUILTIN_KINDS: { kind: Kind; title: string; tag: string; desc: string }[] = [
   { kind: "http", title: "HTTP", tag: "GET", desc: "REST and GraphQL: method, params, headers, body and auth." },
-  { kind: "websocket", title: "WebSocket", tag: "WS", desc: "A raw WebSocket connection. Send and watch text or binary messages." },
+  { kind: "websocket", title: "WebSocket", tag: "WS", desc: "A raw WebSocket connection: open it, send and wait for replies, ping, close." },
   { kind: "socketio", title: "Socket.IO", tag: "SIO", desc: "Socket.IO v4 client: namespaces, events and acks." },
+];
+
+const SOCKET_ACTIONS: { action: SocketAction; title: string; desc: string; ws?: boolean }[] = [
+  { action: "connect", title: "Connect", desc: "Opens a named connection and shows a live console. It stays open for the steps after it." },
+  { action: "send", title: "Send & receive", desc: "Sends messages on a connection and waits for a reply, an ack or a set time." },
+  { action: "ping", title: "Ping", desc: "Measures the round trip with a ping and its pong.", ws: true },
+  { action: "close", title: "Close", desc: "Closes a named connection, with an optional close code and reason." },
 ];
 
 /** Creates a request. Its type is chosen here and can't be changed later. */
@@ -185,7 +192,11 @@ function NewRequestModal({ parent, onClose }: { parent: TreeNode | null; onClose
   const select = useApp((s) => s.select);
   const protocols = usePluginTypes("protocol");
   const [kind, setKind] = useState<Kind>("http");
+  const [action, setAction] = useState<SocketAction>("connect");
   const [name, setName] = useState("");
+  const socket = kind === "websocket" || kind === "socketio";
+  const actions = SOCKET_ACTIONS.filter((a) => !a.ws || kind === "websocket");
+  const act = actions.some((a) => a.action === action) ? action : "connect";
   const create = useMutation({
     mutationFn: async () => {
       const title = name.trim() || "New request";
@@ -197,6 +208,11 @@ function NewRequestModal({ parent, onClose }: { parent: TreeNode | null; onClose
       const req: PyroRequest = { kind, name: title, url: "" };
       if (kind === "http") req.method = "GET";
       if (kind.startsWith("plugin:")) req.body = { type: "text", content: "" };
+      if (socket) {
+        req.connection = "default";
+        if (act !== "connect") req.action = act;
+        if (act === "send") req.wait = { for: "message", timeout: "10s" };
+      }
       await api.saveRequest(path, req);
       return path;
     },
@@ -226,6 +242,7 @@ function NewRequestModal({ parent, onClose }: { parent: TreeNode | null; onClose
       afterOpenChange={(open) => {
         if (!open) {
           setKind("http");
+          setAction("connect");
           setName("");
           create.reset();
         }
@@ -250,11 +267,32 @@ function NewRequestModal({ parent, onClose }: { parent: TreeNode | null; onClose
           </button>
         ))}
       </div>
+      {socket && (
+        <>
+          <h3 className="sub-head kind-action-head">What it does</h3>
+          <div className="kind-cards kind-actions" role="radiogroup" aria-label="Socket action">
+            {actions.map((a) => (
+              <button
+                key={a.action}
+                type="button"
+                role="radio"
+                aria-checked={act === a.action}
+                className={`kind-card ${act === a.action ? "is-active" : ""}`}
+                onClick={() => setAction(a.action)}
+                onDoubleClick={() => create.mutate()}
+              >
+                <span className="kind-card-title">{a.title}</span>
+                <span className="kind-card-desc">{a.desc}</span>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
       <label className="kind-name">
         <span className="field-label">Name</span>
         <Input autoFocus aria-label="Request name" placeholder="New request" value={name} onChange={(e) => setName(e.target.value)} onPressEnter={() => create.mutate()} />
       </label>
-      <p className="muted small">The type can't be changed after the request is created.</p>
+      <p className="muted small">The type{socket ? " and action" : ""} can't be changed after the request is created.</p>
       {create.error && <Alert type="error" showIcon title={`Couldn't create the request: ${create.error.message}`} />}
     </Modal>
   );
@@ -352,18 +390,16 @@ function TreeItem({
 }
 
 export function KindBadge({ kind, method }: { kind?: string; method?: string }) {
-  if (kind === "websocket")
+  if (kind === "websocket" || kind === "socketio") {
+    // Socket requests carry their action in method: connect, send, ping, close.
+    const sio = kind === "socketio";
+    const action = method && method !== "connect" ? method : "";
     return (
-      <span className="badge m-ws" title="WebSocket">
-        WS
+      <span className={`badge ${sio ? "m-sio" : "m-ws"}`} title={`${sio ? "Socket.IO" : "WebSocket"}${action ? ` · ${action}` : " · connect"}`}>
+        {action ? action.toUpperCase() : sio ? "SIO" : "WS"}
       </span>
     );
-  if (kind === "socketio")
-    return (
-      <span className="badge m-sio" title="Socket.IO">
-        SIO
-      </span>
-    );
+  }
   if (kind?.startsWith("plugin:"))
     return (
       <span className="badge m-plugin" title={`Plugin request type ${kind}`}>

@@ -2,7 +2,6 @@ package engine
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/codeen15/pyro/pkg/engine/auth"
 	"github.com/codeen15/pyro/pkg/engine/model"
@@ -45,28 +44,25 @@ func (e *Engine) Connect(ctx context.Context, in SendInput) *ConnectResult {
 	}
 	res.Sent, res.Unresolved = sent, unresolved
 
-	var (
-		s   protocol.Session
-		err error
-	)
-	switch sent.Kind {
-	case model.KindWebSocket:
-		s, err = wsdriver.Dial(ctx, sent, nil)
-	case model.KindSocketIO:
-		opts := sioclient.Options{Headers: sent.Headers}
-		if c := sent.SocketIO; c != nil {
-			opts.Path, opts.Namespace, opts.Auth, opts.Transport = c.Path, c.Namespace, c.AuthJSON, c.Transport
-		}
-		s, err = sioclient.Dial(ctx, sent.URL, opts)
-	default:
-		err = fmt.Errorf("%s requests are sent, not opened as sessions", sent.Kind)
-	}
+	s, err := e.dial(ctx, sent)
 	if err != nil {
 		res.Error = err.Error()
 		return res
 	}
 	res.Session = s
 	return res
+}
+
+func wsDial(ctx context.Context, sent *model.Request) (protocol.Session, error) {
+	return wsdriver.Dial(ctx, sent, nil)
+}
+
+func sioDial(ctx context.Context, sent *model.Request) (protocol.Session, error) {
+	opts := sioclient.Options{Headers: sent.Headers}
+	if c := sent.SocketIO; c != nil {
+		opts.Path, opts.Namespace, opts.Auth, opts.Transport = c.Path, c.Namespace, c.AuthJSON, c.Transport
+	}
+	return sioclient.Dial(ctx, sent.URL, opts)
 }
 
 // ResolveOutgoing substitutes variables in a message before it is sent.

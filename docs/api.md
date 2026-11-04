@@ -123,7 +123,7 @@ headers masked; bodies capped at 64 KB). Load test runs are listed with them.
 | PUT | `/api/v1/environments/{name}` | Create or replace |
 | DELETE | `/api/v1/environments/{name}` | `204` |
 | PUT | `/api/v1/collections/{slug}` | Replace collection settings (variables, auth, scripts) |
-| POST | `/api/v1/send` | Body `{path?, request?, environment?, runtime?}`. `path` loads the saved request and supplies collection/folder variables and auth; `request` sends unsaved edits instead. Returns `{sent, response?, unresolved?, error?, startedAt, historyId?}`. A transport failure is still `200` with `error` set. Response bodies are base64 (`response.body`). |
+| POST | `/api/v1/send` | Body `{path?, request?, environment?, runtime?}`. `path` loads the saved request and supplies collection/folder variables and auth; `request` sends unsaved edits instead. Returns `{sent, response?, unresolved?, error?, startedAt, historyId?}`. A transport failure is still `200` with `error` set. Response bodies are base64 (`response.body`). WebSocket and Socket.IO requests with `action` `send`, `ping` or `close` run as steps on the caller's connection of that name (see `GET /connections`), and the result adds `socket: {action, connection?, own?, info?, sent[], received[], matched?, waitMs?, rttMs?}`; the step's messages also appear in that connection's session log. Connect requests are rejected here with `400`: open them with `POST /sessions`. Socket steps aren't recorded in history. |
 | GET | `/api/v1/history?limit=N` | Newest first: `{id, at, path?, name?, method, url, status?, durationMs, error?}` |
 | GET | `/api/v1/history/{id}` | Full stored send result (bodies capped at 256 KB) |
 | DELETE | `/api/v1/history` | Clear this workspace's history |
@@ -144,8 +144,9 @@ headers masked; bodies capped at 64 KB). Load test runs are listed with them.
 | PUT | `/api/v1/cookies` | Add or replace a cookie (`domain` and `name` required, `path` defaults to `/`) |
 | DELETE | `/api/v1/cookies?domain=&path=&name=` | One cookie, a domain's cookies (domain only) or all (no parameters) |
 | GET, PUT | `/api/v1/globals` | `globals.yaml` as an environment `{name: "globals", variables}` |
-| POST | `/api/v1/sessions` | Body `{path?, request?, environment?}`. Opens a WebSocket or Socket.IO session. Returns `{sent, unresolved?, error?, session?}`; on failure `error` is set and there is no `session`. |
-| GET | `/api/v1/sessions/{id}` | `{id, kind, info, openedAt, closed, error?, messages[]}` (last 2000 messages) |
+| POST | `/api/v1/sessions` | Body `{path?, request?, environment?}`. Opens a WebSocket or Socket.IO session under the request's `connection` name (default `default`; opening a name again replaces the old connection). Returns `{sent, unresolved?, error?, session?}`; on failure `error` is set and there is no `session`. Sessions stay open until closed, whatever page the UI shows. |
+| GET | `/api/v1/sessions/{id}` | `{id, connection, kind, path?, info, openedAt, closed, error?, messages[]}` (last 2000 messages) |
+| GET | `/api/v1/connections` | The caller's open named connections: `[{name, kind?, sessionId?, path?, url?}]` (each user has their own) |
 | POST | `/api/v1/sessions/{id}/send` | Body `{data, binary?, event?, ack?}` (variables resolved). Returns `{message, unresolved?}` |
 | DELETE | `/api/v1/sessions/{id}` | Close |
 | POST | `/api/v1/runs` | Body `{path, environment?, iterations?, data?, delayMs?, bail?}`. Starts a background collection run; `202` with the run view |

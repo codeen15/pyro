@@ -25,8 +25,10 @@ compared with the previous run, ready to save as PDF or Excel.
 [Workspace files](workspace.md)). A script can jump elsewhere with
 `postman.setNextRequest("Request name")`, or stop the run with `setNextRequest(null)`.
 
-**WebSocket and Socket.IO requests** are skipped in runs; test them in
-[load tests](load-testing.md) instead.
+**WebSocket and Socket.IO requests** run as steps: a Connect request opens its named
+connection, and the send, ping and close requests after it use it, so HTTP requests can run in
+between ([Steps on a connection](realtime.md#steps-on-a-connection)). Connections stay open
+across iterations until a close step; any still open are closed when the run ends.
 
 **Data files:** CSV with a header line, or a JSON array of objects. Each column (or key) is
 available as `{{column}}` in that iteration.

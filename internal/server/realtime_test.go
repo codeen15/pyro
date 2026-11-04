@@ -192,3 +192,63 @@ func TestNewSessionHasEmptyMessageList(t *testing.T) {
 		t.Fatalf("open: %s", body)
 	}
 }
+
+// Socket steps by hand: open a named connection from a connect request,
+// then send / ping / close requests run on it and show in its console.
+func TestSocketStepsOnAnOpenConnection(t *testing.T) {
+	echo := wsEcho(t)
+	ts := newTestServer(t)
+	wsURL := "ws" + strings.TrimPrefix(echo.URL, "http")
+	do(t, ts, "PUT", "/api/v1/requests/demo/open", `{"kind":"websocket","name":"Open","url":"`+wsURL+`","connection":"chat"}`, true)
+	do(t, ts, "PUT", "/api/v1/requests/demo/say", `{"kind":"websocket","name":"Say","action":"send","connection":"chat","messages":[{"content":"hi"}],"wait":{"for":"message","contains":"echo:hi"},"extract":[{"var":"reply","from":"regex","path":"(echo:.*)"}]}`, true)
+	do(t, ts, "PUT", "/api/v1/requests/demo/ping", `{"kind":"websocket","name":"Ping","action":"ping","connection":"chat"}`, true)
+	do(t, ts, "PUT", "/api/v1/requests/demo/bye", `{"kind":"websocket","name":"Bye","action":"close","connection":"chat"}`, true)
+
+	// Before the connection is open, a step says so.
+	_, out := do(t, ts, "POST", "/api/v1/send", `{"path":"demo/say"}`, true)
+	if !strings.Contains(out, `connection \"chat\" isn't open`) {
+		t.Fatalf("send before connect: %s", out)
+	}
+	_, out = do(t, ts, "POST", "/api/v1/sessions", `{"path":"demo/open"}`, true)
+	var opened struct {
+		Session struct {
+			ID, Connection string
+		}
+	}
+	_ = json.Unmarshal([]byte(out), &opened)
+	if opened.Session.Connection != "chat" {
+		t.Fatalf("open: %s", out)
+	}
+
+	res, out := do(t, ts, "POST", "/api/v1/send", `{"path":"demo/say"}`, true)
+	if res.StatusCode != 200 || !strings.Contains(out, `"matched"`) || strings.Contains(out, `"error"`) {
+		t.Fatalf("send step: %d %s", res.StatusCode, out)
+	}
+	if _, out := do(t, ts, "GET", "/api/v1/session/variables", "", true); !strings.Contains(out, `"reply":"echo:hi"`) {
+		t.Fatalf("extracted value not kept: %s", out)
+	}
+	// The console shows the step's message and the reply.
+	_, out = do(t, ts, "GET", "/api/v1/sessions/"+opened.Session.ID, "", true)
+	if !strings.Contains(out, `"data":"hi"`) || !strings.Contains(out, `"data":"echo:hi"`) {
+		t.Fatalf("console log: %s", out)
+	}
+	if _, out := do(t, ts, "POST", "/api/v1/send", `{"path":"demo/ping"}`, true); !strings.Contains(out, `"rttMs"`) && !strings.Contains(out, `"pong"`) {
+		t.Fatalf("ping: %s", out)
+	}
+	if _, out := do(t, ts, "POST", "/api/v1/send", `{"path":"demo/bye"}`, true); strings.Contains(out, `"error"`) {
+		t.Fatalf("close: %s", out)
+	}
+	for i := 0; i < 50; i++ {
+		_, out = do(t, ts, "GET", "/api/v1/sessions/"+opened.Session.ID, "", true)
+		if strings.Contains(out, `"closed":true`) {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if !strings.Contains(out, `"closed":true`) {
+		t.Fatalf("console after close: %s", out)
+	}
+	if _, out := do(t, ts, "POST", "/api/v1/send", `{"path":"demo/open"}`, true); !strings.Contains(out, "Connect button") {
+		t.Fatalf("connect via send: %s", out)
+	}
+}

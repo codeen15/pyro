@@ -8,7 +8,7 @@ engine and serves a React web UI on localhost. **Current phase: 16 (test reports
 ## Layout
 - `cmd/pyro`: CLI (cobra): `serve` (`--team` for the team server), `init`, `import`, `export`, `run`, `load`, `agent`, `mock`, `docs`, `plugin`, `admin`, `version`
 - `pkg/engine/...`: the engine, a library with no dependency on server/CLI/UI. `model/` is the shared data model;
-  `engine.go` is the send pipeline (pre-processors → resolve → auth → execute → post-processors), `session.go` opens WS/SIO sessions; `vars/`, `auth/`, `check/` (assertions,
+  `engine.go` is the send pipeline (pre-processors → resolve → auth → execute → post-processors), `session.go` opens WS/SIO sessions, `socket.go` runs socket steps (connect/send/ping/close) on named connections (`Conns`); `vars/`, `auth/`, `check/` (assertions,
   extractors incl. boundary/XPath), `process/` (timers, set-variables and counter processors), `script/` (goja + pm.* shim, vendored chai), `runner/`, `report/` (run reports with masking and comparison; JUnit, JSON, CSV,
   Excel via excelize, printable run HTML, load HTML),
   `load/` (plans, executors, VUs, thresholds, script steps (`scripting.go`, goja with `pyro.*`), segments and workers for distributed runs), `metrics/` (HDR histograms,

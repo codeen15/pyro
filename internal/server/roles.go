@@ -81,6 +81,7 @@ var routeRoles = map[string]Role{
 	"GET /api/v1/history/{id}":               RoleViewer,
 	"DELETE /api/v1/history":                 RoleViewer,
 	"POST /api/v1/import":                    RoleEditor,
+	"GET /api/v1/connections":                RoleViewer,
 	"POST /api/v1/sessions":                  RoleViewer,
 	"GET /api/v1/sessions/{id}":              RoleViewer,
 	"POST /api/v1/sessions/{id}/send":        RoleViewer,

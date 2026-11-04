@@ -4,6 +4,7 @@
 // with an empty data directory. Playwright runs this as its webServer.
 import { spawn } from "node:child_process";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -12,12 +13,65 @@ const TARGET = 7891;
 const PYRO = 7890;
 const TEAM = 7892;
 
+// A tiny WebSocket chat at /chat (text frames, ping and close only): a
+// {"type":"join","token":…} message is answered with a welcome that echoes
+// the token, and POST /notify pushes its body to every socket.
+const sockets = new Set();
+const frame = (op, payload) => {
+  const len = payload.length;
+  const head = len < 126 ? Buffer.from([0x80 | op, len]) : Buffer.from([0x80 | op, 126, len >> 8, len & 255]);
+  return Buffer.concat([head, payload]);
+};
+const onUpgrade = (req, sock) => {
+  if (new URL(req.url, "http://x").pathname !== "/chat") return sock.destroy();
+  const accept = createHash("sha1").update(req.headers["sec-websocket-key"] + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").digest("base64");
+  sock.write(`HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${accept}\r\n\r\n`);
+  sockets.add(sock);
+  let buf = Buffer.alloc(0);
+  sock.on("data", (d) => {
+    buf = Buffer.concat([buf, d]);
+    while (buf.length >= 2) {
+      const op = buf[0] & 15;
+      let len = buf[1] & 127;
+      let off = 2;
+      if (len === 126) {
+        if (buf.length < 4) return;
+        len = buf.readUInt16BE(2);
+        off = 4;
+      }
+      if (buf.length < off + 4 + len) return;
+      const mask = buf.subarray(off, off + 4);
+      const data = Buffer.from(buf.subarray(off + 4, off + 4 + len).map((b, i) => b ^ mask[i % 4]));
+      buf = buf.subarray(off + 4 + len);
+      if (op === 9) sock.write(frame(10, data));
+      else if (op === 8) {
+        sock.end(frame(8, data));
+        sockets.delete(sock);
+      } else if (op === 1) {
+        try {
+          const m = JSON.parse(data.toString());
+          if (m.type === "join") sock.write(frame(1, Buffer.from(JSON.stringify({ type: "welcome", token: m.token }))));
+        } catch {
+          /* not JSON: ignore */
+        }
+      }
+    }
+  });
+  sock.on("close", () => sockets.delete(sock));
+  sock.on("error", () => sockets.delete(sock));
+};
+
 createServer((req, res) => {
   const url = new URL(req.url, "http://x");
   let body = "";
   req.on("data", (c) => (body += c));
   req.on("end", () => {
     res.setHeader("Content-Type", "application/json");
+    if (url.pathname === "/notify" && req.method === "POST") {
+      for (const s of sockets) s.write(frame(1, Buffer.from(body)));
+      res.end(JSON.stringify({ pushed: sockets.size }));
+      return;
+    }
     if (url.pathname === "/orders" && req.method === "POST") {
       res.statusCode = 201;
       res.end(JSON.stringify({ id: "ord_1", received: body ? JSON.parse(body) : null }));
@@ -61,7 +115,9 @@ createServer((req, res) => {
     }
     res.end(JSON.stringify({ ok: true, path: url.pathname, query: Object.fromEntries(url.searchParams) }));
   });
-}).listen(TARGET, "127.0.0.1");
+})
+  .on("upgrade", onUpgrade)
+  .listen(TARGET, "127.0.0.1");
 
 const root = mkdtempSync(join(tmpdir(), "pyro-e2e-"));
 const ws = join(root, "ws");
@@ -79,6 +135,14 @@ write(
   "collections/shop/create-order.req.yaml",
   `kind: http\nname: Create order\nmethod: POST\nurl: "{{base}}/orders"\nbody: { type: json, content: '{"sku":"A-1"}' }\nassertions:\n  - { type: status, value: "201" }\nextract:\n  - { var: orderId, from: jsonpath, path: "$.id" }\n`,
 );
+write("collections/chat/collection.yaml", `name: Chat\nvariables:\n  - { key: base, value: "http://127.0.0.1:${TARGET}" }\n`);
+write("collections/chat/open.req.yaml", `kind: websocket\nname: Open chat\nconnection: chat\nurl: "ws://127.0.0.1:${TARGET}/chat"\n`);
+write("collections/chat/order.req.yaml", `kind: http\nname: Make order\nmethod: POST\nurl: "{{base}}/orders"\nextract:\n  - { var: orderId, from: jsonpath, path: "$.id" }\n`);
+write(
+  "collections/chat/join.req.yaml",
+  `kind: websocket\nname: Join with order\naction: send\nconnection: chat\nmessages:\n  - { content: '{"type":"join","token":"{{orderId}}"}' }\nwait: { for: message, jsonpath: "$.type", equals: welcome, timeout: 5s }\nassertions:\n  - { type: jsonpath, path: "$.token", value: "ord_1" }\n`,
+);
+write("collections/chat/close.req.yaml", `kind: websocket\nname: Leave chat\naction: close\nconnection: chat\ncloseReason: bye\n`);
 write("collections/account/collection.yaml", "name: Account\n");
 write("collections/account/login.req.yaml", `kind: http\nname: Log in\nmethod: POST\nurl: "http://127.0.0.1:${TARGET}/login"\n`);
 write("collections/shop/whoami.req.yaml", `kind: http\nname: Who am I\nmethod: GET\nurl: "{{base}}/whoami"\n`);

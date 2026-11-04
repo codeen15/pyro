@@ -52,6 +52,10 @@ type vu struct {
 	jsCtx   context.Context
 	jsGroup string
 
+	// conns are the VU's WebSocket and Socket.IO connections for socket
+	// steps; they stay open across iterations (created on first use).
+	conns *engine.Conns
+
 	iteration int
 	onceDone  map[*Step]bool
 	// stop is the running slot's stop flag (VU executors); nil otherwise.
@@ -240,7 +244,18 @@ func (v *vu) request(ctx context.Context, st *Step, group string) error {
 		return err
 	}
 	if k := target.Request.Kind; k == model.KindWebSocket || k == model.KindSocketIO {
-		return v.stream(ctx, st, in, tags)
+		// A connect step with send/hold keeps the original behaviour: open,
+		// send, hold, close in one step.
+		if target.Request.SocketAction() == model.ActionConnect && (len(st.Send) > 0 || st.Hold.D() > 0) {
+			return v.stream(ctx, st, in, tags)
+		}
+		in.Conns = v.socketConns()
+		res := v.eng.Send(ctx, in)
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		v.recordSocket(res, tags, name)
+		return nil
 	}
 	res := v.eng.Send(ctx, in)
 	if ctx.Err() != nil {
@@ -335,6 +350,66 @@ func (v *vu) recordHTTP(res *engine.Result, tags metrics.Tags, name string) {
 		metrics.Sample{Metric: "http_req_failed", Tags: tags, Value: failed},
 		metrics.Sample{Metric: "data_sent", Tags: tags, Value: float64(sentSize(res.Sent))},
 	)
+	for _, c := range res.Tests {
+		pass := 0.0
+		if c.Passed {
+			pass = 1
+		}
+		samples = append(samples, metrics.Sample{Metric: "checks", Tags: metrics.Tags{Scenario: tags.Scenario, Request: tags.Request, Group: tags.Group}, Value: pass})
+	}
+	v.buf.AddMany(samples...)
+}
+
+// socketConns returns the VU's connection registry, registering it with the
+// test so it is closed when the scenarios end.
+func (v *vu) socketConns() *engine.Conns {
+	if v.conns == nil {
+		v.conns = engine.NewConns()
+		v.t.connsMu.Lock()
+		v.t.conns = append(v.t.conns, v.conns)
+		v.t.connsMu.Unlock()
+	}
+	return v.conns
+}
+
+// recordSocket records a socket step: ws_step_duration (connect, send and
+// wait, ping, close), messages, ack round trips, errors and checks.
+func (v *vu) recordSocket(res *engine.Result, tags metrics.Tags, name string) {
+	sr := res.Socket
+	if sr == nil {
+		sr = &engine.SocketResult{}
+	}
+	tags.Method = strings.ToUpper(sr.Action)
+	samples := make([]metrics.Sample, 0, 8)
+	failed := 0.0
+	if res.Error != "" {
+		failed = 1
+		v.t.errors.add(res.Error + " (" + name + ")")
+		samples = append(samples, metrics.Sample{Metric: "ws_errors", Tags: tags, Value: 1})
+	}
+	for _, e := range res.ScriptErrors {
+		v.t.errors.add(e + " (" + name + ")")
+	}
+	if r := res.Response; r != nil {
+		samples = append(samples, metrics.Sample{Metric: "ws_step_duration", Tags: tags, Value: ms(r.Timings.Total)})
+		if sr.Action == model.ActionConnect {
+			samples = append(samples, metrics.Sample{Metric: "ws_sessions", Tags: tags, Value: 1},
+				metrics.Sample{Metric: "ws_connecting", Tags: tags, Value: ms(r.Timings.Total)})
+		}
+	}
+	if sr.RTTMS > 0 {
+		samples = append(samples, metrics.Sample{Metric: "ws_ping", Tags: tags, Value: sr.RTTMS})
+	}
+	if n := len(sr.Sent); n > 0 {
+		samples = append(samples, metrics.Sample{Metric: "ws_msgs_sent", Tags: tags, Value: float64(n)})
+	}
+	for _, m := range sr.Received {
+		samples = append(samples, metrics.Sample{Metric: "ws_msgs_received", Tags: tags, Value: 1})
+		if m.Kind == "ack" && m.RTT > 0 {
+			samples = append(samples, metrics.Sample{Metric: "sio_event_rtt", Tags: tags, Value: ms(m.RTT)})
+		}
+	}
+	samples = append(samples, metrics.Sample{Metric: "ws_step_failed", Tags: tags, Value: failed})
 	for _, c := range res.Tests {
 		pass := 0.0
 		if c.Passed {

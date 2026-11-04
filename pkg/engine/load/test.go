@@ -152,6 +152,10 @@ type Test struct {
 
 	vuSeq     atomic.Int64
 	allocated atomic.Int64 // VUs created
+	// connsMu guards conns: every VU's socket connections, closed when the
+	// scenarios end.
+	connsMu sync.Mutex
+	conns   []*engine.Conns
 	active    atomic.Int64 // VUs running (VU executors) or busy (arrival-rate)
 	busy      atomic.Int64
 
@@ -381,6 +385,13 @@ func (t *Test) runScenarios() {
 		}(name)
 	}
 	wg.Wait()
+	t.connsMu.Lock()
+	all := t.conns
+	t.conns = nil
+	t.connsMu.Unlock()
+	for _, c := range all {
+		c.CloseAll()
+	}
 }
 
 // vus returns the running and allocated VU counts, over all workers in a

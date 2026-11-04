@@ -195,6 +195,51 @@ messages:
   - { event: "chat message", content: '["hi"]', ack: true }   # content = JSON args array
   - { event: "upload", content: '[{"$binary": "AAEC/w=="}, "name.bin"]' }   # binary attachment
 ```
+### Socket steps (`action`)
+A WebSocket or Socket.IO request does one thing, set by `action` (absent means `connect`):
+
+```yaml
+# collections/chat/open.req.yaml: opens the connection "chat"
+kind: websocket
+name: Open chat
+connection: chat                # the name later steps use (default: "default")
+url: wss://chat.example.com/ws
+---
+# collections/chat/join.req.yaml: sends, then waits for the welcome
+kind: websocket
+name: Join
+action: send                    # connect | send | ping | close
+connection: chat                # empty: its own connection, from this request's url/headers/auth
+messages:                       # sent in order (for connect requests: saved templates)
+  - { content: '{"type":"join","token":"{{token}}"}' }
+wait:
+  for: message                  # message | ack (Socket.IO) | time; absent: don't wait
+  event: welcome                # Socket.IO event name
+  contains: '"ok":true'
+  regex: '^\{'
+  jsonpath: $.type              # must exist…
+  equals: welcome               # …and equal this
+  timeout: 5s                   # default 10s; for "time", how long to collect
+assertions:
+  - { type: jsonpath, path: $.token, value: "{{token}}" }
+---
+# collections/chat/leave.req.yaml
+kind: websocket
+name: Leave
+action: close
+connection: chat
+closeCode: 1000                 # WebSocket: 1000 or 3000–4999
+closeReason: bye                # at most 123 bytes
+```
+
+All of a `message` wait's conditions must hold; with none, the next received message matches.
+`ack` waits for the ack of the last message sent with `ack: true`. A step's response body is
+the matched message's data (for `time`, a JSON array of every received message), so
+post-processors work on it as on an HTTP body. A step only sees messages it hasn't seen
+before: replies that arrived between steps are matched by the next wait. `ping` is WebSocket
+only. `connection`, message content and events and the wait's text fields take
+`{{variables}}`.
+
 A message's `content` is the JSON array of its arguments, any number of them, e.g.
 `'["lobby", {"user": "{{user}}"}, {{count}}, true]'`. The editor shows it as a list of typed
 arguments (Text, JSON, Number, Boolean, Binary), as Postman does, with a switch to edit the

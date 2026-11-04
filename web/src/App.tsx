@@ -10,6 +10,7 @@ import { Sidebar, KindBadge } from "./components/Sidebar";
 import { RequestEditor } from "./components/RequestEditor";
 import { ResponseView, HeatLegend } from "./components/ResponseView";
 import { SessionConsole } from "./components/SessionConsole";
+import { SocketStep, SocketStepResult } from "./components/SocketStep";
 import { RunnerView } from "./components/RunnerView";
 import { LoadTestPage, NewLoadTest } from "./components/LoadTest";
 import { LoadRunPage } from "./components/LoadRun";
@@ -337,7 +338,15 @@ function Workspace({ path }: { path: string }) {
   // Route by the draft's type so switching type in the editor takes effect.
   const kind = draft?.kind ?? q.data.kind;
   if (kind === "websocket" || kind === "socketio") {
-    return <SessionConsole key={path} path={path} saved={q.data} />;
+    const action = draft?.action ?? q.data.action;
+    if (!action || action === "connect") return <SessionConsole key={path} path={path} saved={q.data} />;
+    return (
+      <div className="work" style={{ gridTemplateRows: `${split.top}fr 16px ${100 - split.top}fr` }} ref={split.ref}>
+        <SocketStep key={path} path={path} saved={q.data} />
+        <div className="splitter" role="separator" aria-orientation="horizontal" aria-label="Resize result panel" tabIndex={0} {...split.handlers} />
+        <SocketStepResult key={`r-${path}`} result={result} sending={sending} />
+      </div>
+    );
   }
   return (
     <div className="work" style={{ gridTemplateRows: `${split.top}fr 16px ${100 - split.top}fr` }} ref={split.ref}>

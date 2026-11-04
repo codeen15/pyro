@@ -77,12 +77,26 @@ export function SessionConsole({ path, saved }: { path: string; saved: PyroReque
     return off;
   }, [sessionId]);
 
-  // Close the session when leaving the request.
+  // The connection stays open when you move to other requests, so send,
+  // ping and close requests (and HTTP requests in between) can use it.
+  // Coming back, pick it up again.
   useEffect(() => {
+    let gone = false;
+    api.connections().then(
+      (list) => {
+        const mine = list.find((c) => c.path === path && c.sessionId);
+        if (!mine || gone) return;
+        api.sessionState(mine.sessionId!).then(
+          (st) => !gone && !st.closed && setLive({ state: st, messages: st.messages ?? [] }),
+          () => {},
+        );
+      },
+      () => {},
+    );
     return () => {
-      if (sessionId) api.closeSession(sessionId).catch(() => {});
+      gone = true;
     };
-  }, [sessionId]);
+  }, [path]);
 
   const connect = async () => {
     setConnecting(true);
@@ -95,6 +109,7 @@ export function SessionConsole({ path, saved }: { path: string; saved: PyroReque
       } else {
         setLive({ state: res.session, messages: res.session.messages ?? [] });
         setTab("message");
+        qc.invalidateQueries({ queryKey: ["connections"] });
       }
     } catch (e) {
       setConnectError((e as Error).message);
@@ -107,6 +122,7 @@ export function SessionConsole({ path, saved }: { path: string; saved: PyroReque
     if (!live) return;
     await api.closeSession(live.state.id).catch(() => {});
     setLive((cur) => (cur ? { ...cur, state: { ...cur.state, closed: true } } : cur));
+    qc.invalidateQueries({ queryKey: ["connections"] });
   };
 
   const send = async () => {
@@ -196,6 +212,30 @@ export function SessionConsole({ path, saved }: { path: string; saved: PyroReque
               )}
             </Space.Compact>
           </form>
+          <div className="field-row conn-row">
+            <label className="field-label" htmlFor="conn-name">
+              Connection name
+            </label>
+            <VarInput
+              id="conn-name"
+              className="mono conn-input"
+              value={req.connection ?? ""}
+              placeholder="default"
+              onChange={(e) => edit({ connection: e.target.value || undefined })}
+              disabled={connected}
+              spellCheck={false}
+            />
+            <span className="muted small">
+              {connected ? (
+                <>
+                  Open as <code>{live!.state.connection || "default"}</code>. It stays open while you use other requests;
+                  send, ping and close requests reach it by this name.
+                </>
+              ) : (
+                "Send, ping and close requests use this name to reach the connection."
+              )}
+            </span>
+          </div>
           {connectError && <Alert type="error" showIcon role="alert" title={connectError} />}
 
           <Tabs
@@ -294,7 +334,7 @@ function SavedMessages({ messages, onUse, onChange }: { messages: SavedMessage[]
   );
 }
 
-function SocketIOSettings({ cfg, onChange }: { cfg: SocketIOConfig; onChange: (c: SocketIOConfig) => void }) {
+export function SocketIOSettings({ cfg, onChange }: { cfg: SocketIOConfig; onChange: (c: SocketIOConfig) => void }) {
   return (
     <div className="auth-editor">
       <label className="field-row">
@@ -438,7 +478,7 @@ function Timeline({
   );
 }
 
-function MessageRow({ m }: { m: SessionMessage }) {
+export function MessageRow({ m }: { m: SessionMessage }) {
   const [open, setOpen] = useState(false);
   const pretty = useMemo(() => {
     if (!open || !m.data) return m.data;

@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- WebSocket and Socket.IO requests have an action, chosen when created: **Connect** (the
+  console, now with a connection name), **Send & receive** (send messages, then wait for a
+  matching message, an ack or a set time), **Ping** and **Close**. Steps reach a connection by
+  name, so HTTP requests can run in between and feed their results into messages. They run by
+  hand, in the collection runner (which no longer skips socket requests) and in load tests
+  (`ws_step_duration`, `ws_step_failed`, `ws_ping`). Consoles stay connected when you open
+  other requests; `GET /api/v1/connections` lists open connections.
+
 - Response bodies: the Pretty view is a collapsible JSON tree, with expand all and collapse
   all.
 - Collection and folder settings: `Ctrl` + `S` saves; variables show initial and current

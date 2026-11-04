@@ -105,8 +105,15 @@ Use the variables anywhere: `{{user}}` in a URL, header, body or socket message.
 
 ### WebSocket and Socket.IO steps
 
-A step that runs a WebSocket or Socket.IO request connects, sends messages, and keeps the
-connection open:
+Send & receive, ping and close requests ([steps on a connection](realtime.md#steps-on-a-connection))
+run as they do in the runner, on connections their VU opened earlier in the flow with a connect
+request; each VU has its own. Tick **Once per VU** on the connect step to open one connection
+per VU and reuse it every iteration. They add `ws_step_duration` (time per step, wait
+included), `ws_step_failed` (rate of failed steps: a timeout, a connection that isn't open) and
+`ws_ping` (ping round trip), and assertions on them count in `checks`.
+
+A connect request with any of the settings below connects, sends messages, and keeps the
+connection open for that time instead:
 
 - **Keep open:** how long to stay connected after sending (e.g. `30s`).
 - **Events to emit** (Socket.IO): each has an event name, typed **arguments** (Text, JSON,

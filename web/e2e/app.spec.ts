@@ -7,7 +7,7 @@ test.beforeEach(async ({ page }) => {
 
 test("send a request and see its tests pass", async ({ page }) => {
   await page.getByRole("button", { name: "GET List items", exact: true }).click();
-  await page.getByRole("button", { name: "Send" }).click();
+  await page.getByRole("button", { name: "Send", exact: true }).click();
   await expect(page.locator(".response")).toContainText("200");
   await expect(page.locator(".response")).toContainText('"page"');
   await page.getByRole("tab", { name: /Tests/ }).last().click();
@@ -45,7 +45,7 @@ test("pre and post processors and think time", async ({ page }) => {
   await added.getByLabel("Assertion path").fill("$.query.page");
   await added.getByLabel("Expected value").fill("7");
 
-  await page.getByRole("button", { name: "Send" }).click();
+  await page.getByRole("button", { name: "Send", exact: true }).click();
   await expect(page.locator(".response")).toContainText('"page": "7"');
   await page.getByRole("tab", { name: /Tests/ }).last().click();
   await expect(page.locator(".test-list li.is-pass", { hasText: "$.query.page eq 7" })).toBeVisible();
@@ -99,7 +99,7 @@ test("paste a cURL command into an existing collection", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Added 1 request to shop" })).toBeVisible();
   await page.getByRole("button", { name: "Done" }).click();
   await page.getByRole("button", { name: "POST POST 127.0.0.1:7891/orders", exact: true }).click();
-  await page.getByRole("button", { name: "Send" }).click();
+  await page.getByRole("button", { name: "Send", exact: true }).click();
   await expect(page.locator(".response")).toContainText("201");
 });
 
@@ -185,7 +185,7 @@ test("OAuth 2.0: client credentials and authorization code with PKCE", async ({ 
   await page.getByLabel("Client secret").fill("s3cret");
   await page.getByRole("button", { name: "Get new access token" }).click();
   await expect(page.locator(".token-panel")).toContainText("expires in");
-  await page.getByRole("button", { name: "Send" }).click();
+  await page.getByRole("button", { name: "Send", exact: true }).click();
   await expect(page.locator(".response")).toContainText("Bearer client_credentials-token");
 
   // Browser sign-in: the provider's window redirects back to Pyro's callback.
@@ -195,13 +195,13 @@ test("OAuth 2.0: client credentials and authorization code with PKCE", async ({ 
   await expect(popup.getByRole("heading", { name: "Signed in" })).toBeVisible();
   await popup.close();
   await expect(page.locator(".token-panel")).toContainText("expires in");
-  await page.getByRole("button", { name: "Send" }).click();
+  await page.getByRole("button", { name: "Send", exact: true }).click();
   await expect(page.locator(".response")).toContainText("Bearer authorization_code-token");
 });
 
 test("cookies set by responses can be viewed, edited and deleted", async ({ page }) => {
   await page.getByRole("button", { name: "POST Log in", exact: true }).click();
-  await page.getByRole("button", { name: "Send" }).click();
+  await page.getByRole("button", { name: "Send", exact: true }).click();
   await expect(page.locator(".response")).toContainText("200");
   await page.getByRole("button", { name: "Manage cookies" }).click();
   await expect(page.getByRole("heading", { name: "Cookies", exact: true })).toBeVisible();
@@ -218,7 +218,7 @@ test("cookies set by responses can be viewed, edited and deleted", async ({ page
 
 test("save a response as an example", async ({ page }) => {
   await page.getByRole("button", { name: "POST Create order", exact: true }).click();
-  await page.getByRole("button", { name: "Send" }).click();
+  await page.getByRole("button", { name: "Send", exact: true }).click();
   await expect(page.locator(".response")).toContainText("201");
   await page.getByRole("button", { name: "Save as example" }).click();
   await page.getByRole("tab", { name: /Examples/ }).click();
@@ -388,7 +388,7 @@ test("variables are coloured and editable from a hover card", async ({ page }) =
   await page.locator(".var-card").getByLabel("Value of color").fill("red");
   await page.locator(".var-card").getByRole("button", { name: "Add" }).click();
   await expect(page.locator(".var-token.is-defined[data-var=color]")).toBeVisible();
-  await page.getByRole("button", { name: "Send" }).click();
+  await page.getByRole("button", { name: "Send", exact: true }).click();
   await expect(page.locator(".response")).toContainText("/items/red");
 });
 
@@ -495,7 +495,7 @@ test("the user guide opens from the top bar, links between pages and searches", 
 test("JSON tree, variable cards in params, current values from a request, long names", async ({ page, request }) => {
   // A response body is a collapsible tree.
   await page.getByRole("button", { name: "GET List items", exact: true }).click();
-  await page.getByRole("button", { name: "Send" }).click();
+  await page.getByRole("button", { name: "Send", exact: true }).click();
   await expect(page.locator(".json-tree")).toBeVisible();
   await page.getByRole("button", { name: "Collapse object query" }).click();
   await expect(page.locator(".j-count").first()).toHaveText("1 key");
@@ -525,7 +525,7 @@ test("JSON tree, variable cards in params, current values from a request, long n
   col.variables.push({ key: "orderId", value: "none" });
   await request.put("/api/v1/collections/shop", { data: col });
   await page.getByRole("button", { name: "POST Create order", exact: true }).click();
-  await page.getByRole("button", { name: "Send" }).click();
+  await page.getByRole("button", { name: "Send", exact: true }).click();
   await expect(page.locator(".response")).toContainText("201");
   const shop = page.locator(".row-wrap", { hasText: "Shop" }).first();
   await shop.hover();
@@ -542,4 +542,58 @@ test("JSON tree, variable cards in params, current values from a request, long n
   await page.locator(".row-label", { hasText: "Fetch the complete" }).hover();
   await expect(page.getByRole("tooltip").filter({ hasText: "with pagination" })).toBeVisible();
   await request.delete("/api/v1/requests/shop/long-name");
+});
+
+test("socket steps: open a named connection, use an HTTP response in a message, wait, ping, close", async ({ page }) => {
+  // Connect: the console opens the "chat" connection.
+  await page.getByRole("button", { name: "WS Open chat", exact: true }).click();
+  await expect(page.getByLabel("Connection name")).toHaveValue("chat");
+  await page.getByRole("button", { name: "Connect", exact: true }).first().click();
+  await expect(page.locator(".conn-label")).toHaveText("Connected");
+
+  // An HTTP request in between extracts {{orderId}}.
+  await page.getByRole("button", { name: "POST Make order", exact: true }).click();
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(page.locator(".response")).toContainText("201");
+
+  // The send step uses it in its message and waits for the welcome.
+  await page.getByRole("button", { name: "SEND Join with order", exact: true }).click();
+  await expect(page.locator(".conn-hint")).toContainText("chat is open.");
+  await page.getByRole("tab", { name: /Wait/ }).click();
+  await expect(page.getByLabel("JSONPath")).toHaveValue("$.type");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  const result = page.locator(".response");
+  await expect(result.locator(".status-line")).toContainText("matched");
+  await expect(result.locator(".status-line")).toContainText("1 test passed");
+  await expect(result.locator(".json-tree")).toContainText('"ord_1"');
+  await result.getByRole("tab", { name: /Messages/ }).click();
+  await expect(result.locator(".msg")).toHaveCount(2);
+
+  // The console stayed connected and shows both messages.
+  await page.getByRole("button", { name: "WS Open chat", exact: true }).click();
+  await expect(page.locator(".conn-label")).toHaveText("Connected");
+  await expect(page.locator(".timeline .msg-data")).toContainText(['{"type":"join","token":"ord_1"}', '{"type":"welcome","token":"ord_1"}']);
+
+  // A ping step made in the new-request dialog.
+  const chat = page.locator(".row-wrap:not(.request-row)").filter({ has: page.getByText("Chat", { exact: true }) });
+  await chat.hover();
+  await chat.getByRole("button", { name: "New request in Chat" }).click();
+  await page.getByRole("radio", { name: /WebSocket/ }).click();
+  await page.getByRole("radio", { name: /^Ping/ }).click();
+  await page.getByRole("dialog").getByLabel("Request name").fill("Ping chat");
+  await page.getByRole("button", { name: "Create request" }).click();
+  await expect(page.locator(".action-tag")).toHaveText("Ping");
+  await expect(page.locator(".conn-hint")).toContainText("default isn't open");
+  await page.locator(".conn-hint").getByRole("button", { name: "chat", exact: true }).click();
+  await expect(page.getByLabel("Connection name")).toHaveValue("chat");
+  await page.getByRole("button", { name: "Ping", exact: true }).click();
+  await expect(page.locator(".response .status-line")).toContainText("pong");
+  await expect(page.locator(".response .status-line")).toContainText("round trip");
+
+  // Close ends it; the console shows it closed.
+  await page.getByRole("button", { name: "CLOSE Leave chat", exact: true }).click();
+  await page.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(page.locator(".response .status-line")).toContainText("closed");
+  await page.getByRole("button", { name: "WS Open chat", exact: true }).click();
+  await expect(page.locator(".conn-label")).toHaveText("Not connected");
 });

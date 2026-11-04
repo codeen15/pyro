@@ -245,7 +245,7 @@ func (v *vu) pyroAPI() map[string]any {
 				throw("pyro.request: %v", err)
 			}
 			if k := target.Request.Kind; k == model.KindWebSocket || k == model.KindSocketIO {
-				throw("pyro.request: %s is a %s; use a request step with hold", path, k)
+				throw("pyro.request: %s is a %s step; put it in the flow as a request step", path, k)
 			}
 			return send(in, tags, name)
 		},

@@ -66,6 +66,13 @@ export interface PyroRequest {
   post?: Processor[];
   messages?: SavedMessage[];
   socketio?: SocketIOConfig;
+  /** WebSocket / Socket.IO step: connect (default), send, ping or close. */
+  action?: SocketAction;
+  /** The named connection a step uses (connect: the name it opens). */
+  connection?: string;
+  wait?: SocketWait;
+  closeCode?: number;
+  closeReason?: string;
   examples?: Example[];
 }
 
@@ -196,6 +203,8 @@ export interface LogLine {
 export interface SendResult {
   sent?: PyroRequest;
   response?: PyroResponse;
+  /** Set for WebSocket and Socket.IO steps. */
+  socket?: SocketResult;
   unresolved?: string[];
   error?: string;
   startedAt: string;
@@ -220,7 +229,44 @@ export interface SessionMessage {
   size: number;
 }
 
+export type SocketAction = "connect" | "send" | "ping" | "close";
+
+/** What a send step waits for before the next step. */
+export interface SocketWait {
+  for?: "" | "message" | "ack" | "time";
+  event?: string;
+  contains?: string;
+  regex?: string;
+  jsonpath?: string;
+  equals?: string;
+  timeout?: string;
+}
+
+/** What a socket step did (SendResult.socket). */
+export interface SocketResult {
+  action: SocketAction;
+  connection?: string;
+  own?: boolean;
+  info?: SessionState["info"];
+  sent?: SessionMessage[];
+  received?: SessionMessage[];
+  matched?: SessionMessage;
+  waitMs?: number;
+  rttMs?: number;
+}
+
+/** An open connection (GET /connections). */
+export interface OpenConnection {
+  name: string;
+  kind?: Kind;
+  sessionId?: string;
+  path?: string;
+  url?: string;
+}
+
 export interface SessionState {
+  /** The name socket steps use to reach this session. */
+  connection?: string;
   id: string;
   path?: string;
   kind: Kind;
@@ -841,6 +887,7 @@ export const api = {
   exportCollection: (slug: string) => call<ExportView>("GET", `/collections/${encodeURIComponent(slug)}/export`),
   openSession: (body: { path?: string; request?: PyroRequest; environment?: string }) => call<OpenResult>("POST", "/sessions", body),
   sessionState: (id: string) => call<SessionState>("GET", `/sessions/${id}`),
+  connections: () => call<OpenConnection[]>("GET", "/connections"),
   sessionSend: (id: string, m: { data: string; binary?: boolean; event?: string; ack?: boolean }) =>
     call<{ message: SessionMessage; unresolved?: string[] }>("POST", `/sessions/${id}/send`, m),
   closeSession: (id: string) => call<void>("DELETE", `/sessions/${id}`),

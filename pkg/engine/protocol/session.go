@@ -57,3 +57,13 @@ type Session interface {
 	Err() error
 	Info() SessionInfo
 }
+
+// Pinger is a session that can measure a round trip (WebSocket ping/pong).
+type Pinger interface {
+	Ping(ctx context.Context) (time.Duration, error)
+}
+
+// CloserWith is a session that can close with a status code and reason.
+type CloserWith interface {
+	CloseWith(code int, reason string) error
+}

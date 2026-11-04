@@ -66,11 +66,28 @@ func (s *Server) send(w http.ResponseWriter, r *http.Request) {
 	for k, v := range body.Runtime {
 		in.Vars.Runtime[k] = v
 	}
+	socket := in.Request.Kind == model.KindWebSocket || in.Request.Kind == model.KindSocketIO
+	if socket {
+		if in.Request.SocketAction() == model.ActionConnect {
+			writeError(w, http.StatusBadRequest, "connect requests open from the editor's Connect button (POST /sessions)")
+			return
+		}
+		in.Conns = s.connsFor(r)
+	}
 
 	res := s.cfg.Engine.Send(r.Context(), in)
 	s.sessionFor(r).record(in.Vars, slug, bases)
+	if socket && res.Socket != nil {
+		// Show what the step sent in its connection's console (received
+		// messages are logged as they arrive).
+		if ls := s.sessionByConn(principal(r).ID, res.Socket.Connection); ls != nil && !res.Socket.Own {
+			for _, m := range res.Socket.Sent {
+				s.hub.publish("session:"+ls.ID, "message", ls.record(m))
+			}
+		}
+	}
 	out := sendResponse{Result: res}
-	if s.cfg.History != nil && res.Sent != nil {
+	if s.cfg.History != nil && res.Sent != nil && !socket {
 		id, err := s.cfg.History.Add(r.Context(), s.userKey(r), body.Path, in.Request.Name, res)
 		if err != nil {
 			s.log.Warn("recording history failed", "err", err)

@@ -61,6 +61,9 @@ type SendInput struct {
 	Iteration int
 	// Script, when set, is used instead of a pooled runtime (one per VU).
 	Script *script.Runtime
+	// Conns holds open WebSocket and Socket.IO connections for socket steps
+	// (one per run, VU or user). Nil: steps can only use their own.
+	Conns *Conns
 }
 
 // Result describes one send. Error is set when no response was received;
@@ -79,6 +82,8 @@ type Result struct {
 	// Problems lists extractors that matched nothing.
 	Problems []string `json:"problems,omitempty"`
 	Skipped  bool     `json:"skipped,omitempty"`
+	// Socket is set for WebSocket and Socket.IO steps.
+	Socket *SocketResult `json:"socket,omitempty"`
 
 	// NextSet/Next carry setNextRequest for the collection runner.
 	NextSet bool    `json:"-"`
@@ -123,10 +128,6 @@ func (e *Engine) Send(ctx context.Context, in SendInput) *Result {
 		res.Error = "no request"
 		return res
 	}
-	if k := in.Request.Kind; k == model.KindWebSocket || k == model.KindSocketIO {
-		res.Error = fmt.Sprintf("%s requests are opened as sessions, not sent", k)
-		return res
-	}
 	if in.Vars == nil {
 		in.Vars = NewVars(nil, in.Chain)
 	}
@@ -164,7 +165,13 @@ func (e *Engine) Send(ctx context.Context, in SendInput) *Result {
 	sent.Scripts = nil
 	res.Sent, res.Unresolved = sent, unresolved
 
-	resp, err := e.execute(ctx, sent, res)
+	var resp *protocol.Response
+	var err error
+	if isSocket(sent.Kind) {
+		resp, err = e.socketStep(ctx, sent, in.Conns, res)
+	} else {
+		resp, err = e.execute(ctx, sent, res)
+	}
 	if err == nil && ea != nil && ea.Type == "digest" {
 		resp, err = e.answerDigest(ctx, sent, ea, resp, res)
 	}
@@ -553,6 +560,24 @@ func ResolveRequest(req *model.Request, r *vars.Resolver) (*model.Request, []str
 		for k, v := range req.Options {
 			out.Options[k] = res(v)
 		}
+	}
+	out.Connection = res(req.Connection)
+	if req.SocketIO != nil {
+		sio := *req.SocketIO
+		sio.AuthJSON = res(sio.AuthJSON)
+		out.SocketIO = &sio
+	}
+	if req.Messages != nil {
+		out.Messages = make([]model.Message, len(req.Messages))
+		for i, m := range req.Messages {
+			m.Content, m.Event = res(m.Content), res(m.Event)
+			out.Messages[i] = m
+		}
+	}
+	if req.Wait != nil {
+		w := *req.Wait
+		w.Event, w.Contains, w.Regex, w.JSONPath, w.Equals, w.Timeout = res(w.Event), res(w.Contains), res(w.Regex), res(w.JSONPath), res(w.Equals), res(w.Timeout)
+		out.Wait = &w
 	}
 	return &out, missing
 }

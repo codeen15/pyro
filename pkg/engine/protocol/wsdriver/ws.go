@@ -222,3 +222,32 @@ func (s *Session) Close() error {
 	<-s.done
 	return nil
 }
+
+// Ping sends a ping frame and waits for its pong; the result is the round
+// trip.
+func (s *Session) Ping(ctx context.Context) (time.Duration, error) {
+	start := time.Now()
+	if err := s.conn.Ping(ctx); err != nil {
+		return 0, fmt.Errorf("ping: %w", err)
+	}
+	return time.Since(start), nil
+}
+
+// CloseWith closes with a status code (1000, or 3000–4999) and reason.
+func (s *Session) CloseWith(code int, reason string) error {
+	if code == 0 {
+		code = int(websocket.StatusNormalClosure)
+	}
+	if code != int(websocket.StatusNormalClosure) && (code < 3000 || code > 4999) {
+		return fmt.Errorf("close code %d isn't allowed: use 1000, or 3000–4999 for your own codes", code)
+	}
+	if len(reason) > 123 {
+		return fmt.Errorf("close reason is %d bytes; WebSocket allows 123", len(reason))
+	}
+	s.mu.Lock()
+	s.closing = true
+	s.mu.Unlock()
+	_ = s.conn.Close(websocket.StatusCode(code), reason)
+	<-s.done
+	return nil
+}

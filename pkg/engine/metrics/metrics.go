@@ -56,6 +56,10 @@ var Builtin = map[string]Type{
 	"ws_msgs_received":    Counter,
 	"ws_errors":           Counter,
 	"sio_event_rtt":       Trend,
+	// Socket steps (connect / send and wait / ping / close).
+	"ws_step_duration": Trend,
+	"ws_step_failed":   Rate,
+	"ws_ping":          Trend,
 }
 
 func TypeOf(name string) Type {

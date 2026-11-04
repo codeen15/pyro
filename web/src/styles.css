@@ -3896,6 +3896,13 @@ input[type="checkbox"] {
 .urlbar .var-field {
   flex: 1;
 }
+.field-row .var-field:has(> .wide) {
+  flex: 1;
+  max-width: 520px;
+}
+.field-row .var-field > .wide {
+  max-width: none;
+}
 .urlbar .var-field .ant-input {
   height: 100%;
 }
@@ -4820,4 +4827,82 @@ h1 .report-status {
   font-size: 11px;
   line-height: 18px;
   white-space: nowrap;
+}
+
+/* Socket steps: the connect console's name field and send/ping/close editors. */
+.conn-row {
+  flex-wrap: wrap;
+  margin: 12px 0 0;
+}
+.conn-row .conn-input {
+  max-width: 220px;
+}
+.conn-row .muted {
+  flex-basis: 100%;
+}
+.conn-hint {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  margin: 10px 0 0;
+}
+.conn-hint .ant-btn-link {
+  padding: 0 4px;
+  height: auto;
+}
+.conn-others {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: 8px;
+}
+.action-tag.ant-tag {
+  margin: 0;
+}
+.step-messages {
+  display: grid;
+  gap: 12px;
+  justify-items: start;
+}
+.step-messages > * {
+  justify-self: stretch;
+}
+.step-messages > .ant-btn {
+  justify-self: start;
+}
+.step-message {
+  padding: 12px 16px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-lg);
+  background: var(--iron-1);
+}
+.step-message-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.step-message-head .sub-head {
+  margin: 0;
+}
+.step-message-head > .ant-btn {
+  margin-left: auto;
+}
+.kind-action-head.sub-head {
+  margin: 4px 0 0;
+}
+.kind-cards.kind-actions {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.step-body {
+  padding: 12px 24px;
+}
+@media (max-width: 760px) {
+  .kind-cards.kind-actions {
+    grid-template-columns: 1fr;
+  }
+  .step-message-head {
+    flex-wrap: wrap;
+  }
 }

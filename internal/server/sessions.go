@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -28,7 +29,11 @@ type liveSession struct {
 	OpenedAt  time.Time            `json:"openedAt"`
 	ConnectMS float64              `json:"connectMs"`
 
+	// Connection is the name socket steps use to reach this session.
+	Connection string `json:"connection"`
+
 	sess  protocol.Session
+	conn  *engine.Conn
 	vars  *vars.Set
 	owner string // the user who opened it (team server)
 
@@ -57,12 +62,14 @@ type sessionState struct {
 	Closed   bool          `json:"closed"`
 	Error    string        `json:"error,omitempty"`
 	Messages []messageView `json:"messages"`
+	// Connection is the name socket steps use for this session.
+	Connection string `json:"connection"`
 }
 
 func (ls *liveSession) state() sessionState {
 	ls.mu.Lock()
 	defer ls.mu.Unlock()
-	return sessionState{ls.ID, ls.Path, ls.Kind, ls.Info, ls.OpenedAt, ls.closed, ls.err, append([]messageView{}, ls.log...)}
+	return sessionState{ls.ID, ls.Path, ls.Kind, ls.Info, ls.OpenedAt, ls.closed, ls.err, append([]messageView{}, ls.log...), ls.Connection}
 }
 
 func (ls *liveSession) record(m protocol.Message) messageView {
@@ -118,32 +125,74 @@ func (s *Server) openSession(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, openResponse{ConnectResult: res})
 		return
 	}
+	name := res.Sent.Connection
+	if name == "" {
+		name = model.DefaultConnection
+	}
 	ls := &liveSession{
 		owner: principal(r).ID, ID: newID(), Path: body.Path, Kind: in.Request.Kind, Info: res.Session.Info(), OpenedAt: time.Now(),
-		ConnectMS: float64(time.Since(start).Microseconds()) / 1000, sess: res.Session, vars: in.Vars,
+		ConnectMS: float64(time.Since(start).Microseconds()) / 1000, sess: res.Session, vars: in.Vars, Connection: name,
 	}
+	topic := "session:" + ls.ID
+	// The connection reads the session: the console log and live view see
+	// every message, and socket steps (send/ping/close requests) reach it by
+	// name through the user's connections.
+	ls.conn = engine.NewConn(name, res.Session, func(m protocol.Message) {
+		s.hub.publish(topic, "message", ls.record(m))
+	})
 	s.sessions.mu.Lock()
 	s.sessions.byID[ls.ID] = ls
 	s.sessions.mu.Unlock()
-	go s.pump(ls)
+	s.connsFor(r).Put(name, ls.conn)
+	go s.watch(ls)
 	st := ls.state()
 	writeJSON(w, http.StatusOK, openResponse{ConnectResult: res, Session: &st})
 }
 
-// pump forwards received messages to the log and to event subscribers.
-func (s *Server) pump(ls *liveSession) {
-	topic := "session:" + ls.ID
-	for m := range ls.sess.Messages() {
-		s.hub.publish(topic, "message", ls.record(m))
-	}
+// watch tells the console when the connection ends.
+func (s *Server) watch(ls *liveSession) {
+	<-ls.conn.Done()
 	ls.mu.Lock()
 	ls.closed = true
-	if err := ls.sess.Err(); err != nil {
+	if err := ls.conn.Err(); err != nil {
 		ls.err = err.Error()
 	}
 	errMsg := ls.err
 	ls.mu.Unlock()
-	s.hub.publish(topic, "closed", map[string]string{"error": errMsg})
+	s.hub.publish("session:"+ls.ID, "closed", map[string]string{"error": errMsg})
+}
+
+// connsFor returns the user's named connections in this project.
+func (s *Server) connsFor(r *http.Request) *engine.Conns {
+	return s.connsOf(principal(r).ID)
+}
+
+func (s *Server) connsOf(user string) *engine.Conns {
+	s.sessionMu.Lock()
+	defer s.sessionMu.Unlock()
+	cs := s.connsByUser[user]
+	if cs == nil {
+		cs = engine.NewConns()
+		s.connsByUser[user] = cs
+	}
+	return cs
+}
+
+// sessionByConn finds the user's open console for a connection name.
+func (s *Server) sessionByConn(user, name string) *liveSession {
+	s.sessions.mu.Lock()
+	defer s.sessions.mu.Unlock()
+	for _, ls := range s.sessions.byID {
+		if ls.owner == user && ls.Connection == name {
+			ls.mu.Lock()
+			closed := ls.closed
+			ls.mu.Unlock()
+			if !closed {
+				return ls
+			}
+		}
+	}
+	return nil
 }
 
 func (s *Server) lookupSession(w http.ResponseWriter, r *http.Request) *liveSession {
@@ -182,6 +231,8 @@ func (s *Server) sendSession(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnprocessableEntity, err.Error())
 		return
 	}
+	// Working the console by hand: later socket steps wait for new messages.
+	ls.conn.MarkRead()
 	v := ls.record(m)
 	s.hub.publish("session:"+ls.ID, "message", v)
 	writeJSON(w, http.StatusOK, map[string]any{"message": v, "unresolved": unresolved})
@@ -192,7 +243,11 @@ func (s *Server) closeSession(w http.ResponseWriter, r *http.Request) {
 	if ls == nil {
 		return
 	}
-	_ = ls.sess.Close()
+	if s.connsFor(r).Get(ls.Connection) == ls.conn {
+		_ = s.connsFor(r).Close(ls.Connection, 0, "")
+	} else {
+		_ = ls.sess.Close()
+	}
 	s.sessions.mu.Lock()
 	delete(s.sessions.byID, ls.ID)
 	s.sessions.mu.Unlock()
@@ -209,6 +264,13 @@ func (s *Server) closeAllSessions() {
 	s.sessions.mu.Unlock()
 	for _, ls := range all {
 		_ = ls.sess.Close()
+	}
+	s.sessionMu.Lock()
+	conns := s.connsByUser
+	s.connsByUser = map[string]*engine.Conns{}
+	s.sessionMu.Unlock()
+	for _, cs := range conns {
+		cs.CloseAll()
 	}
 }
 
@@ -245,4 +307,29 @@ func (s *Server) prepare(w http.ResponseWriter, path string, req *model.Request,
 	in.Vars = engine.NewVars(env, in.Chain)
 	in.Vars.Globals = s.ws.GlobalVars()
 	return in, strings.SplitN(path, "/", 2)[0], true
+}
+
+// openConn is one of the user's open connections, for the editor.
+type openConn struct {
+	Name      string     `json:"name"`
+	Kind      model.Kind `json:"kind,omitempty"`
+	SessionID string     `json:"sessionId,omitempty"` // the console showing it
+	Path      string     `json:"path,omitempty"`      // the connect request
+	URL       string     `json:"url,omitempty"`
+}
+
+// listConnections lists the user's open connections (socket steps reach
+// them by name; a connect request's console picks its own back up).
+func (s *Server) listConnections(w http.ResponseWriter, r *http.Request) {
+	user := principal(r).ID
+	out := []openConn{}
+	for _, name := range s.connsOf(user).Names() {
+		oc := openConn{Name: name}
+		if ls := s.sessionByConn(user, name); ls != nil {
+			oc.Kind, oc.SessionID, oc.Path, oc.URL = ls.Kind, ls.ID, ls.Path, ls.Info.URL
+		}
+		out = append(out, oc)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	writeJSON(w, http.StatusOK, out)
 }
