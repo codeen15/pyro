@@ -37,6 +37,29 @@ jobs:
         if: runner.os == 'Linux'
         run: go test -race ./internal/... ./pkg/...
 
+  postgres:
+    name: PostgreSQL
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: pyro
+          POSTGRES_PASSWORD: pyro
+          POSTGRES_DB: pyro
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U pyro" --health-interval 2s --health-timeout 5s --health-retries 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Stores and team server on PostgreSQL
+        run: go test ./internal/history/ ./internal/team/
+        env:
+          PYRO_TEST_POSTGRES_URL: postgres://pyro:pyro@127.0.0.1:5432/pyro?sslmode=disable
+
   socketio:
     name: Socket.IO conformance
     runs-on: ubuntu-24.04

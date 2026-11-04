@@ -87,8 +87,13 @@ type Session interface {
 - **Workspace files:** human-edited YAML in a directory you can commit. See [data-model.md](data-model.md).
 - **SQLite** (`~/.pyro/pyro.db`, `modernc.org/sqlite`, from Phase 1): request history, run summaries and downsampled time series, plugin index and settings. Raw load-test samples go to NDJSON files, never written to SQLite row by row.
 
-- **Team server** (`--data`, default `~/.pyro/team`): `pyro.db` holds accounts, sessions,
-  workspaces, members and projects next to history and load runs. `projects/<id>/` is one
+- **Database access** goes through `internal/db` and the Bun ORM (`uptrace/bun`), so the same
+  code runs on SQLite (`modernc.org/sqlite`, the default) and PostgreSQL (`pgx`, both pure
+  Go). Each store creates and upgrades its own tables with `db.Migrate` steps, recorded in
+  `pyro_migrations`.
+- **Team server** (`--data`, default `~/.pyro/team`): one database holds accounts, sessions,
+  workspaces, members, invites and activity next to history and load runs. It is SQLite in
+  `<data>/pyro.db`, or PostgreSQL via `PYRO_DATABASE_URL`. `projects/<id>/` is one
   ordinary workspace folder per project, so the store, engine and importers work unchanged. A
   project folder is named by its ID, so moving a project to another workspace only changes a
   row.

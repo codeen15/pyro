@@ -48,6 +48,9 @@ generate a lot of traffic. Its defences, by boundary:
   https://…`). Over plain HTTP, passwords and cookies can be read on the network.
 - Cookies and OAuth 2.0 tokens fetched while sending requests are shared by a project's
   members.
+- Keep the PostgreSQL password in the environment or an untracked `.env` (the repository
+  ignores `.env`), and use `sslmode=require` (or stricter) when the database is on another
+  machine. Pyro removes the password from connection errors it prints.
 
 **Workspace content (imported collections, cloned repositories)**
 - Scripts run in an embedded JavaScript engine (goja) with no file system, process or

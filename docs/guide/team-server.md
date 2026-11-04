@@ -114,27 +114,72 @@ pyro serve --team --host 0.0.0.0 --public-url https://pyro.example.com
    only people with an invite link can create an account. You can also allow sign-up
    (below) or create accounts with `pyro admin create-user`.
 
-Everything the server keeps lives in its **data directory** (`--data`, default
-`~/.pyro/team`):
+The server keeps two kinds of data:
+
+- **The database:** accounts, sessions, workspaces, members, invites, activity, request
+  history and saved load test runs. By default it's a SQLite file in the data directory, with
+  nothing to set up. For a hosted server, use PostgreSQL ([below](#database)).
+- **The data directory** (`--data`, default `~/.pyro/team`): each project's files.
 
 ```
 ~/.pyro/team/
-  pyro.db          accounts, sessions, workspaces, projects, history, load runs
+  pyro.db          the SQLite database (when not using PostgreSQL)
   server.yaml      settings (optional)
   projects/<id>/   one ordinary Pyro workspace per project
 ```
 
-To back the server up, copy the whole directory, ideally while the server is stopped.
+To back the server up, copy the data directory, ideally while the server is stopped. With
+PostgreSQL, back up the database as well (e.g. `pg_dump`).
+
+## Database
+
+SQLite is fine for a team on one machine. For a hosted server, point Pyro at PostgreSQL:
+
+```sh
+export PYRO_DATABASE_URL='postgres://pyro:secret@db.internal:5432/pyro?sslmode=require'
+pyro serve --team
+```
+
+- Create an empty database and a user that owns it. Pyro creates and upgrades its tables
+  when it starts.
+- The URL can also go in `.env`, in `server.yaml` (`database:`) or after `--database`.
+- `pyro admin` needs the same setting, so it can reach the same accounts.
+- Project files still live in the data directory. Put it on a persistent volume.
+- Run one Pyro server per data directory.
+- Switching databases doesn't move existing accounts across. Start the new server with a
+  fresh database and upload projects as `.zip` files.
+
+## Settings from .env and the environment
+
+`pyro serve --team` and `pyro admin` read a `.env` file from the folder you start them in, or
+the file given with `--env-file`. Variables already set in the environment win over the file.
+The repository's `.env.example` lists them all:
+
+| Variable | Same as |
+|---|---|
+| `PYRO_DATABASE_URL` | `--database`: PostgreSQL URL (empty: SQLite) |
+| `PYRO_DATA_DIR` | `--data` |
+| `PYRO_HOST`, `PYRO_PORT` | `--host`, `--port` |
+| `PYRO_PUBLIC_URL` | `--public-url` |
+| `PYRO_TLS_CERT`, `PYRO_TLS_KEY` | `--tls-cert`, `--tls-key` |
+| `PYRO_SIGNUP`, `PYRO_SIGNUP_DOMAINS` | `--signup`, `--signup-domain` (comma-separated) |
+| `PYRO_MAX_LOADS` | `--max-loads` |
+| `PYRO_SMTP_HOST`, `PYRO_SMTP_PORT`, `PYRO_SMTP_USERNAME`, `PYRO_SMTP_PASSWORD`, `PYRO_SMTP_FROM` | the `smtp` settings |
+
+Flags win over the environment, which wins over `server.yaml`. Keep `.env` out of git: it
+holds the database password.
 
 ## Settings
 
-Flags or `server.yaml` in the data directory. Flags win.
+Flags, [environment variables](#settings-from-env-and-the-environment), or `server.yaml` in
+the data directory.
 
 ```yaml
 publicURL: https://pyro.example.com   # the address people open
 signup: domains                       # invite-only (default) | open | domains
 signupDomains: [example.com]          # with signup: domains
 maxLoads: 2                           # load tests running at once, server-wide
+database: postgres://pyro@db/pyro     # optional; default SQLite (prefer PYRO_DATABASE_URL for the password)
 smtp:                                 # optional: email invites
   host: smtp.example.com
   port: 587                           # STARTTLS is used when the server offers it
@@ -177,7 +222,8 @@ pyro admin set-admin bob@example.com --revoke
 pyro admin users
 ```
 
-Pass `--data` if the server doesn't use the default data directory. A password can also be
+Pass the same `--data` and `--database` as the server (or run it where the server's `.env`
+is). A password can also be
 piped in, e.g. `echo "$PW" | pyro admin create-user …`.
 
 ## Your account

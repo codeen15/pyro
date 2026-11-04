@@ -17,6 +17,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -126,8 +127,25 @@ func serveCmd() *cobra.Command {
 				if wsDir != "" || noTok || open || agentListen != "" {
 					return errors.New("--workspace, --no-token, --open and --agent-listen don't apply to --team")
 				}
+				if err := tf.loadEnv(); err != nil {
+					return err
+				}
+				if agentToken == "" {
+					agentToken = os.Getenv("PYRO_AGENT_TOKEN")
+				}
 				if len(agents) > 0 && agentToken == "" {
 					return errors.New("agents need a token: pass --agent-token or set PYRO_AGENT_TOKEN")
+				}
+				// In containers the address usually comes from the environment.
+				if v := os.Getenv("PYRO_HOST"); v != "" && !cmd.Flags().Changed("host") {
+					host = v
+				}
+				if v := os.Getenv("PYRO_PORT"); v != "" && !cmd.Flags().Changed("port") {
+					p, err := strconv.Atoi(v)
+					if err != nil {
+						return fmt.Errorf("PYRO_PORT: %w", err)
+					}
+					port = p
 				}
 				return serveTeam(&tf, host, port, agents, agentToken, agentInsecure, outs)
 			}

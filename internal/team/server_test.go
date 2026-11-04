@@ -6,10 +6,10 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
-	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/codeen15/pyro/internal/db/dbtest"
 	"github.com/codeen15/pyro/internal/history"
 	"github.com/codeen15/pyro/internal/server"
 	"github.com/codeen15/pyro/internal/store"
@@ -20,16 +20,15 @@ import (
 func newTeam(t *testing.T, cfg Config) (*httptest.Server, *Store) {
 	t.Helper()
 	dir := t.TempDir()
-	st, err := Open(filepath.Join(dir, "pyro.db"))
+	d := dbtest.Open(t)
+	st, err := NewStore(t.Context(), d)
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { st.Close() })
-	hist, err := history.Open(filepath.Join(dir, "pyro.db"))
+	hist, err := history.New(t.Context(), d)
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { hist.Close() })
 	cfg.DataDir, cfg.Store = dir, st
 	cfg.Project = func(ws *store.Workspace, id string) server.Config {
 		return server.Config{Engine: engine.New(httpdriver.New(httpdriver.Options{FileRoot: ws.Root})), History: hist}
@@ -215,7 +214,7 @@ func TestWorkspaceAndProjectLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.db.Exec(`INSERT INTO members (ws, user, role, added) VALUES (?, ?, 'viewer', 0)`, wsID, u.ID); err != nil {
+	if _, err := st.db.NewInsert().Model(&memberRow{WS: wsID, UserID: u.ID, Role: "viewer"}).Exec(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 	v := newClient(t, ts)
