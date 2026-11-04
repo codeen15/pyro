@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -161,7 +162,8 @@ func TestLoadSecret(t *testing.T) {
 	if err != nil || len(a) < minSecret {
 		t.Fatalf("generated: %q %v", a, err)
 	}
-	if st, _ := os.Stat(filepath.Join(dir, "jwt.secret")); st.Mode().Perm() != 0o600 {
+	// Windows has no Unix permission bits (Go reports 0666 there).
+	if st, _ := os.Stat(filepath.Join(dir, "jwt.secret")); runtime.GOOS != "windows" && st.Mode().Perm() != 0o600 {
 		t.Errorf("jwt.secret mode %v", st.Mode().Perm())
 	}
 	b, _ := LoadSecret(dir)
