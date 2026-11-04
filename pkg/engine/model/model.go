@@ -84,6 +84,9 @@ type Request struct {
 
 	// Streaming protocols (WebSocket, Socket.IO).
 	Messages []Message       `yaml:"messages,omitempty" json:"messages,omitempty"`
+	// Compose is the message in a connect request's console composer, saved
+	// with the request so it's there next time. It's never sent on its own.
+	Compose *Message `yaml:"compose,omitempty" json:"compose,omitempty"`
 	SocketIO *SocketIOConfig `yaml:"socketio,omitempty" json:"socketio,omitempty"`
 
 	// Socket steps: what a WebSocket or Socket.IO request does when it runs

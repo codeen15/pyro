@@ -37,11 +37,15 @@ export function SessionConsole({ path, saved }: { path: string; saved: PyroReque
   const [connecting, setConnecting] = useState(false);
   const [connectError, setConnectError] = useState<string | null>(null);
   const [unresolved, setUnresolved] = useState<string[]>([]);
-  const [compose, setCompose] = useState<SavedMessage>(() => ({
+  // The composer's message is part of the request, so Save keeps it.
+  const compose: SavedMessage = req.compose ?? {
     content: req.messages?.[0]?.content ?? "",
     event: req.messages?.[0]?.event ?? (sio ? "message" : undefined),
-    ack: false,
-  }));
+  };
+  const setCompose = (m: SavedMessage) => {
+    const { name: _name, ...rest } = m;
+    edit({ compose: rest });
+  };
   const [sendError, setSendError] = useState<string | null>(null);
 
   const save = useMutation({
@@ -263,7 +267,7 @@ export function SessionConsole({ path, saved }: { path: string; saved: PyroReque
                       Event
                     </label>
                     <VarInput id="sio-event" className="mono event-input" value={compose.event ?? ""} onChange={(e) => setCompose({ ...compose, event: e.target.value })} spellCheck={false} />
-                    <Checkbox checked={!!compose.ack} onChange={(e) => setCompose({ ...compose, ack: e.target.checked })}>
+                    <Checkbox checked={!!compose.ack} onChange={(e) => setCompose({ ...compose, ack: e.target.checked || undefined })}>
                       Ask for an ack
                     </Checkbox>
                   </div>

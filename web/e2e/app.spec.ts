@@ -597,3 +597,35 @@ test("socket steps: open a named connection, use an HTTP response in a message, 
   await page.getByRole("button", { name: "WS Open chat", exact: true }).click();
   await expect(page.locator(".conn-label")).toHaveText("Not connected");
 });
+
+test("a JSON argument can be cleared and retyped, and the composed message saves with the request", async ({ page }) => {
+  const shop = page.locator(".row-wrap:not(.request-row)").filter({ has: page.getByText("Shop", { exact: true }) });
+  await shop.hover();
+  await shop.getByRole("button", { name: "New request in Shop" }).click();
+  await page.getByRole("radio", { name: /Socket\.IO/ }).click();
+  await page.getByRole("dialog").getByLabel("Request name").fill("Lobby");
+  await page.getByRole("button", { name: "Create request" }).click();
+
+  await page.getByLabel("Event", { exact: true }).fill("join");
+  await page.getByRole("button", { name: "Add argument" }).click();
+  await page.getByRole("button", { name: "Add argument" }).click();
+  await page.getByLabel("Argument 1", { exact: true }).fill("lobby");
+  await pickOption(page, page.getByRole("combobox", { name: "Type of argument 2" }), "JSON");
+  // Clearing the JSON value (and typing half an object) keeps the typed list.
+  const arg2 = page.getByLabel("Argument 2", { exact: true });
+  await arg2.fill("");
+  await expect(page.locator(".arg-row")).toHaveCount(2);
+  await arg2.pressSequentially('{"room": 1');
+  await expect(page.locator(".arg-row")).toHaveCount(2);
+  await expect(page.getByRole("switch", { name: "Edit arguments as JSON" })).not.toBeChecked();
+  await arg2.pressSequentially("}");
+  await expect(page.getByLabel("Argument 1", { exact: true })).toHaveValue("lobby");
+
+  // Save keeps the composer's message.
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Saved" })).toBeVisible();
+  await page.reload();
+  await page.getByRole("button", { name: "SIO Lobby", exact: true }).click();
+  await expect(page.getByLabel("Event", { exact: true })).toHaveValue("join");
+  await expect(page.getByLabel("Argument 2", { exact: true })).toHaveValue('{"room": 1}');
+});

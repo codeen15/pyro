@@ -113,10 +113,24 @@ function jsonProblem(v: string): string | null {
 
 /** One Socket.IO message's arguments: a typed list, or the raw JSON array. */
 export function ArgsEditor({ value, onChange, label = "Arguments" }: { value: string; onChange: (v: string) => void; label?: string }) {
-  const parsed = parseArgs(value);
+  // The typed list is the source of truth while you edit it: a JSON argument
+  // that's half typed makes the stored array invalid, and re-reading that
+  // would lose the list. The value is parsed again only when it changes from
+  // outside (raw JSON edits, loading a saved message).
+  const [state, setState] = useState(() => ({ src: value, args: parseArgs(value) }));
+  let cur = state;
+  if (value !== state.src) {
+    cur = { src: value, args: parseArgs(value) };
+    setState(cur);
+  }
+  const parsed = cur.args;
   const [raw, setRaw] = useState(parsed === null);
   const args = parsed ?? [];
-  const setArgs = (next: Arg[]) => onChange(serializeArgs(next));
+  const setArgs = (next: Arg[]) => {
+    const src = serializeArgs(next);
+    setState({ src, args: next });
+    onChange(src);
+  };
   const patch = (i: number, p: Partial<Arg>) => setArgs(args.map((a, j) => (j === i ? { ...a, ...p } : a)));
   const move = (i: number, dir: -1 | 1) => {
     const next = [...args];

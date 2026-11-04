@@ -178,6 +178,7 @@ url: wss://api.example.com/ws
 headers: [ { key: Authorization, value: "Bearer {{token}}" } ]
 messages:                       # saved message templates
   - { name: Subscribe, content: '{"op":"sub","topic":"orders"}' }
+compose: { content: '{"op":"ping"}' }   # the console composer's message, saved with the request (never sent by itself)
 ```
 
 ### Socket.IO

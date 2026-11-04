@@ -9,6 +9,9 @@
   hand, in the collection runner (which no longer skips socket requests) and in load tests
   (`ws_step_duration`, `ws_step_failed`, `ws_ping`). Consoles stay connected when you open
   other requests; `GET /api/v1/connections` lists open connections.
+- The WebSocket and Socket.IO console saves the message you're composing with the request
+  (`compose`). Clearing or half-typing a JSON argument no longer drops the argument list and
+  switches to raw JSON.
 
 - Response bodies: the Pretty view is a collapsible JSON tree, with expand all and collapse
   all.

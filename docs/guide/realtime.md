@@ -39,6 +39,9 @@ Tabs:
 | **Auth** | The same auth types as HTTP (applied to the handshake) |
 | **Socket.IO** | Socket.IO only: namespace, path (default `/socket.io/`), auth JSON sent with CONNECT, and the transport |
 
+The message in the composer is part of the request: **Save** (`Ctrl` + `S`) keeps it, so it's
+there next time you open the request. **Save message** adds it to the **Saved** list as well.
+
 **Socket.IO transport:** the default tries WebSocket and falls back to HTTP long-polling when
 a server or proxy refuses it. You can also force WebSocket only or long-polling only. The log
 shows which one is in use.

@@ -65,6 +65,8 @@ export interface PyroRequest {
   pre?: Processor[];
   post?: Processor[];
   messages?: SavedMessage[];
+  /** The console composer's message (connect requests), saved with the request. */
+  compose?: SavedMessage;
   socketio?: SocketIOConfig;
   /** WebSocket / Socket.IO step: connect (default), send, ping or close. */
   action?: SocketAction;
