@@ -22,11 +22,20 @@ generate a lot of traffic. Its defences, by boundary:
   networks.
 
 **The team server (`pyro serve --team`)**
-- Accounts sign in with a password (argon2id hashes) and get a random session cookie. The
-  database keeps only its SHA-256 hash. The cookie is HttpOnly and SameSite=Lax, and Secure
-  behind https.
-- State-changing requests need the `X-Pyro-CSRF` header and a same-origin `Origin`, so other
-  sites can't act with a member's cookie. The server sends no CORS headers.
+- Accounts sign in with a password (argon2id hashes).
+  - They get a 15-minute access token (a JWT signed with HS256) and a 14-day refresh token
+    (random; the database keeps only its SHA-256 hash).
+  - Browsers hold both in HttpOnly, SameSite=Lax cookies (Secure behind https), so page
+    scripts can't read them.
+  - Tokens are checked for signature, algorithm (HS256 only, never `none`), issuer and
+    expiry. Every request also checks the account isn't disabled and the token wasn't issued
+    before the user's last password change or sign-out-everywhere.
+  - The signing key comes from `PYRO_JWT_SECRET` or `<data>/jwt.secret` (mode 0600). Anyone
+    with it can forge tokens, so protect the data directory and the environment.
+- State-changing requests authenticated by cookie need the `X-Pyro-CSRF` header and a
+  same-origin `Origin`, so other sites can't act with a member's cookie. Bearer-token
+  requests are exempt, because a browser never adds that header on its own. The server
+  sends no CORS headers.
 - Failed sign-ins are rate-limited per account and per IP. Unknown emails cost the same time
   as wrong passwords.
 - Every project route has a minimum role (viewer, editor, owner, or server admin for plugins),

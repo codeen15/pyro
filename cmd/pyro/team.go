@@ -225,13 +225,17 @@ func serveTeam(f *teamFlags, host string, port int, agents []string, agentToken 
 	if (f.tlsCert == "") != (f.tlsKey == "") {
 		return errors.New("--tls-cert and --tls-key go together")
 	}
+	secret, err := team.LoadSecret(dir)
+	if err != nil {
+		return err
+	}
 	plugins := openPlugins()
 	if plugins != nil {
 		defer plugins.Close()
 	}
 	ts := team.New(team.Config{
 		DataDir: dir, Store: st, PublicURL: c.PublicURL, Signup: c.Signup, SignupDomains: c.SignupDomains,
-		MaxLoads: c.MaxLoads, UI: web.Dist(), Mailer: team.NewMailer(c.SMTP),
+		MaxLoads: c.MaxLoads, UI: web.Dist(), Mailer: team.NewMailer(c.SMTP), JWTSecret: secret,
 		Project: func(ws *store.Workspace, id string) server.Config {
 			eng := engine.New(httpdriver.New(httpdriver.Options{FileRoot: ws.Root}))
 			eng.Plugins = plugins

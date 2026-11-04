@@ -930,6 +930,7 @@ export const team = {
   signup: (b: { email: string; name: string; password: string; invite?: string }) => teamCall<Me>("POST", "/auth/signup", b),
   login: (b: { email: string; password: string }) => teamCall<Me>("POST", "/auth/login", b),
   logout: () => teamCall<void>("POST", "/auth/logout"),
+  logoutEverywhere: () => teamCall<void>("POST", "/auth/logout?everywhere=1"),
   me: () => teamCall<Me>("GET", "/me"),
   rename: (name: string) => teamCall<Me>("PATCH", "/me", { name }),
   changePassword: (current: string, password: string) => teamCall<void>("POST", "/me/password", { current, password }),

@@ -124,6 +124,7 @@ The server keeps two kinds of data:
 ```
 ~/.pyro/team/
   pyro.db          the SQLite database (when not using PostgreSQL)
+  jwt.secret       the key that signs sign-in tokens (unless PYRO_JWT_SECRET is set)
   server.yaml      settings (optional)
   projects/<id>/   one ordinary Pyro workspace per project
 ```
@@ -164,6 +165,7 @@ The repository's `.env.example` lists them all:
 | `PYRO_TLS_CERT`, `PYRO_TLS_KEY` | `--tls-cert`, `--tls-key` |
 | `PYRO_SIGNUP`, `PYRO_SIGNUP_DOMAINS` | `--signup`, `--signup-domain` (comma-separated) |
 | `PYRO_MAX_LOADS` | `--max-loads` |
+| `PYRO_JWT_SECRET` | the key that signs sign-in tokens (default: `<data>/jwt.secret`) |
 | `PYRO_SMTP_HOST`, `PYRO_SMTP_PORT`, `PYRO_SMTP_USERNAME`, `PYRO_SMTP_PASSWORD`, `PYRO_SMTP_FROM` | the `smtp` settings |
 
 Flags win over the environment, which wins over `server.yaml`. Keep `.env` out of git: it
@@ -231,12 +233,36 @@ piped in, e.g. `echo "$PW" | pyro admin create-user …`.
 The **account menu** (the person icon, top right) has:
 
 - **Account**: change your name or password. Changing your password signs out your other
-  sessions.
+  sessions and revokes your API tokens.
 - **Workspaces and projects**.
 - **Sign out**.
 
-Sessions last 14 days from your last visit. After 10 wrong passwords in 15 minutes, sign-in
-pauses for that account.
+- **Sign out everywhere** (Account page): ends your session on every browser and revokes your
+  API tokens.
+
+You stay signed in for 14 days from your last visit. Behind the scenes, the browser holds a
+short-lived access token (a JWT, renewed every 15 minutes) and a refresh token, both in
+cookies that page scripts can't read. After 10 wrong passwords in 15 minutes, sign-in pauses
+for that account.
+
+## API tokens for scripts and CI
+
+Scripts can call the team server's API with a Bearer token:
+
+```sh
+TOKEN=$(curl -s https://pyro.example.com/api/v1/auth/token \
+  -d '{"email":"ci@example.com","password":"…"}' | jq -r .accessToken)
+curl -H "Authorization: Bearer $TOKEN" https://pyro.example.com/api/v1/workspaces
+```
+
+- The access token lasts 15 minutes.
+- The response also carries a `refreshToken`. Trade it for a new access token at
+  `/api/v1/auth/refresh`, and sign it out at `/api/v1/auth/logout`.
+- Details are in the [API reference](../api.md).
+
+The server signs tokens with a key in `<data>/jwt.secret`, made on first start. If several
+servers share one database, give them all the same key in `PYRO_JWT_SECRET` (32 characters or
+more). Changing the key signs everyone out.
 
 ## What's different from local Pyro
 

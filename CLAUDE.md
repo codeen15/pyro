@@ -20,7 +20,8 @@ engine and serves a React web UI on localhost. **Current phase: 14 (workspaces a
 - `internal/server`: the project REST API `/api/v1` (chi), token auth, embedded SPA. In team mode one `Server` per project,
   acting for a `Principal`. `roles.go` gives every route a minimum role (`TestEveryRouteHasARole` enforces it);
   `changes.go` adds ETags/If-Match conflicts, `tree` change events and the `OnChange` activity hook.
-- `internal/team`: the team server: accounts, argon2id passwords, cookie sessions, CSRF, workspaces, members, invites, activity and projects
+- `internal/team`: the team server: accounts, argon2id passwords, JWT sign-in (`jwt.go`: 15-min HS256 access tokens + hashed
+  refresh tokens; HttpOnly cookies for browsers, `Authorization: Bearer` for API clients), CSRF, workspaces, members, invites, activity and projects
   (SQLite, `<data>/pyro.db`). It proxies `/api/v1/projects/{id}/*` to that project's `internal/server.Server`, and
   project folders live in `<data>/projects/<id>/`.
 - `internal/version`: build metadata (set via ldflags)
