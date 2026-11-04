@@ -142,7 +142,7 @@ func (s *Server) startLoadTest(w http.ResponseWriter, r *http.Request) {
 	if envName == "" {
 		envName = plan.Environment
 	}
-	opts := load.Options{Resolve: s.ws.Target, LoadData: s.ws.LoadData, FileRoot: s.ws.Root, AllowFilesOutsideRoot: s.ws.Meta.AllowFilesOutsideWorkspace, Globals: s.ws.GlobalVars(), MaxRPS: s.ws.Meta.LoadMaxRPS, AllowHosts: s.ws.Meta.LoadAllowHosts}
+	opts := load.Options{Resolve: s.ws.Target, LoadData: s.ws.LoadData, FileRoot: s.ws.Root, AllowFilesOutsideRoot: s.ws.Meta.AllowFilesOutsideWorkspace && !s.cfg.Team, Globals: s.ws.GlobalVars(), MaxRPS: s.ws.Meta.LoadMaxRPS, AllowHosts: s.ws.Meta.LoadAllowHosts}
 	if s.cfg.Engine != nil {
 		opts.Plugins = s.cfg.Engine.Plugins
 	}
@@ -180,10 +180,22 @@ func (s *Server) startLoadTest(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusConflict, map[string]any{"error": "a load test is already running", "running": cur.id})
 		return
 	}
+	release := func() {}
+	if slots := s.cfg.LoadSlots; slots != nil {
+		select {
+		case slots <- struct{}{}:
+			release = func() { <-slots }
+		default:
+			s.loads.mu.Unlock()
+			writeError(w, http.StatusTooManyRequests, "the server is already running its maximum number of load tests; try again when one finishes")
+			return
+		}
+	}
 	id := newID()
 	topic := "load:" + id
 	sinks, err := output.OpenAll(s.cfg.Outputs, plan.Name, id)
 	if err != nil {
+		release()
 		s.loads.mu.Unlock()
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -200,6 +212,7 @@ func (s *Server) startLoadTest(w http.ResponseWriter, r *http.Request) {
 	}
 	test, err := load.Start(plan, opts)
 	if err != nil {
+		release()
 		sinks.Close()
 		s.loads.mu.Unlock()
 		writeError(w, http.StatusUnprocessableEntity, err.Error())
@@ -213,12 +226,13 @@ func (s *Server) startLoadTest(w http.ResponseWriter, r *http.Request) {
 
 	go func() {
 		res := test.Wait()
+		release()
 		if err := sinks.Close(); err != nil {
 			s.log.Warn("load test outputs", "err", err)
 		}
 		if s.cfg.History != nil {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			if err := s.cfg.History.AddLoadRun(ctx, s.ws.Root, id, name, res); err != nil {
+			if err := s.cfg.History.AddLoadRun(ctx, s.key, id, name, res); err != nil {
 				s.log.Warn("saving load run failed", "err", err)
 			}
 			cancel()
@@ -268,7 +282,7 @@ func (s *Server) getLoadRun(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "load run not found")
 		return
 	}
-	res, test, err := s.cfg.History.LoadRunResult(r.Context(), s.ws.Root, id)
+	res, test, err := s.cfg.History.LoadRunResult(r.Context(), s.key, id)
 	if err != nil {
 		s.fail(w, err)
 		return
@@ -280,7 +294,7 @@ func (s *Server) listLoadRuns(w http.ResponseWriter, r *http.Request) {
 	out := []history.LoadRun{}
 	if s.cfg.History != nil {
 		var err error
-		if out, err = s.cfg.History.LoadRuns(r.Context(), s.ws.Root, r.URL.Query().Get("test"), 50); err != nil {
+		if out, err = s.cfg.History.LoadRuns(r.Context(), s.key, r.URL.Query().Get("test"), 50); err != nil {
 			s.fail(w, err)
 			return
 		}
@@ -314,7 +328,7 @@ func (s *Server) stopLoadRun(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) deleteLoadRun(w http.ResponseWriter, r *http.Request) {
 	if s.cfg.History != nil {
-		if err := s.cfg.History.DeleteLoadRun(r.Context(), s.ws.Root, chi.URLParam(r, "id")); err != nil {
+		if err := s.cfg.History.DeleteLoadRun(r.Context(), s.key, chi.URLParam(r, "id")); err != nil {
 			s.fail(w, err)
 			return
 		}
@@ -339,7 +353,7 @@ func (s *Server) loadRunReport(w http.ResponseWriter, r *http.Request) {
 		}
 	} else if s.cfg.History != nil {
 		var err error
-		if res, _, err = s.cfg.History.LoadRunResult(r.Context(), s.ws.Root, id); err != nil {
+		if res, _, err = s.cfg.History.LoadRunResult(r.Context(), s.key, id); err != nil {
 			s.fail(w, err)
 			return
 		}

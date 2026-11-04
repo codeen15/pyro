@@ -52,7 +52,7 @@ func rootCmd() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
-	root.AddCommand(serveCmd(), initCmd(), importCmd(), exportCmd(), runCmd(), loadCmd(), agentCmd(), mockCmd(), docsCmd(), pluginCmd(), versionCmd())
+	root.AddCommand(serveCmd(), initCmd(), importCmd(), exportCmd(), runCmd(), loadCmd(), agentCmd(), mockCmd(), docsCmd(), pluginCmd(), adminCmd(), versionCmd())
 	return root
 }
 
@@ -109,11 +109,28 @@ func serveCmd() *cobra.Command {
 		agentToken    string
 		agentInsecure bool
 		agentListen   string
+		teamMode      bool
+		tf            teamFlags
 	)
 	cmd := &cobra.Command{
 		Use:   "serve",
 		Short: "Start the engine and open the web UI",
+		Long: "Serves one workspace on localhost for you alone, or with --team a multi-user server with\n" +
+			"accounts, workspaces and projects that a team signs in to.",
+		Example: "  pyro serve --open\n  pyro serve --team --host 0.0.0.0 --public-url https://pyro.example.com",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if agentToken == "" {
+				agentToken = os.Getenv("PYRO_AGENT_TOKEN")
+			}
+			if teamMode {
+				if wsDir != "" || noTok || open || agentListen != "" {
+					return errors.New("--workspace, --no-token, --open and --agent-listen don't apply to --team")
+				}
+				if len(agents) > 0 && agentToken == "" {
+					return errors.New("agents need a token: pass --agent-token or set PYRO_AGENT_TOKEN")
+				}
+				return serveTeam(&tf, host, port, agents, agentToken, agentInsecure, outs)
+			}
 			ws, err := openWorkspace(wsDir)
 			if err != nil {
 				return err
@@ -126,9 +143,6 @@ func serveCmd() *cobra.Command {
 				return errors.New("--no-token is only allowed when binding to a loopback address")
 			}
 
-			if agentToken == "" {
-				agentToken = os.Getenv("PYRO_AGENT_TOKEN")
-			}
 			if len(agents) > 0 && agentToken == "" {
 				return errors.New("agents need a token: pass --agent-token or set PYRO_AGENT_TOKEN")
 			}
@@ -205,6 +219,8 @@ func serveCmd() *cobra.Command {
 	cmd.Flags().StringVar(&agentToken, "agent-token", "", "token for the agents (default: $PYRO_AGENT_TOKEN)")
 	cmd.Flags().BoolVar(&agentInsecure, "agent-insecure", false, "skip TLS certificate verification for https agents")
 	cmd.Flags().StringVar(&agentListen, "agent-listen", "", "accept agents that connect out (pyro agent --connect) on this address, e.g. :7980")
+	cmd.Flags().BoolVar(&teamMode, "team", false, "run the multi-user team server (accounts, workspaces, projects)")
+	tf.register(cmd)
 	return cmd
 }
 

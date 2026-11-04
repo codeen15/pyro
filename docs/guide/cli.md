@@ -24,6 +24,28 @@ pyro serve -w my-api -p 0
 | `--agent-listen` | Accept agents that connect out, e.g. `:7980` |
 | `--agent-token` | Token for the agents (default `$PYRO_AGENT_TOKEN`) |
 | `--agent-insecure` | Skip TLS verification for `https` agents |
+| `--team` | Run the multi-user [team server](team-server.md) instead of a single workspace |
+| `--data` | With `--team`: data directory (default `~/.pyro/team`) |
+| `--config` | With `--team`: settings file (default `<data>/server.yaml`) |
+| `--public-url` | With `--team`: the address people open, e.g. `https://pyro.example.com` |
+| `--signup`, `--signup-domain` | With `--team`: who may create an account (`invite-only`, `open`, `domains`) |
+| `--tls-cert`, `--tls-key` | With `--team`: serve HTTPS |
+| `--max-loads` | With `--team`: load tests that may run at once across all projects (default 2) |
+
+```sh
+pyro serve --team --host 0.0.0.0 --public-url https://pyro.example.com --signup domains --signup-domain example.com
+```
+
+## pyro admin
+Manage a team server's accounts (on the server machine; works while it runs). All take
+`--data`.
+
+| Command | Does |
+|---|---|
+| `create-user <email>` | Create an account; asks for the password (`--name`, `--admin`) |
+| `reset-password <email>` | Set a new password and sign the account out everywhere |
+| `set-admin <email>` | Make the account a server administrator (`--revoke` to undo) |
+| `users` | List accounts |
 
 ## pyro init
 Create a workspace.

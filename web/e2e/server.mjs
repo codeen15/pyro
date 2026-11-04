@@ -1,7 +1,7 @@
 // Starts everything the end-to-end tests need and stays up until killed:
-// a mock API on :7891, and `pyro serve` on :7890 with a fresh workspace
-// (its own HOME, so history and plugins are isolated). Playwright runs this
-// as its webServer.
+// a mock API on :7891, `pyro serve` on :7890 with a fresh workspace (its own
+// HOME, so history and plugins are isolated), and a team server on :7892
+// with an empty data directory. Playwright runs this as its webServer.
 import { spawn } from "node:child_process";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
@@ -10,6 +10,7 @@ import { join, resolve } from "node:path";
 
 const TARGET = 7891;
 const PYRO = 7890;
+const TEAM = 7892;
 
 createServer((req, res) => {
   const url = new URL(req.url, "http://x");
@@ -91,5 +92,14 @@ const pyro = spawn(bin, ["serve", "--port", String(PYRO), "--no-token", "-w", ws
   env: { ...process.env, HOME: join(root, "home"), PYRO_PLUGINS_DIR: join(root, "plugins") },
   stdio: "inherit",
 });
+const teamServer = spawn(bin, ["serve", "--team", "--port", String(TEAM), "--data", join(root, "team"), "--signup", "open"], {
+  env: { ...process.env, HOME: join(root, "home"), PYRO_PLUGINS_DIR: join(root, "plugins") },
+  stdio: "inherit",
+});
 pyro.on("exit", (code) => process.exit(code ?? 1));
-for (const sig of ["SIGINT", "SIGTERM"]) process.on(sig, () => pyro.kill("SIGINT"));
+teamServer.on("exit", (code) => process.exit(code ?? 1));
+for (const sig of ["SIGINT", "SIGTERM"])
+  process.on(sig, () => {
+    pyro.kill("SIGINT");
+    teamServer.kill("SIGINT");
+  });

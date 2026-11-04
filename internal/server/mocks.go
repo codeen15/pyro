@@ -79,6 +79,10 @@ func (s *Server) startMock(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &body) {
 		return
 	}
+	if s.cfg.Team {
+		writeError(w, http.StatusForbidden, "mock servers are off on the team server; run pyro mock locally")
+		return
+	}
 	if _, err := s.ws.ReadCollection(body.Collection); err != nil {
 		s.fail(w, err)
 		return

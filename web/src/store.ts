@@ -50,9 +50,19 @@ export function applyTheme(t: Theme) {
   document.documentElement.dataset.theme = light ? "light" : "dark";
 }
 
+// On a team server, the open view and environment are remembered per project.
+let scope = "";
+const key = (k: string) => `pyro.${scope}${k}`;
+
+/** Remembers per-project state under this project's id (team server). */
+export function setStorageScope(projectId: string) {
+  scope = `${projectId}.`;
+  useApp.setState({ selected: load(key("selected")), environment: load(key("environment")) });
+}
+
 export const useApp = create<AppState>((set) => ({
-  selected: load("pyro.selected"),
-  environment: load("pyro.environment"),
+  selected: load(key("selected")),
+  environment: load(key("environment")),
   drafts: {},
   results: {},
   sending: {},
@@ -67,11 +77,11 @@ export const useApp = create<AppState>((set) => ({
   },
 
   select: (path) => {
-    save("pyro.selected", path);
+    save(key("selected"), path);
     set({ selected: path });
   },
   setEnvironment: (name) => {
-    save("pyro.environment", name);
+    save(key("environment"), name);
     set({ environment: name });
   },
   setDraft: (path, r) => set((s) => ({ drafts: { ...s.drafts, [path]: r } })),

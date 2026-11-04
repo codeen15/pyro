@@ -28,8 +28,9 @@ type liveSession struct {
 	OpenedAt  time.Time            `json:"openedAt"`
 	ConnectMS float64              `json:"connectMs"`
 
-	sess protocol.Session
-	vars *vars.Set
+	sess  protocol.Session
+	vars  *vars.Set
+	owner string // the user who opened it (team server)
 
 	mu     sync.Mutex
 	log    []messageView
@@ -106,19 +107,19 @@ func (s *Server) openSession(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	bases := s.session.apply(in.Vars, slug)
+	bases := s.sessionFor(r).apply(in.Vars, slug)
 	// The handshake must not be tied to this HTTP request's lifetime.
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	start := time.Now()
 	res := s.cfg.Engine.Connect(ctx, in)
-	s.session.record(in.Vars, slug, bases)
+	s.sessionFor(r).record(in.Vars, slug, bases)
 	if res.Error != "" {
 		writeJSON(w, http.StatusOK, openResponse{ConnectResult: res})
 		return
 	}
 	ls := &liveSession{
-		ID: newID(), Path: body.Path, Kind: in.Request.Kind, Info: res.Session.Info(), OpenedAt: time.Now(),
+		owner: principal(r).ID, ID: newID(), Path: body.Path, Kind: in.Request.Kind, Info: res.Session.Info(), OpenedAt: time.Now(),
 		ConnectMS: float64(time.Since(start).Microseconds()) / 1000, sess: res.Session, vars: in.Vars,
 	}
 	s.sessions.mu.Lock()
@@ -149,6 +150,9 @@ func (s *Server) lookupSession(w http.ResponseWriter, r *http.Request) *liveSess
 	s.sessions.mu.Lock()
 	ls := s.sessions.byID[chi.URLParam(r, "id")]
 	s.sessions.mu.Unlock()
+	if ls != nil && ls.owner != principal(r).ID {
+		ls = nil // another member's session
+	}
 	if ls == nil {
 		writeError(w, http.StatusNotFound, "session not found (it may have been closed)")
 	}

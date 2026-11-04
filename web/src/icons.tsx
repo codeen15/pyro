@@ -43,7 +43,9 @@ import {
   Layers01Icon,
   Link01Icon,
   LinkSquare02Icon,
+  LockPasswordIcon,
   Login01Icon,
+  Logout01Icon,
   MinusSignIcon,
   MoreVerticalIcon,
   PencilEdit02Icon,
@@ -64,6 +66,8 @@ import {
   Tick02Icon,
   Unlink04Icon,
   Upload04Icon,
+  UserCircleIcon,
+  UserGroupIcon,
   ViewIcon,
   ViewOffSlashIcon,
   Wifi01Icon,
@@ -128,7 +132,9 @@ export const GitCompareArrows = wrap(GitCompareIcon);
 export const Globe = wrap(Globe02Icon);
 export const KeyRound = wrap(Key01Icon);
 export const Layers = wrap(Layers01Icon);
+export const LockKey = wrap(LockPasswordIcon);
 export const LogIn = wrap(Login01Icon);
+export const LogOut = wrap(Logout01Icon);
 export const Minus = wrap(MinusSignIcon);
 export const MoreVertical = wrap(MoreVerticalIcon);
 export const Network = wrap(HierarchyIcon);
@@ -157,6 +163,8 @@ export const TrendingDown = wrap(ChartDecreaseIcon);
 export const TrendingUp = wrap(ChartIncreaseIcon);
 export const TriangleAlert = wrap(Alert02Icon);
 export const Upload = wrap(Upload04Icon);
+export const UserCircle = wrap(UserCircleIcon);
+export const Users = wrap(UserGroupIcon);
 export const X = wrap(Cancel01Icon);
 
 /** A small status dot (replaces an outlined circle icon). */

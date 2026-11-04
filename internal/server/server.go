@@ -55,18 +55,35 @@ type Config struct {
 	// UI is the built single-page app; nil disables UI serving.
 	UI     fs.FS
 	Logger *slog.Logger
+
+	// Key identifies the project in the history database (default: the
+	// workspace folder).
+	Key string
+	// Team marks a project served by the team server: mock servers are off,
+	// request bodies never read files outside the project, and the folder
+	// path isn't shown.
+	Team bool
+	// LoadSlots, when set, is shared by every project: a load test takes a
+	// slot while it runs, so the server runs at most cap(LoadSlots) at once.
+	LoadSlots chan struct{}
+	// CallbackURL overrides the OAuth 2.0 redirect URI (the team server's
+	// public address for this project's /oauth2/callback).
+	CallbackURL string
 }
 
 type Server struct {
 	cfg      Config
 	ws       *store.Workspace
 	log      *slog.Logger
-	session  *sessionVars
+	key      string
 	hub      *hub
 	sessions *sessionRegistry
 	runs     *runRegistry
 	loads    *loadRegistry
 	mocks    *mockRegistry
+
+	sessionMu      sync.Mutex
+	sessionsByUser map[string]*sessionVars
 
 	cookieMu    sync.Mutex
 	cookieTimer *time.Timer
@@ -77,12 +94,16 @@ func New(cfg Config) *Server {
 	if cfg.Logger == nil {
 		cfg.Logger = slog.Default()
 	}
+	if cfg.Key == "" && cfg.Workspace != nil {
+		cfg.Key = cfg.Workspace.Root
+	}
 	s := &Server{
-		cfg: cfg, ws: cfg.Workspace, log: cfg.Logger, session: newSessionVars(), hub: newHub(),
-		sessions: &sessionRegistry{byID: map[string]*liveSession{}},
-		runs:     &runRegistry{byID: map[string]*liveRun{}},
-		loads:    &loadRegistry{byID: map[string]*liveLoad{}},
-		mocks:    &mockRegistry{bySlg: map[string]*runningMock{}},
+		cfg: cfg, ws: cfg.Workspace, log: cfg.Logger, key: cfg.Key, hub: newHub(),
+		sessionsByUser: map[string]*sessionVars{},
+		sessions:       &sessionRegistry{byID: map[string]*liveSession{}},
+		runs:           &runRegistry{byID: map[string]*liveRun{}},
+		loads:          &loadRegistry{byID: map[string]*liveLoad{}},
+		mocks:          &mockRegistry{bySlg: map[string]*runningMock{}},
 	}
 	s.persistCookies()
 	return s
@@ -110,7 +131,15 @@ func (s *Server) Close() {
 func (s *Server) Handler() http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.Recoverer, s.checkHost)
+	s.routes(r)
+	if s.cfg.UI != nil {
+		r.Handle("/*", SPA(s.cfg.UI))
+	}
+	return s.enforce(r)
+}
 
+// routes registers the project API (every route needs an entry in routeRoles).
+func (s *Server) routes(r chi.Router) {
 	// The event stream checks its token itself (browsers can't send headers
 	// on WebSocket upgrades) and must not sit behind the request timeout.
 	r.Get("/api/v1/events", s.events)
@@ -120,6 +149,10 @@ func (s *Server) Handler() http.Handler {
 		r.Use(middleware.Timeout(60 * time.Second))
 		r.Use(s.requireToken)
 		r.Get("/health", s.health)
+		// The UI asks this first: a local server has no accounts.
+		r.Get("/auth/config", func(w http.ResponseWriter, r *http.Request) {
+			writeJSON(w, http.StatusOK, map[string]string{"mode": "local"})
+		})
 		r.Get("/workspace", s.getWorkspace)
 
 		r.Post("/collections", s.createCollection)
@@ -198,11 +231,6 @@ func (s *Server) Handler() http.Handler {
 		r.Patch("/session/variables", s.patchSessionVar)
 		r.Delete("/session/variables", s.clearSessionVars)
 	})
-
-	if s.cfg.UI != nil {
-		r.Handle("/*", spaHandler(s.cfg.UI))
-	}
-	return r
 }
 
 // checkHost rejects requests whose Host isn't a loopback name or address
@@ -254,9 +282,13 @@ func (s *Server) getWorkspace(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
+	root := s.ws.Root
+	if s.cfg.Team {
+		root = ""
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"name":        s.ws.Meta.Name,
-		"root":        s.ws.Root,
+		"root":        root,
 		"collections": tree,
 	})
 }
@@ -407,9 +439,10 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, map[string]string{"error": msg})
 }
 
-// spaHandler serves static files and falls back to index.html for client-side
+// SPA serves static files and falls back to index.html for client-side
 // routes. Hashed assets get long-lived caching; index.html is never cached.
-func spaHandler(ui fs.FS) http.Handler {
+// The team server uses it too.
+func SPA(ui fs.FS) http.Handler {
 	files := http.FileServerFS(ui)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		p := strings.TrimPrefix(r.URL.Path, "/")
@@ -486,4 +519,38 @@ func (s *Server) putFolder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, f)
+}
+
+// Busy reports whether the project has live work (an open WebSocket or
+// Socket.IO session, a collection run or a load test), so the team server
+// keeps it open.
+func (s *Server) Busy() bool {
+	s.loads.mu.Lock()
+	loading := s.loads.current != nil
+	s.loads.mu.Unlock()
+	if loading {
+		return true
+	}
+	s.sessions.mu.Lock()
+	for _, ls := range s.sessions.byID {
+		ls.mu.Lock()
+		open := !ls.closed
+		ls.mu.Unlock()
+		if open {
+			s.sessions.mu.Unlock()
+			return true
+		}
+	}
+	s.sessions.mu.Unlock()
+	s.runs.mu.Lock()
+	defer s.runs.mu.Unlock()
+	for _, run := range s.runs.byID {
+		run.mu.Lock()
+		running := run.Status == "running"
+		run.mu.Unlock()
+		if running {
+			return true
+		}
+	}
+	return false
 }

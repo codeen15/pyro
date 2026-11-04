@@ -19,6 +19,8 @@ import { VariablesPage } from "./components/Variables";
 import { CookiesPage } from "./components/Cookies";
 import { SettingsPage } from "./components/Settings";
 import { DocsPage } from "./components/DocsPage";
+import { AccountPage, ProjectSwitcher, ProjectsPage, UserMenu } from "./components/Team";
+import { useTeam } from "./team";
 
 export function App() {
   const health = useQuery({ queryKey: ["health"], queryFn: api.health, refetchInterval: 10_000 });
@@ -28,6 +30,7 @@ export function App() {
   const setReport = useApp((s) => s.setReport);
 
   const unauthorized = ws.error instanceof ApiError && ws.error.status === 401;
+  const teamMode = useTeam((s) => s.me !== null);
 
   return (
     <div className="shell">
@@ -50,6 +53,10 @@ export function App() {
           <CookiesPage />
         ) : selected === "docs" || selected?.startsWith("docs:") ? (
           <DocsPage target={selected.slice(5)} />
+        ) : selected === "projects" && teamMode ? (
+          <ProjectsPage />
+        ) : selected === "account" && teamMode ? (
+          <AccountPage />
         ) : selected === "import" ? (
           <ImportPage />
         ) : selected === "plugins:install" ? (
@@ -103,6 +110,7 @@ function TopBar({ workspace }: { workspace?: string }) {
   const setEnvironment = useApp((s) => s.setEnvironment);
   const select = useApp((s) => s.select);
   const setReport = useApp((s) => s.setReport);
+  const teamMode = useTeam((s) => s.me !== null);
 
   // A remembered environment may have been deleted on disk since.
   const envValue = environment && envs.data?.includes(environment) ? environment : "";
@@ -117,16 +125,23 @@ function TopBar({ workspace }: { workspace?: string }) {
         <img src={logo} alt="" width={22} height={28} />
         <span>Pyro</span>
       </button>
-      {workspace && (
+      {teamMode ? (
         <>
           <span className="topbar-divider" aria-hidden />
-          <span className="ws-name" title="Workspace">
-            <Briefcase size={16} />
-            {workspace}
-          </span>
+          <ProjectSwitcher />
         </>
+      ) : (
+        workspace && (
+          <>
+            <span className="topbar-divider" aria-hidden />
+            <span className="ws-name" title="Workspace">
+              <Briefcase size={16} />
+              {workspace}
+            </span>
+          </>
+        )
       )}
-      <div className="topbar-right">
+      <div className={teamMode ? "topbar-right has-user" : "topbar-right"}>
         <label className="env-select">
           <span className="env-label">Environment</span>
           <Select
@@ -144,14 +159,15 @@ function TopBar({ workspace }: { workspace?: string }) {
           <Button type="text" icon={<SlidersHorizontal size={16} />} onClick={() => go(envValue ? `vars:env:${envValue}` : "vars:globals")} aria-label="Edit environments and globals" />
         </Tooltip>
         <Tooltip title="Cookies">
-          <Button type="text" icon={<Cookie size={16} />} onClick={() => go("cookies")} aria-label="Manage cookies" />
+          <Button type="text" className="topbar-extra" icon={<Cookie size={16} />} onClick={() => go("cookies")} aria-label="Manage cookies" />
         </Tooltip>
         <Tooltip title="User guide">
-          <Button type="text" icon={<BookOpen size={16} />} onClick={() => go("docs")} aria-label="Docs" />
+          <Button type="text" className="topbar-extra" icon={<BookOpen size={16} />} onClick={() => go("docs")} aria-label="Docs" />
         </Tooltip>
         <Button icon={<FileInput size={14} />} onClick={() => go("import")} aria-label="Import">
           Import
         </Button>
+        <UserMenu />
       </div>
     </header>
   );

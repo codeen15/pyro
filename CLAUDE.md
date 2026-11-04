@@ -2,11 +2,11 @@
 
 Pyro is an API client (REST, WebSocket, Socket.IO, Postman import) and load-testing
 tool (stress, spike, soak, concurrency) with WASM plugins. A single Go binary runs the
-engine and serves a React web UI on localhost. **Current phase: 12 (think time, pre/post processors) done; next: push, check CI, tag v0.1.0**
+engine and serves a React web UI on localhost. **Current phase: 13 (team server core) done; next: 14 (workspaces and sharing), 15 (LDAP/OIDC), 16 (test reports)**
 (see `docs/roadmap.md`). Product context: `PRODUCT.md`; visual system: `DESIGN.md`.
 
 ## Layout
-- `cmd/pyro`: CLI (cobra): `serve`, `init`, `import`, `export`, `run`, `load`, `agent`, `mock`, `docs`, `plugin`, `version`
+- `cmd/pyro`: CLI (cobra): `serve` (`--team` for the team server), `init`, `import`, `export`, `run`, `load`, `agent`, `mock`, `docs`, `plugin`, `admin`, `version`
 - `pkg/engine/...`: the engine, a library with no dependency on server/CLI/UI. `model/` is the shared data model;
   `engine.go` is the send pipeline (pre-processors → resolve → auth → execute → post-processors), `session.go` opens WS/SIO sessions; `vars/`, `auth/`, `check/` (assertions,
   extractors incl. boundary/XPath), `process/` (timers, set-variables and counter processors), `script/` (goja + pm.* shim, vendored chai), `runner/`, `report/` (JUnit, JSON, load HTML),
@@ -15,7 +15,11 @@ engine and serves a React web UI on localhost. **Current phase: 12 (think time, 
   `protocol/{httpdriver,wsdriver,sioclient}/`.
 - `internal/store`: workspace persistence (YAML files, path safety, atomic writes, `Import`)
 - `internal/history`: request history and saved load runs in SQLite (`~/.pyro/pyro.db`)
-- `internal/server`: REST API `/api/v1` (chi), token auth, embedded SPA
+- `internal/server`: the project REST API `/api/v1` (chi), token auth, embedded SPA. In team mode one `Server` per project,
+  acting for a `Principal`. `roles.go` gives every route a minimum role (`TestEveryRouteHasARole` enforces it).
+- `internal/team`: the team server: accounts, argon2id passwords, cookie sessions, CSRF, workspaces, members and projects
+  (SQLite, `<data>/pyro.db`). It proxies `/api/v1/projects/{id}/*` to that project's `internal/server.Server`, and
+  project folders live in `<data>/projects/<id>/`.
 - `internal/version`: build metadata (set via ldflags)
 - `web/`: React + TS + Vite UI; `web/embed.go` embeds `web/dist`
 - `plugins/sdk/go`: Go plugin SDK (separate module); `plugins/examples/{tcp,hmac}`: example plugins (separate modules)
@@ -73,7 +77,7 @@ cd web && npm run e2e   # browser tests (needs bin/pyro and npx playwright insta
 - `docs/PRD.md`: goals, users, non-goals
 - `docs/architecture.md`: components, pipeline, tech choices
 - `docs/data-model.md`: workspace and YAML formats, variable scopes, auth inheritance
-- `docs/api.md`: REST endpoints, event WebSocket, token auth
+- `docs/api.md`: REST endpoints, event WebSocket, token auth, team server endpoints
 - `docs/load-engine.md`: executors, flow DSL, metrics, thresholds
 - `docs/plugins.md`: plugin kinds, ABI v1, manifest, security
 - `docs/postman-import.md`: Postman mapping, `pm.*` support, import report

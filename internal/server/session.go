@@ -103,16 +103,18 @@ type sessionView struct {
 }
 
 func (s *Server) getSessionVars(w http.ResponseWriter, r *http.Request) {
-	s.session.mu.Lock()
-	defer s.session.mu.Unlock()
-	writeJSON(w, http.StatusOK, sessionView{s.session.runtime, s.session.globals, s.session.env, s.session.coll})
+	sv := s.sessionFor(r)
+	sv.mu.Lock()
+	defer sv.mu.Unlock()
+	writeJSON(w, http.StatusOK, sessionView{sv.runtime, sv.globals, sv.env, sv.coll})
 }
 
 func (s *Server) clearSessionVars(w http.ResponseWriter, r *http.Request) {
-	s.session.mu.Lock()
-	s.session.runtime, s.session.globals = overlay{}, overlay{}
-	s.session.env, s.session.coll = map[string]overlay{}, map[string]overlay{}
-	s.session.mu.Unlock()
+	sv := s.sessionFor(r)
+	sv.mu.Lock()
+	sv.runtime, sv.globals = overlay{}, overlay{}
+	sv.env, sv.coll = map[string]overlay{}, map[string]overlay{}
+	sv.mu.Unlock()
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -134,22 +136,23 @@ func (s *Server) patchSessionVar(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "key is required")
 		return
 	}
-	s.session.mu.Lock()
-	defer s.session.mu.Unlock()
+	sv := s.sessionFor(r)
+	sv.mu.Lock()
+	defer sv.mu.Unlock()
 	var o overlay
 	switch body.Scope {
 	case "globals":
-		o = s.session.globals
+		o = sv.globals
 	case "runtime":
-		o = s.session.runtime
+		o = sv.runtime
 	case "environment", "collection":
 		if body.Name == "" {
 			writeError(w, http.StatusBadRequest, "name is required for "+body.Scope)
 			return
 		}
-		m := s.session.env
+		m := sv.env
 		if body.Scope == "collection" {
-			m = s.session.coll
+			m = sv.coll
 		}
 		if m[body.Name] == nil {
 			m[body.Name] = overlay{}
