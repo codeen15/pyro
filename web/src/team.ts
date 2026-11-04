@@ -38,3 +38,8 @@ export function lastProject(): string | null {
     return null;
   }
 }
+
+/** Whether the user may change the open project (always, locally). */
+export function useCanEdit() {
+  return useTeam((s) => !s.project || s.project.role !== "viewer");
+}

@@ -72,7 +72,31 @@ CREATE TABLE IF NOT EXISTS projects (
 	created_by TEXT NOT NULL,
 	created    INTEGER NOT NULL
 );
-CREATE INDEX IF NOT EXISTS projects_ws ON projects(ws);`
+CREATE INDEX IF NOT EXISTS projects_ws ON projects(ws);
+CREATE TABLE IF NOT EXISTS invites (
+	id         TEXT PRIMARY KEY,
+	hash       TEXT NOT NULL UNIQUE,
+	ws         TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+	email      TEXT NOT NULL DEFAULT '',
+	role       TEXT NOT NULL,
+	created_by TEXT NOT NULL,
+	created    INTEGER NOT NULL,
+	expires    INTEGER NOT NULL,
+	max_uses   INTEGER NOT NULL DEFAULT 0,
+	uses       INTEGER NOT NULL DEFAULT 0,
+	revoked    INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS invites_ws ON invites(ws);
+CREATE TABLE IF NOT EXISTS audit (
+	id      INTEGER PRIMARY KEY AUTOINCREMENT,
+	at      INTEGER NOT NULL,
+	user    TEXT NOT NULL,
+	ws      TEXT NOT NULL,
+	project TEXT NOT NULL DEFAULT '',
+	action  TEXT NOT NULL,
+	target  TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS audit_ws ON audit(ws, id DESC);`
 
 // Store keeps accounts, workspaces and projects in SQLite.
 type Store struct {
@@ -406,6 +430,9 @@ func (s *Store) DeleteWorkspace(ctx context.Context, wsID string) error {
 	}
 	if projects > 0 {
 		return invalid("delete or move this workspace's projects first")
+	}
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM audit WHERE ws = ?`, wsID); err != nil {
+		return err
 	}
 	_, err := s.db.ExecContext(ctx, `DELETE FROM workspaces WHERE id = ?`, wsID)
 	return err

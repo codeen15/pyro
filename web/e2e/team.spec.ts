@@ -91,3 +91,112 @@ test("team server: another user can't see someone else's workspaces", async ({ b
   await expect(page.getByRole("menuitem", { name: "Payments" })).toHaveCount(0);
   await ctx.close();
 });
+
+test("team server: invite a viewer, promote them, copy a collection and resolve a save conflict", async ({ browser, page, request }) => {
+  await waitForTeam(request);
+  await page.goto(TEAM);
+  await page.getByRole("tab", { name: "Create account" }).click();
+  await page.getByLabel("Name").fill("Alice");
+  await page.getByLabel("Email").fill("alice@example.com");
+  await page.getByLabel("Password").fill(PASSWORD);
+  await page.getByRole("button", { name: "Create account" }).click();
+  await expect(page.getByRole("button", { name: /^Project: My project/ })).toBeVisible();
+
+  // A team workspace with a project and a collection holding one request.
+  await page.getByRole("button", { name: "Account menu for Alice" }).click();
+  await page.getByRole("menuitem", { name: "Workspaces and projects" }).click();
+  await page.getByRole("button", { name: "New workspace" }).click();
+  await page.getByRole("dialog").getByLabel("Name").fill("Shop team");
+  await page.getByRole("dialog").getByRole("button", { name: "Create" }).click();
+  const card = page.locator(".ws-card", { has: page.getByRole("heading", { name: "Shop team" }) });
+  await card.getByRole("button", { name: "New project" }).click();
+  await page.getByRole("dialog").getByLabel("Name").fill("Checkout");
+  await page.getByRole("dialog").getByRole("button", { name: "Create" }).click();
+  await expect(page.getByRole("button", { name: /^Project: Checkout/ })).toBeVisible();
+  const pid = new URL(page.url()).pathname.split("/")[2];
+  const api = `${TEAM}/api/v1/projects/${pid}`;
+  const headers = { "X-Pyro-CSRF": "1" };
+  expect((await page.request.post(`${api}/collections`, { headers, data: { slug: "orders", name: "Orders" } })).status()).toBe(201);
+  expect((await page.request.put(`${api}/requests/orders/list`, { headers, data: { kind: "http", name: "List orders", method: "GET", url: "http://127.0.0.1:7891/orders" } })).status()).toBe(200);
+  await page.reload();
+  await expect(page.locator(".tree")).toContainText("Orders");
+
+  // Invite a viewer by link.
+  await page.getByRole("button", { name: "Account menu for Alice" }).click();
+  await page.getByRole("menuitem", { name: "Workspaces and projects" }).click();
+  await card.getByRole("button", { name: "Members" }).click();
+  await expect(page.getByRole("heading", { name: "Shop team" })).toBeVisible();
+  await page.getByRole("button", { name: "Invite people" }).click();
+  await page.getByRole("dialog").getByLabel("Role").click();
+  await page.locator(".ant-select-dropdown:not(.ant-select-dropdown-hidden) .ant-select-item-option", { hasText: /^Viewer$/ }).last().click();
+  await page.getByRole("button", { name: "Create invite link" }).click();
+  const link = await page.getByLabel("Invite link").inputValue();
+  expect(link).toContain("/invite/");
+  await page.getByRole("button", { name: "Done" }).click();
+
+  // Bob signs up through the link and lands in the project, read-only.
+  const bobCtx = await browser.newContext();
+  const bob = await bobCtx.newPage();
+  await bob.goto(link);
+  await expect(bob.getByText("Alice invited you to join Shop team as a viewer.")).toBeVisible();
+  await bob.getByLabel("Name").fill("Bob");
+  await bob.getByLabel("Email").fill("bob.viewer@example.com");
+  await bob.getByLabel("Password").fill(PASSWORD);
+  await bob.getByRole("button", { name: "Create account" }).click();
+  await expect(bob.getByRole("button", { name: /^Project: Checkout/ })).toBeVisible();
+  await expect(bob.locator(".tree")).toContainText("Orders");
+  await expect(bob.getByRole("button", { name: "New collection" })).toHaveCount(0);
+  await expect(bob.getByRole("button", { name: "Import", exact: true })).toHaveCount(0);
+  await bob.getByRole("button", { name: "GET List orders", exact: true }).click();
+  await expect(bob.getByRole("button", { name: "Read only" })).toBeVisible();
+
+  // Alice sees Bob, and makes him an editor.
+  await page.reload();
+  await expect(page.getByText("bob.viewer@example.com")).toBeVisible();
+  await page.getByLabel("Role of Bob").click();
+  await page.locator(".ant-select-dropdown:not(.ant-select-dropdown-hidden) .ant-select-item-option", { hasText: /^Editor$/ }).last().click();
+  await expect(page.getByText("Role changed")).toBeVisible();
+  await page.getByRole("tab", { name: "Activity" }).click();
+  await expect(page.getByText("joined as viewer")).toBeVisible();
+
+  await bob.reload();
+  await expect(bob.getByRole("button", { name: "New collection" })).toBeVisible();
+
+  // Both open the request; Alice saves first, so Bob's save asks first.
+  await page.getByRole("button", { name: /^Project: Checkout/ }).click();
+  await page.getByRole("menuitem", { name: "Workspaces and projects" }).press("Escape");
+  await page.goto(`${TEAM}/p/${pid}`);
+  await page.getByRole("button", { name: "GET List orders", exact: true }).click();
+  await bob.getByRole("button", { name: "GET List orders", exact: true }).click();
+  await expect(bob.getByLabel("URL")).toHaveValue("http://127.0.0.1:7891/orders");
+  await bob.getByLabel("URL").fill("http://127.0.0.1:7891/orders?by=bob");
+  await page.getByLabel("URL").fill("http://127.0.0.1:7891/orders?by=alice");
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByRole("button", { name: "Saved" })).toBeVisible();
+  // Bob is told about the change, and keeps his unsaved edit.
+  await expect(bob.getByText("Alice saved request orders/list")).toBeVisible();
+  await expect(bob.getByLabel("URL")).toHaveValue("http://127.0.0.1:7891/orders?by=bob");
+  await bob.getByRole("button", { name: "Save" }).click();
+  await expect(bob.getByText("Someone else saved this").filter({ visible: true })).toBeVisible();
+  await expect(bob.getByRole("button", { name: "Overwrite" })).toHaveCount(1);
+  await expect(bob.getByText("Alice changed this since you opened it")).toBeVisible();
+  await bob.getByRole("button", { name: "Overwrite" }).click();
+  await expect(bob.getByRole("button", { name: "Saved" })).toBeVisible();
+
+  // Copy the collection into Alice's personal project.
+  const row = page.locator(".row-wrap", { hasText: "Orders" }).first();
+  await row.hover();
+  await row.getByRole("button", { name: "More actions for Orders" }).click();
+  await page.getByRole("menuitem", { name: "Move or copy to…" }).click();
+  await page.getByRole("dialog").getByLabel("Target project").click();
+  await page.locator(".ant-select-dropdown:not(.ant-select-dropdown-hidden) .ant-select-item-option", { hasText: /^My project$/ }).last().click();
+  await page.getByRole("button", { name: "Copy collection" }).click();
+  await expect(page.getByText("Copied Orders to My project")).toBeVisible();
+  await page.getByRole("button", { name: /^Project: Checkout/ }).click();
+  await page.getByRole("menuitem", { name: "My project" }).click();
+  await expect(page.locator(".tree")).toContainText("Orders");
+  await page.getByRole("button", { name: "GET List orders", exact: true }).click();
+  await expect(page.getByLabel("URL")).toHaveValue("http://127.0.0.1:7891/orders?by=bob");
+
+  await bobCtx.close();
+});

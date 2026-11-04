@@ -185,6 +185,7 @@ Print the version and build information.
 | Variable | Used for |
 |---|---|
 | `PYRO_AGENT_TOKEN` | The agent token (controller and agents) |
+| `PYRO_SMTP_PASSWORD` | Team server: password for the `smtp` settings |
 | `PYRO_INFLUXDB_TOKEN` | InfluxDB 2.x output token |
 | `PYRO_PLUGIN_INDEX` | Plugin index URL |
 | `PYRO_PLUGINS_DIR` | Where plugins are installed (default `~/.pyro/plugins`) |

@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Alert, Button, Input, Segmented, Select, Space, Tabs, Tooltip } from "antd";
-import { Check, Pencil, Save, SendHorizontal, Trash2 } from "../icons";
+import { Check, Eye, Pencil, Save, SendHorizontal, Trash2 } from "../icons";
+import { useCanEdit } from "../team";
 import { OAuth2Form, TokenPanel, type TokenContext } from "./OAuth2";
 import { api, type Auth, type Body, type KeyValue, type PyroRequest } from "../api";
 import { useApp } from "../store";
@@ -271,6 +272,7 @@ export function RequestTitle({
 /** Deletes the open request (after confirming). */
 export function DeleteRequestButton({ path, name }: { path: string; name: string }) {
   const del = useDeleteNode();
+  if (!useCanEdit()) return null;
   return (
     <Tooltip title="Delete request">
       <Button icon={<Trash2 size={14} />} onClick={() => del({ type: "request", path, name })} aria-label={`Delete request ${name}`} />
@@ -280,6 +282,7 @@ export function DeleteRequestButton({ path, name }: { path: string; name: string
 
 /** Save / Saved, as in the reference design: red outline while there are unsaved edits. */
 export function SaveButton({ dirty, saving, onSave }: { dirty: boolean; saving: boolean; onSave: () => void }) {
+  if (!useCanEdit()) return <ReadOnlyBadge />;
   return (
     <Button
       className={dirty ? "save-btn is-dirty" : "save-btn"}
@@ -291,6 +294,17 @@ export function SaveButton({ dirty, saving, onSave }: { dirty: boolean; saving: 
     >
       {saving ? "Saving" : dirty ? "Save" : "Saved"}
     </Button>
+  );
+}
+
+/** Shown instead of Save to workspace viewers. */
+export function ReadOnlyBadge() {
+  return (
+    <Tooltip title="You're a viewer in this workspace: you can send and run, but not save. Ask an owner for the editor role.">
+      <Button disabled icon={<Eye size={14} />}>
+        Read only
+      </Button>
+    </Tooltip>
   );
 }
 

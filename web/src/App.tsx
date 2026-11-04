@@ -1,9 +1,10 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Alert, App as AntApp, Button, Dropdown, Result, Select, Skeleton, Table, Tag, Tooltip } from "antd";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { BookOpen, Briefcase, ChevronDown, CircleCheck, Cookie, FileInput, SlidersHorizontal, X } from "./icons";
 import logo from "./assets/pyro-logo.png";
-import { api, ApiError, decodeBody, type ImportReport, type PyroResponse } from "./api";
+import { api, ApiError, decodeBody, handleConflicts, type ConflictChoice, type ImportReport, type PyroResponse } from "./api";
+import { subscribe } from "./events";
 import { useApp, type Theme } from "./store";
 import { Sidebar, KindBadge } from "./components/Sidebar";
 import { RequestEditor } from "./components/RequestEditor";
@@ -19,10 +20,66 @@ import { VariablesPage } from "./components/Variables";
 import { CookiesPage } from "./components/Cookies";
 import { SettingsPage } from "./components/Settings";
 import { DocsPage } from "./components/DocsPage";
-import { AccountPage, ProjectSwitcher, ProjectsPage, UserMenu } from "./components/Team";
-import { useTeam } from "./team";
+import { AccountPage, ProjectSwitcher, ProjectsPage, UserMenu, WorkspacePage } from "./components/Team";
+import { useCanEdit, useTeam } from "./team";
+
+// Lists that follow other members' changes. Open editors (environment,
+// settings, load test) aren't refetched under someone's typing; their saves
+// are protected by versions instead.
+const LIVE_LISTS = ["workspace", "environments", "loadtests", "data-files", "loadruns"];
+
+/** Team server: refresh when others change the project; ask before overwriting their saves. */
+function useCollaboration() {
+  const qc = useQueryClient();
+  const { modal, message } = AntApp.useApp();
+  const me = useTeam((s) => s.me);
+
+  useEffect(() => {
+    handleConflicts(
+      (msg, url) =>
+        new Promise<ConflictChoice>((resolve) => {
+          const done = (c: ConflictChoice) => {
+            m.destroy();
+            if (c === "reload") {
+              const path = /\/requests\/(.+)$/.exec(url)?.[1];
+              if (path) useApp.getState().clearDraft(path.split("/").map(decodeURIComponent).join("/"));
+              qc.invalidateQueries();
+            }
+            resolve(c);
+          };
+          const m = modal.confirm({
+            width: 480,
+            title: "Someone else saved this",
+            content: `${msg}. Overwrite their version with yours, or load theirs (your unsaved edits here are dropped)?`,
+            footer: (
+              <div className="conflict-actions">
+                <Button onClick={() => done("cancel")}>Keep editing</Button>
+                <Button onClick={() => done("reload")}>Load their version</Button>
+                <Button type="primary" danger onClick={() => done("overwrite")}>
+                  Overwrite
+                </Button>
+              </div>
+            ),
+          });
+        }),
+    );
+    return () => handleConflicts(null);
+  }, [modal, qc]);
+
+  useEffect(() => {
+    if (!me) return;
+    return subscribe<{ by: string; name?: string; action: string; target?: string }>("tree", (e) => {
+      if (e.data.by === me.user.id) return;
+      for (const key of LIVE_LISTS) qc.invalidateQueries({ queryKey: [key] });
+      const drafts = useApp.getState().drafts;
+      qc.invalidateQueries({ predicate: (q) => q.queryKey[0] === "request" && !drafts[q.queryKey[1] as string] });
+      message.info({ content: `${e.data.name ?? "Someone"} ${e.data.action}${e.data.target ? ` ${e.data.target}` : ""}`, key: "tree-change" });
+    });
+  }, [me, qc, message]);
+}
 
 export function App() {
+  useCollaboration();
   const health = useQuery({ queryKey: ["health"], queryFn: api.health, refetchInterval: 10_000 });
   const ws = useQuery({ queryKey: ["workspace"], queryFn: api.workspace });
   const selected = useApp((s) => s.selected);
@@ -55,6 +112,8 @@ export function App() {
           <DocsPage target={selected.slice(5)} />
         ) : selected === "projects" && teamMode ? (
           <ProjectsPage />
+        ) : selected?.startsWith("workspace:") && teamMode ? (
+          <WorkspacePage key={selected} id={selected.slice(10)} />
         ) : selected === "account" && teamMode ? (
           <AccountPage />
         ) : selected === "import" ? (
@@ -111,6 +170,7 @@ function TopBar({ workspace }: { workspace?: string }) {
   const select = useApp((s) => s.select);
   const setReport = useApp((s) => s.setReport);
   const teamMode = useTeam((s) => s.me !== null);
+  const canEdit = useCanEdit();
 
   // A remembered environment may have been deleted on disk since.
   const envValue = environment && envs.data?.includes(environment) ? environment : "";
@@ -164,9 +224,11 @@ function TopBar({ workspace }: { workspace?: string }) {
         <Tooltip title="User guide">
           <Button type="text" className="topbar-extra" icon={<BookOpen size={16} />} onClick={() => go("docs")} aria-label="Docs" />
         </Tooltip>
-        <Button icon={<FileInput size={14} />} onClick={() => go("import")} aria-label="Import">
-          Import
-        </Button>
+        {canEdit && (
+          <Button icon={<FileInput size={14} />} onClick={() => go("import")} aria-label="Import">
+            Import
+          </Button>
+        )}
         <UserMenu />
       </div>
     </header>

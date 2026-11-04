@@ -72,6 +72,20 @@ func (c *client) do(method, path, body string) (int, map[string]any) {
 	return res.StatusCode, out
 }
 
+// doList is do for endpoints that return a JSON array.
+func (c *client) doList(method, path string) (int, []map[string]any) {
+	c.t.Helper()
+	req, _ := http.NewRequest(method, c.ts.URL+path, nil)
+	res, err := c.c.Do(req)
+	if err != nil {
+		c.t.Fatal(err)
+	}
+	defer res.Body.Close()
+	var out []map[string]any
+	_ = json.NewDecoder(res.Body).Decode(&out)
+	return res.StatusCode, out
+}
+
 func signup(t *testing.T, c *client, email string) map[string]any {
 	t.Helper()
 	code, out := c.do("POST", "/api/v1/auth/signup", `{"email":"`+email+`","name":"N","password":"correct horse battery"}`)

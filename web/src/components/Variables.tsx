@@ -4,6 +4,8 @@ import { Alert, App as AntApp, Button, Checkbox, Input, Menu, Skeleton, Space, T
 import { Check, Download, Eye, EyeOff, Globe, Layers, Plus, RotateCcw, Save, Trash2, Upload } from "../icons";
 import { api, saveFile, type Environment, type Variable } from "../api";
 import { useApp } from "../store";
+import { useCanEdit } from "../team";
+import { ReadOnlyBadge } from "./RequestEditor";
 
 // Globals and environments, Postman-style: the initial value is saved in the
 // workspace file (and shared through git); the current value is what this
@@ -74,6 +76,7 @@ export function VariablesPage({ target }: { target: string }) {
 }
 
 function VariableEditor({ scope, name }: { scope: "globals" | "environment"; name?: string }) {
+  const canEdit = useCanEdit();
   const qc = useQueryClient();
   const { modal } = AntApp.useApp();
   const select = useApp((s) => s.select);
@@ -194,9 +197,13 @@ function VariableEditor({ scope, name }: { scope: "globals" | "environment"; nam
               <Button danger icon={<Trash2 size={14} />} aria-label="Delete environment" onClick={deleteEnv} />
             </Tooltip>
           )}
-          <Button type="primary" disabled={!dirty || save.isPending} loading={save.isPending} icon={dirty ? <Save size={14} /> : <Check size={14} />} onClick={() => save.mutate(list)}>
-            {save.isPending ? "Saving" : dirty ? "Save" : "Saved"}
-          </Button>
+          {canEdit ? (
+            <Button type="primary" disabled={!dirty || save.isPending} loading={save.isPending} icon={dirty ? <Save size={14} /> : <Check size={14} />} onClick={() => save.mutate(list)}>
+              {save.isPending ? "Saving" : dirty ? "Save" : "Saved"}
+            </Button>
+          ) : (
+            <ReadOnlyBadge />
+          )}
         </div>
       </header>
       {error && <Alert type="error" showIcon title={error} />}
