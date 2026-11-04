@@ -13,10 +13,12 @@ In the editor, variables are coloured where you type them:
 | Red | Not defined anywhere; it will be sent as written, and the response shows a warning |
 | Purple | A dynamic value generated on every send (see below) |
 
-**Hover a variable** to see its value and where it comes from. You can change the value there
-and press **Save**; it's written to that scope's file. For a red (missing) variable, choose
-where to add it (the environment, the folder, the collection or globals), type a value and
-press **Add**.
+**Hover a variable** to see its value and where it comes from. This works wherever
+`{{variables}}` can go: the URL, params, headers, body, auth, Socket.IO and WebSocket messages,
+and assertion and extractor fields. The card stays open while the cursor is on it. Change the
+value there and press **Save**; it's written to that scope's file. For a red (missing)
+variable, choose where to add it (the environment, the folder, the collection or globals),
+type a value and press **Add**.
 
 ## Where values come from
 
@@ -49,7 +51,20 @@ Press the sliders button in the top bar to open **Environments and globals**:
 - Mark a variable **secret** to mask it on screen. Secret values are still saved in the file,
   so keep real credentials in current values or out of shared workspaces.
 
-Collection and folder variables are edited on their **Variables** settings tab.
+Collection and folder variables are edited on their **Variables** settings tab, which has the
+same **initial** and **current** value columns. **Ctrl** + **S** saves the settings page.
+
+**Values a request sets show as current values.** Extractors, set-variables processors and
+scripts store what they capture in the runtime scope, which wins over every other scope. So
+on these pages a variable's current value is what requests actually use:
+
+- a value a request set is marked *from a request*;
+- editing it changes the value requests get;
+- reset (↺) goes back to the initial value;
+- **Use as initial value** copies it into the file (then save).
+
+For example, give the collection an `orderId` variable, send a request that extracts
+`orderId`, and the collection's Variables tab shows the new id.
 
 ## Dynamic values
 

@@ -6,6 +6,7 @@ import { api, saveFile, type Environment, type Variable } from "../api";
 import { useApp } from "../store";
 import { useCanEdit } from "../team";
 import { ReadOnlyBadge } from "./RequestEditor";
+import { useCurrentValues } from "../currentValues";
 
 // Globals and environments, Postman-style: the initial value is saved in the
 // workspace file (and shared through git); the current value is what this
@@ -84,7 +85,7 @@ function VariableEditor({ scope, name }: { scope: "globals" | "environment"; nam
   const setActive = useApp((s) => s.setEnvironment);
   const fileKey = scope === "globals" ? ["globals"] : ["environment", name];
   const file = useQuery({ queryKey: fileKey, queryFn: () => (scope === "globals" ? api.globals() : api.environment(name!)) });
-  const session = useQuery({ queryKey: ["session-vars"], queryFn: api.sessionVariables, refetchOnWindowFocus: true });
+  const current = useCurrentValues(scope, name);
   const [rows, setRows] = useState<Variable[] | null>(null);
   const [title, setTitle] = useState(name ?? "");
   const [revealed, setRevealed] = useState<Set<number>>(new Set());
@@ -94,7 +95,6 @@ function VariableEditor({ scope, name }: { scope: "globals" | "environment"; nam
     if (file.data && rows === null) setRows(file.data.variables ?? []);
   }, [file.data, rows]);
 
-  const current: Record<string, string | null> = (scope === "globals" ? session.data?.globals : session.data?.environments?.[name!]) ?? {};
   const list = rows ?? [];
   const saved = file.data?.variables ?? [];
   const dirty = rows !== null && (JSON.stringify(rows) !== JSON.stringify(saved) || (scope === "environment" && title.trim() !== name));
@@ -122,10 +122,6 @@ function VariableEditor({ scope, name }: { scope: "globals" | "environment"; nam
     onError: (e) => setError((e as Error).message),
   });
 
-  const setCurrent = async (key: string, value: string | null, reset = false) => {
-    await api.setCurrentValue({ scope, name, key, value, reset });
-    await qc.invalidateQueries({ queryKey: ["session-vars"] });
-  };
 
   const update = (i: number, patch: Partial<Variable>) => setRows(list.map((v, j) => (j === i ? { ...v, ...patch } : v)));
 
@@ -236,8 +232,7 @@ function VariableEditor({ scope, name }: { scope: "globals" | "environment"; nam
               </tr>
             )}
             {list.map((v, i) => {
-              const has = Object.prototype.hasOwnProperty.call(current, v.key) && v.key !== "";
-              const cur = has ? current[v.key] : undefined;
+              const { has, value: cur, byRequest } = current.get(v.key);
               const differs = has && cur !== v.value;
               const masked = v.secret && !revealed.has(i);
               return (
@@ -269,8 +264,13 @@ function VariableEditor({ scope, name }: { scope: "globals" | "environment"; nam
                         changed={differs}
                         disabled={!v.key}
                         label={`Current value of ${v.key}`}
-                        onCommit={(val) => (val === v.value && !has ? undefined : setCurrent(v.key, val))}
+                        onCommit={(val) => (val === v.value && !has ? undefined : current.set(v.key, val))}
                       />
+                      {byRequest && differs && (
+                        <Tooltip title="A request set this value (an extractor, a set-variables processor or a script)">
+                          <span className="current-src">from a request</span>
+                        </Tooltip>
+                      )}
                       {differs && (
                         <>
                           <Tooltip title="Save as initial value">
@@ -282,12 +282,12 @@ function VariableEditor({ scope, name }: { scope: "globals" | "environment"; nam
                                 const next = list.map((x, j) => (j === i ? { ...x, value: cur ?? "" } : x));
                                 setRows(next);
                                 await save.mutateAsync(next);
-                                await setCurrent(v.key, null, true);
+                                await current.reset(v.key);
                               }}
                             />
                           </Tooltip>
                           <Tooltip title="Reset to initial value">
-                            <Button type="text" icon={<RotateCcw size={13} />} aria-label={`Reset ${v.key}`} onClick={() => setCurrent(v.key, null, true)} />
+                            <Button type="text" icon={<RotateCcw size={13} />} aria-label={`Reset ${v.key}`} onClick={() => current.reset(v.key)} />
                           </Tooltip>
                         </>
                       )}
@@ -335,7 +335,7 @@ function VariableEditor({ scope, name }: { scope: "globals" | "environment"; nam
 }
 
 /** A current-value input that commits on blur or Enter. */
-function CurrentInput(props: { value: string; placeholder: string; masked: boolean; changed: boolean; disabled: boolean; label: string; onCommit: (v: string) => void }) {
+export function CurrentInput(props: { value: string; placeholder: string; masked: boolean; changed: boolean; disabled: boolean; label: string; onCommit: (v: string) => void }) {
   const [text, setText] = useState(props.value);
   useEffect(() => setText(props.value), [props.value]);
   const commit = () => text !== props.value && props.onCommit(text);

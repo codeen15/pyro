@@ -249,15 +249,17 @@ test("edit collection settings and create a collection", async ({ page }) => {
   await row.getByRole("button", { name: "Settings for Shop" }).click();
   await expect(page.getByLabel("Collection name")).toHaveValue("Shop");
   await page.getByRole("tab", { name: /Variables/ }).click();
-  await expect(page.getByLabel("Value of base")).toHaveValue("http://127.0.0.1:7891");
+  await expect(page.getByLabel("Initial value of base")).toHaveValue("http://127.0.0.1:7891");
+  await expect(page.getByRole("textbox", { name: "Current value of base" })).toHaveValue("http://127.0.0.1:7891");
   await page.getByRole("button", { name: "Add variable" }).click();
   await page.getByLabel("Variable name").last().fill("region");
-  await page.getByLabel("Value of region").fill("eu");
-  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await page.getByLabel("Initial value of region").fill("eu");
+  // Ctrl+S saves, as on requests.
+  await page.keyboard.press("Control+s");
   await expect(page.getByRole("button", { name: "Saved" })).toBeVisible();
   await page.reload();
   await page.getByRole("tab", { name: /Variables/ }).click();
-  await expect(page.getByLabel("Value of region")).toHaveValue("eu");
+  await expect(page.getByLabel("Initial value of region")).toHaveValue("eu");
 
   await page.getByRole("button", { name: "New collection" }).click();
   await page.getByLabel("New collection name").fill("Billing API");
@@ -488,4 +490,56 @@ test("the user guide opens from the top bar, links between pages and searches", 
   await expect(page.locator("#sending-socketio-events")).toBeInViewport();
   await page.getByLabel("Search the guide").fill("Poisson");
   await expect(page.locator(".docs-results")).toContainText("Processors and tests");
+});
+
+test("JSON tree, variable cards in params, current values from a request, long names", async ({ page, request }) => {
+  // A response body is a collapsible tree.
+  await page.getByRole("button", { name: "GET List items", exact: true }).click();
+  await page.getByRole("button", { name: "Send" }).click();
+  await expect(page.locator(".json-tree")).toBeVisible();
+  await page.getByRole("button", { name: "Collapse object query" }).click();
+  await expect(page.locator(".j-count").first()).toHaveText("1 key");
+  await page.getByRole("button", { name: "Expand all" }).click();
+  await expect(page.locator(".j-count")).toHaveCount(0);
+  await page.getByRole("button", { name: "Collapse all" }).click();
+  await expect(page.locator(".j-count").first()).toHaveText("1 key"); // the top level stays open
+
+  // The variable card opens from a param and stays open while you use it.
+  await page.getByLabel("Query parameters value 1").fill("{{base}}");
+  const tok = page.locator(".kv-edit .var-token[data-var=base]");
+  const box = (await tok.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  const card = page.locator(".var-card");
+  await expect(card).toBeVisible();
+  // Wait for the card to finish opening (it zooms in) before aiming at it.
+  await expect.poll(async () => (await card.boundingBox())?.width ?? 0).toBeGreaterThan(100);
+  const cb = (await card.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, cb.y + 8, { steps: 6 });
+  await page.mouse.move(cb.x + cb.width / 2, cb.y + cb.height / 2, { steps: 6 });
+  await page.waitForTimeout(500);
+  await expect(card).toBeVisible();
+  await page.getByLabel("Query parameters value 1").fill("2");
+
+  // A value a request sets shows as the variable's current value.
+  const col = await (await request.get("/api/v1/collections/shop")).json();
+  col.variables.push({ key: "orderId", value: "none" });
+  await request.put("/api/v1/collections/shop", { data: col });
+  await page.getByRole("button", { name: "POST Create order", exact: true }).click();
+  await page.getByRole("button", { name: "Send" }).click();
+  await expect(page.locator(".response")).toContainText("201");
+  const shop = page.locator(".row-wrap", { hasText: "Shop" }).first();
+  await shop.hover();
+  await shop.getByRole("button", { name: "Settings for Shop" }).click();
+  await page.getByRole("tab", { name: /Variables/ }).click();
+  await expect(page.getByRole("textbox", { name: "Current value of orderId" })).toHaveValue("ord_1");
+  await expect(page.getByText("from a request")).toBeVisible();
+  await page.getByRole("button", { name: "Reset orderId" }).click();
+  await expect(page.getByRole("textbox", { name: "Current value of orderId" })).toHaveValue("none");
+
+  // Long names use the whole row and show in full on hover.
+  await request.put("/api/v1/requests/shop/long-name", { data: { kind: "http", name: "Fetch the complete order history for one customer with pagination", method: "GET", url: "{{base}}/items" } });
+  await page.getByRole("button", { name: "Reload from disk" }).click();
+  await page.locator(".row-label", { hasText: "Fetch the complete" }).hover();
+  await expect(page.getByRole("tooltip").filter({ hasText: "with pagination" })).toBeVisible();
+  await request.delete("/api/v1/requests/shop/long-name");
 });

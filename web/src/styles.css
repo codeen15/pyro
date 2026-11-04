@@ -64,6 +64,11 @@
   --stream-ws: #531dab;
   --cyan-soft: #e6fffb;
   --cyan-border: #87e8de;
+  /* JSON tree */
+  --json-key: #0b5394;
+  --json-str: #0f7b3d;
+  --json-num: #a1460a;
+  --json-lit: #7a2fb0;
 
   /* Chart colours, validated with the dataviz palette script against the
      card surface (--viz-surface) in each theme. */
@@ -138,6 +143,10 @@
   --stream-ws: #9254de;
   --cyan-soft: #112123;
   --cyan-border: #144848;
+  --json-key: #8cc4ff;
+  --json-str: #8fd4a1;
+  --json-num: #f0b07a;
+  --json-lit: #d4a7f5;
 
   --viz-series: #00a0a6;
   --viz-p50: #3e6c9b;
@@ -574,11 +583,15 @@ input[type="checkbox"] {
   color: var(--text);
   transition: background-color 0.2s var(--ease);
 }
-.row-wrap .row {
-  padding-right: 132px;
+.row-wrap {
+  /* The opaque colour of a hovered row, under the hover buttons. */
+  --row-bg: color-mix(in srgb, var(--brick-0), #000 4%);
 }
-.row-wrap.request-row .row {
-  padding-right: 36px;
+:root[data-theme="dark"] .row-wrap {
+  --row-bg: color-mix(in srgb, var(--brick-0), #fff 6%);
+}
+.row-wrap:has(.row.is-active) {
+  --row-bg: var(--accent-soft);
 }
 .row:hover {
   background: rgba(0, 0, 0, 0.04);
@@ -619,22 +632,40 @@ input[type="checkbox"] {
   color: var(--warn);
 }
 
+/* Names use the whole row; on hover the buttons cover its end, over a
+   short fade so the cut-off text doesn't look clipped mid-letter. */
 .row-actions {
   position: absolute;
   top: 0;
   right: 0;
   display: flex;
+  align-items: center;
+  height: var(--row);
   gap: 0;
+  padding-left: 20px;
+  border-radius: 0 var(--r) var(--r) 0;
+  background: linear-gradient(90deg, transparent, var(--row-bg) 20px);
   opacity: 0;
+  pointer-events: none;
   transition: opacity 0.2s var(--ease);
 }
 .row-wrap:hover .row-actions,
 .row-actions:focus-within {
   opacity: 1;
+  pointer-events: auto;
 }
 @media (hover: none) {
+  /* No hover on touch screens: keep room for the always-visible buttons. */
+  .row-wrap .row {
+    padding-right: 132px;
+  }
+  .row-wrap.request-row .row {
+    padding-right: 36px;
+  }
   .row-actions {
     opacity: 1;
+    pointer-events: auto;
+    background: none;
   }
 }
 
@@ -787,7 +818,8 @@ input[type="checkbox"] {
   gap: 12px;
   min-height: 0;
   overflow: auto;
-  padding: 20px 24px 16px;
+  /* Room below the last field, so it can scroll fully into view. */
+  padding: 20px 24px 48px;
 }
 
 /* The editor scrolls as a whole; its fixed parts never shrink. */
@@ -4691,4 +4723,101 @@ h1 .report-status {
     border-right: 0;
     border-bottom: 1px solid var(--rule);
   }
+}
+
+/* Response body as a JSON tree */
+.json-view {
+  padding: 8px 8px 8px 4px;
+  white-space: normal;
+  overflow-x: auto;
+}
+.json-tree {
+  font-size: 13px;
+  line-height: 1.6;
+}
+.j-row {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.j-row:hover {
+  background: var(--iron-1);
+}
+.j-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  vertical-align: -3px;
+}
+.j-toggle:hover {
+  color: var(--text);
+  background: var(--iron-2);
+}
+.j-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+.j-toggle .hi {
+  transition: transform 0.15s var(--ease);
+}
+.j-toggle .hi.open {
+  transform: rotate(90deg);
+}
+.j-key {
+  color: var(--json-key);
+}
+.j-str {
+  color: var(--json-str);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.j-num {
+  color: var(--json-num);
+}
+.j-bool,
+.j-null {
+  color: var(--json-lit);
+}
+.j-punct {
+  color: var(--text-muted);
+}
+.j-folded {
+  margin: 0 2px;
+  padding: 0 4px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-sm);
+  background: var(--iron-1);
+  color: var(--text-muted);
+  font: inherit;
+  line-height: 1.2;
+  cursor: pointer;
+}
+.j-count {
+  margin-left: 8px;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 12px;
+}
+.json-tools {
+  display: inline-flex;
+  gap: 2px;
+}
+.current-src {
+  flex: none;
+  padding: 0 6px;
+  border-radius: var(--r-sm);
+  background: var(--cyan-soft);
+  border: 1px solid var(--cyan-border);
+  color: var(--text);
+  font-size: 11px;
+  line-height: 18px;
+  white-space: nowrap;
 }

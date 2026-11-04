@@ -113,6 +113,8 @@ Assertion `type`: `status`, `header`, `jsonpath`, `body`, `duration`.
 `op`: `eq`, `neq`, `lt`, `gt`, `contains`, `exists`, `matches`.
 Extractor `from`: `jsonpath`, `header`, `regex`, `status`, `boundary` (the text between
 `left` and `right`), `xpath` (XPath 1.0 on an XML body; the first match's text).
+`{{variables}}` are filled in to an assertion's `path` and `value` and an extractor's `path`,
+`left` and `right` before they run.
 
 ## Think time and pre/post processors
 JMeter-style timers and processors, on any request and on `collection.yaml` / `folder.yaml`:

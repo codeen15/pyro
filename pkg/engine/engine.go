@@ -173,10 +173,10 @@ func (e *Engine) Send(ctx context.Context, in SendInput) *Result {
 		// Assertions still report, as failures, so a run shows what was expected.
 		for _, st := range stepsFor(in, false) {
 			if st.proc != nil && st.proc.Type == model.ProcAssert && st.proc.Assert != nil {
-				res.Tests = append(res.Tests, check.Assert([]model.Assertion{*st.proc.Assert}, nil)...)
+				res.Tests = append(res.Tests, check.Assert(resolveAssertions([]model.Assertion{*st.proc.Assert}, in.Vars), nil)...)
 			}
 		}
-		res.Tests = append(res.Tests, check.Assert(req.Assertions, nil)...)
+		res.Tests = append(res.Tests, check.Assert(resolveAssertions(req.Assertions, in.Vars), nil)...)
 		return res
 	}
 	res.Response = resp
@@ -186,7 +186,7 @@ func (e *Engine) Send(ctx context.Context, in SendInput) *Result {
 		e.runPost(ctx, st, sent, wrapped, in, rt, info, res)
 	}
 
-	res.Tests = append(res.Tests, check.Assert(req.Assertions, wrapped)...)
+	res.Tests = append(res.Tests, check.Assert(resolveAssertions(req.Assertions, in.Vars), wrapped)...)
 	if len(req.Extract) > 0 {
 		res.extract(req.Extract, wrapped, in.Vars)
 	}
@@ -410,7 +410,7 @@ func (e *Engine) runPost(ctx context.Context, st step, sent *model.Request, resp
 			res.extract([]model.Extractor{*p.Extract}, resp, in.Vars)
 			return
 		case p.Type == model.ProcAssert:
-			res.Tests = append(res.Tests, check.Assert([]model.Assertion{*p.Assert}, resp)...)
+			res.Tests = append(res.Tests, check.Assert(resolveAssertions([]model.Assertion{*p.Assert}, in.Vars), resp)...)
 			return
 		case strings.HasPrefix(p.Type, "plugin:"):
 			if _, err := e.runPluginProcessor(ctx, p, "post", sent, resp.Response, in.Vars, res); err != nil {
@@ -426,9 +426,34 @@ func (e *Engine) runPost(ctx context.Context, st step, sent *model.Request, resp
 	}))
 }
 
+// resolveAssertions fills {{variables}} into assertion paths and expected
+// values, e.g. to expect the id an earlier request captured.
+func resolveAssertions(as []model.Assertion, v *vars.Set) []model.Assertion {
+	if len(as) == 0 || v == nil {
+		return as
+	}
+	r := v.Resolver()
+	out := make([]model.Assertion, len(as))
+	for i, a := range as {
+		a.Path, _ = r.Resolve(a.Path)
+		a.Value, _ = r.Resolve(a.Value)
+		out[i] = a
+	}
+	return out
+}
+
 // extract runs extractors into the runtime variables and records results.
 func (res *Result) extract(ex []model.Extractor, resp *check.Response, v *vars.Set) {
-	vals, problems := check.Extract(ex, resp)
+	// Paths and boundaries may use {{variables}} too.
+	r := v.Resolver()
+	resolved := make([]model.Extractor, len(ex))
+	for i, x := range ex {
+		x.Path, _ = r.Resolve(x.Path)
+		x.Left, _ = r.Resolve(x.Left)
+		x.Right, _ = r.Resolve(x.Right)
+		resolved[i] = x
+	}
+	vals, problems := check.Extract(resolved, resp)
 	for k, val := range vals {
 		v.Runtime[k] = val
 		if res.Extracted == nil {

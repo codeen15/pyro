@@ -86,7 +86,7 @@ The response card shows:
 
 | Tab | Shows |
 |---|---|
-| **Body** | Pretty (formatted JSON) or Raw, with a copy button. Images are shown; binary bodies are summarised. |
+| **Body** | **Pretty** shows JSON as a tree: click the arrows to fold or unfold any object or array (a folded one says how many keys or items it holds), or use **Expand all** / **Collapse all**. **Raw** shows the body as received. There's a copy button; images are shown; binary bodies are summarised. |
 | **Tests** | Assertion and script results, extracted variables, and console output from scripts. |
 | **Headers** / **Cookies** | What the server sent. |
 | **Timing** | DNS, connect, TLS, send, wait and download, drawn to scale, plus whether the connection was reused. |

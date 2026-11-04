@@ -260,6 +260,21 @@ function NewRequestModal({ parent, onClose }: { parent: TreeNode | null; onClose
   );
 }
 
+/** A row name that ellipses; hovering a cut-off name shows it whole. */
+function RowLabel({ text }: { text: string }) {
+  const [cut, setCut] = useState(false);
+  return (
+    <Tooltip title={cut ? text : undefined} placement="right" mouseEnterDelay={0.4}>
+      <span
+        className="row-label"
+        onMouseEnter={(e) => setCut(e.currentTarget.scrollWidth > e.currentTarget.clientWidth)}
+      >
+        {text}
+      </span>
+    </Tooltip>
+  );
+}
+
 function TreeItem({
   node,
   depth,
@@ -291,7 +306,7 @@ function TreeItem({
         <div className="row-wrap request-row">
           <button className={`row ${selected === node.path ? "is-active" : ""}`} style={{ paddingLeft: 8 + depth * 18 + 22 }} onClick={() => onSelect(node.path)}>
             <KindBadge kind={node.kind} method={node.method} />
-            <span className="row-label">{node.name}</span>
+            <RowLabel text={node.name} />
           </button>
           <span className="row-actions">
             <NodeMenu node={node} onNewFolder={onNewFolder} onTransfer={onTransfer} />
@@ -308,7 +323,7 @@ function TreeItem({
         <button className={`row ${node.type} ${selected === `run:${node.path}` ? "is-active" : ""}`} style={indent} onClick={() => setOpen(!expanded)}>
           <ChevronRight size={10} className={`chev ${expanded ? "open" : ""}`} />
           {node.type === "collection" ? <Layers size={14} className="row-icon" /> : <Icon size={14} className="row-icon" />}
-          <span className="row-label">{node.name}</span>
+          <RowLabel text={node.name} />
         </button>
         <span className="row-actions">
           <Tooltip title="Run all requests">
