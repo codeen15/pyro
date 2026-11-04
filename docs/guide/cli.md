@@ -107,6 +107,8 @@ pyro run payments/orders -d data/users.csv --junit results.xml
 | `--bail` | Stop at the first failed request |
 | `--timeout` | Per-request timeout (default 30s) |
 | `--junit`, `--json` | Write a JUnit XML or JSON report |
+| `--html`, `--xlsx`, `--csv` | Write a printable HTML, Excel or CSV [report](reports.md) |
+| `--report-to`, `--project` | Upload the report to a team server project (token in `$PYRO_TOKEN`) |
 | `--insecure` | Skip TLS certificate verification |
 | `-q, --quiet` | Only print failures and the summary |
 
@@ -123,6 +125,8 @@ pyro load checkout-stress --agent 10.0.0.5:7979 --agent-token s3cret
 |---|---|
 | `-e, --environment` | Environment (overrides the plan's) |
 | `--html`, `--json` | Write an HTML report or the full JSON result |
+| `--xlsx`, `--csv` | Write an Excel workbook or the per-request CSV |
+| `--report-to`, `--project` | Upload the result to a team server project (token in `$PYRO_TOKEN`) |
 | `-o, --out` | Stream live metrics (repeatable) |
 | `--max-rps` | Cap requests per second across all VUs |
 | `--max-vus` | Refuse plans needing more VUs (default 50000) |
@@ -189,6 +193,7 @@ Print the version and build information.
 |---|---|
 | `PYRO_AGENT_TOKEN` | The agent token (controller and agents) |
 | `PYRO_SMTP_PASSWORD` | Team server: password for the `smtp` settings |
+| `PYRO_TOKEN` | `pyro run` / `pyro load --report-to`: a personal access token for the team server |
 | `PYRO_DATABASE_URL`, `PYRO_DATA_DIR`, `PYRO_HOST`, `PYRO_PORT`, `PYRO_PUBLIC_URL`, … | Team server settings; see [Team server](team-server.md#settings-from-env-and-the-environment) |
 | `PYRO_INFLUXDB_TOKEN` | InfluxDB 2.x output token |
 | `PYRO_PLUGIN_INDEX` | Plugin index URL |

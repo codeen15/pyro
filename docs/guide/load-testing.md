@@ -181,8 +181,13 @@ The **dashboard** updates every second:
 **Stop** ends the test gracefully (in-flight requests finish within the graceful stop).
 **Abort now** cancels immediately.
 
-When it finishes, the verdict shows **Passed**, **Failed**, **Aborted** or **Stopped**. Press
-**Report** to open a self-contained HTML report, or the download button to save it.
+When it finishes, the verdict shows **Passed**, **Failed**, **Aborted** or **Stopped**, with
+the environment and who ran it.
+- **Report** opens a self-contained HTML report with charts.
+- **Download** saves an Excel workbook (summary, requests, thresholds, timeline), the
+  per-request CSV, the JSON result or the HTML report.
+
+Every run also appears under [Reports](reports.md) with the project's collection runs.
 
 ## Comparing runs
 
@@ -197,8 +202,9 @@ The earlier run is the baseline; **Swap** reverses it. Changes under 2% read as 
 ## From the command line
 
 ```sh
-pyro load checkout-stress -e staging --html report.html
+pyro load checkout-stress -e staging --html report.html --xlsx report.xlsx
 pyro load ./plans/smoke.load.yaml --yes
+PYRO_TOKEN=pyro_pat_… pyro load checkout-stress --report-to https://pyro.example.com --project 3f9c…
 ```
 
 `pyro load` prints live progress and exits non-zero unless every threshold passed, so it can

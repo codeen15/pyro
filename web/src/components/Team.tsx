@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 import { Alert, App as AntApp, Button, Checkbox, Dropdown, Form, Input, Modal, Radio, Select, Space, Table, Tabs, Tag, type MenuProps } from "antd";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { APITokens } from "./Admin";
-import { ArrowLeftRight, BookOpen, Briefcase, ChevronDown, Cookie, Copy, Download, Folder, LogOut, MoreVertical, Pencil, Plus, ShieldCheck, Trash2, Upload, UserCircle, Users } from "../icons";
+import { ArrowLeftRight, Briefcase, ChevronDown, Copy, Download, Folder, LogOut, MoreVertical, Pencil, Plus, ShieldCheck, Trash2, Upload, UserCircle, Users } from "../icons";
 import { api, team, type Invite, type Member, type MemberRole, type TeamWorkspace, type TreeNode } from "../api";
 import { openProject, useCanEdit, useTeam } from "../team";
 import { useApp } from "../store";
@@ -69,9 +69,6 @@ export function UserMenu() {
           { key: "account", label: "Account", icon: <UserCircle size={14} /> },
           { key: "projects", label: "Workspaces and projects", icon: <Briefcase size={14} /> },
           ...(me.user.admin ? [{ key: "admin", label: "Administration", icon: <ShieldCheck size={14} /> }] : []),
-          // The top bar hides these buttons on phones; keep them reachable here.
-          { key: "cookies", label: "Cookies", icon: <Cookie size={14} />, className: "menu-phone-only" },
-          { key: "docs", label: "User guide", icon: <BookOpen size={14} />, className: "menu-phone-only" },
           { type: "divider" },
           { key: "signout", label: "Sign out", icon: <LogOut size={14} /> },
         ],

@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Alert, Button, Table, Tag, type TableColumnsType } from "antd";
+import { Alert, App as AntApp, Button, Dropdown, Table, Tag, type TableColumnsType } from "antd";
 import { Check, Download, ExternalLink, Minus, Network, Play, Square, Table2, TriangleAlert, X } from "../icons";
-import { api, type AgentStatus, type ErrorCount, type LiveSnapshot, type LoadRunView, type LoadTick, type RequestStat, type ThresholdResult } from "../api";
+import { api, type AgentStatus, type ErrorCount, type LiveSnapshot, type LoadRunView, type LoadTick, type RequestStat, type ThresholdResult, type ExportFormat } from "../api";
 import { subscribe } from "../events";
 import { formatMs, heatOf } from "../heat";
 import { useApp } from "../store";
@@ -29,6 +29,41 @@ interface State {
   maxRPS?: number;
   agents?: AgentStatus[];
   warnings?: string[];
+  runBy?: string;
+  environment?: string;
+  startedAt?: string;
+}
+
+/** Downloads a load test's report as Excel, CSV, JSON or HTML. */
+function LoadExportMenu({ id }: { id: string }) {
+  const { message } = AntApp.useApp();
+  return (
+    <Dropdown
+      trigger={["click"]}
+      menu={{
+        items: [
+          { key: "xlsx", label: "Excel workbook (.xlsx)" },
+          { key: "csv", label: "Requests as CSV (.csv)" },
+          { key: "json", label: "Full result as JSON (.json)" },
+          { key: "html", label: "HTML report (.html)" },
+        ],
+        onClick: async ({ key }) => {
+          try {
+            const { blob, name } = await api.exportReport(id, key as ExportFormat);
+            const a = document.createElement("a");
+            a.href = URL.createObjectURL(blob);
+            a.download = name ?? `load-report.${key}`;
+            a.click();
+            setTimeout(() => URL.revokeObjectURL(a.href), 60_000);
+          } catch (e) {
+            message.error((e as Error).message);
+          }
+        },
+      }}
+    >
+      <Button icon={<Download size={13} />}>Download</Button>
+    </Dropdown>
+  );
 }
 
 export function LoadRunPage({ id }: { id: string }) {
@@ -59,6 +94,9 @@ export function LoadRunPage({ id }: { id: string }) {
           agents: r.agents,
           warnings: r.warnings,
           maxRPS: r.maxRPS,
+          runBy: v.runBy,
+          environment: v.environment,
+          startedAt: r.startedAt,
         };
       }
       return {
@@ -85,6 +123,7 @@ export function LoadRunPage({ id }: { id: string }) {
         setSt(fromView(e.data as LoadRunView));
         setStopping(false);
         qc.invalidateQueries({ queryKey: ["loadruns"] });
+        qc.invalidateQueries({ queryKey: ["reports"] });
       }
     });
     api.loadRun(id).then(
@@ -179,6 +218,8 @@ export function LoadRunPage({ id }: { id: string }) {
                   loadtests/{st.test}.load.yaml
                 </Button>
               )}
+              {st.environment && <> · environment {st.environment}</>}
+              {st.runBy && <> · run by {st.runBy}</>}
               {st.maxRPS ? <> · capped at {st.maxRPS} req/s</> : null}
               {st.reason && <> · {st.reason}</>}
             </p>
@@ -208,7 +249,7 @@ export function LoadRunPage({ id }: { id: string }) {
                 <Button icon={<ExternalLink size={13} />} onClick={() => openReport(false)}>
                   Report
                 </Button>
-                <Button icon={<Download size={13} />} onClick={() => openReport(true)} aria-label="Download report" />
+                <LoadExportMenu id={id} />
               </>
             )}
           </div>

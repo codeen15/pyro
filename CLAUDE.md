@@ -2,21 +2,22 @@
 
 Pyro is an API client (REST, WebSocket, Socket.IO, Postman import) and load-testing
 tool (stress, spike, soak, concurrency) with WASM plugins. A single Go binary runs the
-engine and serves a React web UI on localhost. **Current phase: 15 (enterprise sign-in) done; next: 16 (test reports)**
+engine and serves a React web UI on localhost. **Current phase: 16 (test reports) done; next: push, check CI, tag v0.1.0**
 (see `docs/roadmap.md`). Product context: `PRODUCT.md`; visual system: `DESIGN.md`.
 
 ## Layout
 - `cmd/pyro`: CLI (cobra): `serve` (`--team` for the team server), `init`, `import`, `export`, `run`, `load`, `agent`, `mock`, `docs`, `plugin`, `admin`, `version`
 - `pkg/engine/...`: the engine, a library with no dependency on server/CLI/UI. `model/` is the shared data model;
   `engine.go` is the send pipeline (pre-processors → resolve → auth → execute → post-processors), `session.go` opens WS/SIO sessions; `vars/`, `auth/`, `check/` (assertions,
-  extractors incl. boundary/XPath), `process/` (timers, set-variables and counter processors), `script/` (goja + pm.* shim, vendored chai), `runner/`, `report/` (JUnit, JSON, load HTML),
+  extractors incl. boundary/XPath), `process/` (timers, set-variables and counter processors), `script/` (goja + pm.* shim, vendored chai), `runner/`, `report/` (run reports with masking and comparison; JUnit, JSON, CSV,
+  Excel via excelize, printable run HTML, load HTML),
   `load/` (plans, executors, VUs, thresholds, script steps (`scripting.go`, goja with `pyro.*`), segments and workers for distributed runs), `metrics/` (HDR histograms,
   deltas), `agent/` (distributed load agents), `output/` (InfluxDB, Prometheus, NDJSON/CSV live outputs), `plugin/` (wazero host), `importer/{postman,openapi,har,curl,jmeter,auto}/`, `exporter/postman/`, `docs/` (HTML API reference), `mock/` (mock server from examples),
   `protocol/{httpdriver,wsdriver,sioclient}/`.
 - `internal/store`: workspace persistence (YAML files, path safety, atomic writes, `Import`)
 - `internal/db`: opens SQLite or PostgreSQL behind the Bun ORM; `db.Migrate` runs each store's schema steps.
   `internal/db/dbtest` gives tests a fresh database (PostgreSQL when `PYRO_TEST_POSTGRES_URL` is set).
-- `internal/history`: request history, saved load runs and cookie jars (`~/.pyro/pyro.db` locally; the team server's database)
+- `internal/history`: request history, saved run reports (`reports.go`), saved load runs and cookie jars (`~/.pyro/pyro.db` locally; the team server's database)
 - `internal/server`: the project REST API `/api/v1` (chi), token auth, embedded SPA. In team mode one `Server` per project,
   acting for a `Principal`. `roles.go` gives every route a minimum role (`TestEveryRouteHasARole` enforces it);
   `changes.go` adds ETags/If-Match conflicts, `tree` change events and the `OnChange` activity hook.

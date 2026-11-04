@@ -56,3 +56,18 @@ func (t Timings) MarshalJSON() ([]byte, error) {
 		"wait": ms(t.Wait), "download": ms(t.Download), "total": ms(t.Total), "reused": t.Reused,
 	})
 }
+
+// UnmarshalJSON reads the fractional milliseconds MarshalJSON writes (saved
+// reports are read back).
+func (t *Timings) UnmarshalJSON(b []byte) error {
+	var v struct {
+		DNS, Connect, TLS, Send, Wait, Download, Total float64
+		Reused                                         bool
+	}
+	if err := json.Unmarshal(b, &v); err != nil {
+		return err
+	}
+	d := func(ms float64) time.Duration { return time.Duration(ms * float64(time.Millisecond)) }
+	*t = Timings{DNS: d(v.DNS), Connect: d(v.Connect), TLS: d(v.TLS), Send: d(v.Send), Wait: d(v.Wait), Download: d(v.Download), Total: d(v.Total), Reused: v.Reused}
+	return nil
+}

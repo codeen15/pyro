@@ -58,7 +58,8 @@ instead. People sign in from their browsers, and workspaces hold projects with m
 ## A tour of the screen
 
 - **Top bar:** the logo (back to the start page), the workspace name, the **Environment**
-  picker, buttons for **environments and globals**, **cookies** and **Docs**, and **Import**.
+  picker, buttons for **environments and globals**, **cookies**, **[Reports](reports.md)**
+  and **Docs**, and **Import**. On a phone, cookies, Reports and Docs are under **More** (⋮).
 - **Sidebar:** four tabs.
   - **Collections:** your requests, in collections and folders. Search filters by name or path.
   - **History:** every request you sent, newest first.

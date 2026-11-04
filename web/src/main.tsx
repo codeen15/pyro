@@ -47,6 +47,7 @@ function TeamRoot({ config }: { config: AuthConfig }) {
           setBoot({ state: "error", message: "You don't have any projects. Ask a workspace owner to add you to one." });
           return;
         }
+        // Keep /p/<id>/reports/<report> so the app can open that report.
         if (projectFromURL() !== id) window.history.replaceState(null, "", `/p/${encodeURIComponent(id)}`);
         try {
           localStorage.setItem("pyro.project", id);

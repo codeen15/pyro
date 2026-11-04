@@ -77,6 +77,21 @@ The team server puts accounts and workspaces in front of the same project API. S
 `POST /api/v1/auth/signup` also takes `invite`, a token. It allows sign-up whatever the
 policy (for an email invite, only with that address) and joins the workspace.
 
+### Reports (local and team)
+Collection runs are saved as reports when they finish (secret variable values and credential
+headers masked; bodies capped at 64 KB). Load test runs are listed with them.
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/v1/reports?kind=run\|load&target=&limit=` | Newest first: `[{id, kind, title, target, environment, status, startedAt, duration, runBy, requests, failed, tests, testsFailed, p95, errorRate, maxVUs}]` |
+| GET | `/api/v1/reports/{id}` | A collection run's report: `{id, title, target, project, environment, runBy, dataFile, version, startedAt, duration, status, totals, summary}` |
+| GET | `/api/v1/reports/{id}/compare?with=` | What changed since `with` (default: the previous run of the same target): `{against, againstStartedAt, newlyFailing, newlyPassing, added, removed}`. `204` when there's no earlier run |
+| GET | `/api/v1/reports/{id}/export?format=html\|xlsx\|csv\|junit\|json` | Download a collection run (any format) or a load test run (`html`, `xlsx`, `csv`, `json`). HTML is inline unless `&download=1` |
+| POST | `/api/v1/reports` | Save a run made elsewhere (`pyro run/load --report-to`): `{kind: "run", report}` or `{kind: "load", test?, environment?, result}`. Run reports are masked again on arrival. `201 {id, kind}` |
+| DELETE | `/api/v1/reports/{id}` | Delete a report or a load run (editor) |
+
+`POST /api/v1/runs` takes `dataFile` (the data file's name, for the report), and `GET /api/v1/runs/{id}` returns `reportId` once the run has ended. Load run views include `runBy` and `environment`.
+
 ### Versions and change events (local and team)
 - `GET` on a request, collection, folder, environment, load test or globals returns an `ETag`.
 - `PUT` with `If-Match: <etag>` answers `409 {"error": "<name> changed this since you opened it", "conflict": true, "by"}` when the stored version has moved on. A successful `PUT` returns the new `ETag`. Without `If-Match` the save always goes through.

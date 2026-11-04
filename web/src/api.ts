@@ -254,6 +254,8 @@ export interface RunView {
   done: number;
   total: number;
   results: RunItem[];
+  /** The saved report, once the run has ended. */
+  reportId?: string;
   summary?: {
     iterations: number;
     requests: number;
@@ -540,6 +542,61 @@ export interface LiveSnapshot {
   errors: ErrorCount[] | null;
 }
 
+export type ReportStatus = "passed" | "failed" | "stopped" | "aborted";
+
+/** A row in the reports list: a collection run or a load test. */
+export interface ReportItem {
+  id: string;
+  kind: "run" | "load";
+  title: string;
+  target: string;
+  environment?: string;
+  status: ReportStatus;
+  startedAt: string;
+  duration: number;
+  runBy?: string;
+  requests?: number;
+  failed?: number;
+  tests?: number;
+  testsFailed?: number;
+  p95?: number;
+  errorRate?: number;
+  maxVUs?: number;
+}
+
+export interface RunReport {
+  id: string;
+  title: string;
+  target: string;
+  project?: string;
+  environment?: string;
+  runBy?: string;
+  dataFile?: string;
+  version?: string;
+  startedAt: string;
+  duration: number;
+  status: "passed" | "failed" | "stopped";
+  totals: { iterations: number; requests: number; requestsFailed: number; skipped: number; tests: number; testsFailed: number };
+  summary: { iterations: number; stopped?: string; results: RunItem[] };
+}
+
+export interface ReportChange {
+  path: string;
+  name: string;
+  now: "passed" | "failed";
+}
+
+export interface ReportComparison {
+  against: string;
+  againstStartedAt: string;
+  newlyFailing: ReportChange[];
+  newlyPassing: ReportChange[];
+  added: string[];
+  removed: string[];
+}
+
+export type ExportFormat = "html" | "xlsx" | "csv" | "junit" | "json";
+
 export interface LoadRunView {
   id: string;
   test: string;
@@ -548,6 +605,8 @@ export interface LoadRunView {
   live?: LiveSnapshot;
   result?: LoadResult;
   plan?: { name?: string };
+  runBy?: string;
+  environment?: string;
 }
 
 export interface LoadRunRow {
@@ -561,6 +620,8 @@ export interface LoadRunRow {
   p95: number;
   errorRate: number;
   maxVUs: number;
+  runBy?: string;
+  environment?: string;
 }
 
 // --- Plugins --------------------------------------------------------------------
@@ -783,7 +844,7 @@ export const api = {
   sessionSend: (id: string, m: { data: string; binary?: boolean; event?: string; ack?: boolean }) =>
     call<{ message: SessionMessage; unresolved?: string[] }>("POST", `/sessions/${id}/send`, m),
   closeSession: (id: string) => call<void>("DELETE", `/sessions/${id}`),
-  startRun: (body: { path: string; environment?: string; iterations?: number; data?: Record<string, string>[]; delayMs?: number; bail?: boolean; think?: boolean }) =>
+  startRun: (body: { path: string; environment?: string; iterations?: number; data?: Record<string, string>[]; dataFile?: string; delayMs?: number; bail?: boolean; think?: boolean }) =>
     call<RunView>("POST", "/runs", body),
   run: (id: string) => call<RunView>("GET", `/runs/${id}`),
   cancelRun: (id: string) => call<void>("DELETE", `/runs/${id}`),
@@ -810,6 +871,21 @@ export const api = {
   stopLoadRun: (id: string, abort = false) => call<void>("POST", `/loadruns/${id}/stop${abort ? "?abort=1" : ""}`),
   deleteLoadRun: (id: string) => call<void>("DELETE", `/loadruns/${id}`),
   /** Fetches a collection's generated HTML API reference. */
+  reports: (q: { kind?: "run" | "load"; target?: string } = {}) => {
+    const qs = new URLSearchParams(Object.entries(q).filter(([, v]) => v) as [string, string][]).toString();
+    return call<ReportItem[]>("GET", `/reports${qs ? `?${qs}` : ""}`);
+  },
+  report: (id: string) => call<RunReport>("GET", `/reports/${id}`),
+  /** null for the first run of its target (nothing to compare with). */
+  compareReport: async (id: string) => (await call<ReportComparison | undefined>("GET", `/reports/${id}/compare`)) ?? null,
+  deleteReport: (id: string) => call<void>("DELETE", `/reports/${id}`),
+  /** Fetches an export (the token can't ride on a plain link). */
+  exportReport: async (id: string, format: ExportFormat) => {
+    const res = await fetch(`${base}/reports/${id}/export?format=${format}`, { headers: headers() });
+    if (!res.ok) throw new ApiError(res.status, (await res.json().catch(() => ({}))).error ?? res.statusText);
+    const name = /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") ?? "")?.[1];
+    return { blob: await res.blob(), name };
+  },
   collectionUsage: (slug: string) => call<{ loadTests: string[] }>("GET", `/collections/${encodeURIComponent(slug)}/usage`),
   collectionDocs: async (slug: string) => {
     const res = await fetch(`${base}/collections/${encodeURIComponent(slug)}/docs`, { headers: headers() });

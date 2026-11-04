@@ -65,3 +65,33 @@ func findNode(nodes []*Node, p string) *Node {
 	}
 	return nil
 }
+
+// SecretValues collects the values of variables marked secret that a run of
+// refs could use (environment, globals, collections and folders), so
+// reports can mask them.
+func (w *Workspace) SecretValues(env *model.Environment, refs []RequestRef) []string {
+	var out []string
+	add := func(vs []model.Variable) {
+		for _, v := range vs {
+			if v.Secret && v.Value != "" {
+				out = append(out, v.Value)
+			}
+		}
+	}
+	if env != nil {
+		add(env.Variables)
+	}
+	if g, err := w.ReadGlobals(); err == nil {
+		add(g.Variables)
+	}
+	seen := map[*model.Collection]bool{}
+	for _, ref := range refs {
+		for _, c := range ref.Chain {
+			if !seen[c] {
+				seen[c] = true
+				add(c.Variables)
+			}
+		}
+	}
+	return out
+}
