@@ -12,6 +12,7 @@ import { setStorageScope } from "./store";
 import { lastProject, projectFromURL, useTeam } from "./team";
 import { AuthPage } from "./components/AuthPage";
 import { InvitePage } from "./components/InvitePage";
+import { ResetPage } from "./components/ResetPage";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } },
@@ -78,11 +79,20 @@ function TeamRoot({ config }: { config: AuthConfig }) {
 
 function render(config: AuthConfig | null) {
   const invite = config && /^\/invite\/([^/]+)/.exec(window.location.pathname);
+  const reset = config && /^\/reset\/([^/]+)/.exec(window.location.pathname);
   createRoot(document.getElementById("root")!).render(
     <StrictMode>
       <QueryClientProvider client={queryClient}>
         <ThemeRoot>
-          {invite ? <InvitePage token={decodeURIComponent(invite[1])} config={config!} /> : config ? <TeamRoot config={config} /> : <App />}
+          {reset ? (
+            <ResetPage token={decodeURIComponent(reset[1])} />
+          ) : invite ? (
+            <InvitePage token={decodeURIComponent(invite[1])} config={config!} />
+          ) : config ? (
+            <TeamRoot config={config} />
+          ) : (
+            <App />
+          )}
         </ThemeRoot>
       </QueryClientProvider>
     </StrictMode>,

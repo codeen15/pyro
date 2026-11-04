@@ -44,6 +44,9 @@ type teamConfig struct {
 	SMTP          team.SMTP `yaml:"smtp"`
 	// Database is a PostgreSQL URL; empty means SQLite in the data folder.
 	Database string `yaml:"database"`
+	// LDAP and OIDC add company sign-in (directory and single sign-on).
+	LDAP team.LDAPConfig     `yaml:"ldap"`
+	OIDC []team.OIDCProvider `yaml:"oidc"`
 }
 
 type teamFlags struct {
@@ -200,6 +203,16 @@ func (f *teamFlags) settings(dir string) (teamConfig, error) {
 			return c, fmt.Errorf("PYRO_SMTP_PORT: %w", err)
 		}
 	}
+	c.LDAP.URL = first(env("PYRO_LDAP_URL"), c.LDAP.URL)
+	c.LDAP.BindDN = first(env("PYRO_LDAP_BIND_DN"), c.LDAP.BindDN)
+	c.LDAP.BaseDN = first(env("PYRO_LDAP_BASE_DN"), c.LDAP.BaseDN)
+	c.LDAP.UserFilter = first(env("PYRO_LDAP_USER_FILTER"), c.LDAP.UserFilter)
+	c.LDAP.AdminGroup = first(env("PYRO_LDAP_ADMIN_GROUP"), c.LDAP.AdminGroup)
+	for i := range c.OIDC {
+		if err := c.OIDC[i].Validate(); err != nil {
+			return c, err
+		}
+	}
 	f.tlsCert = first(f.tlsCert, env("PYRO_TLS_CERT"))
 	f.tlsKey = first(f.tlsKey, env("PYRO_TLS_KEY"))
 	switch c.Signup {
@@ -229,6 +242,10 @@ func serveTeam(f *teamFlags, host string, port int, agents []string, agentToken 
 	if err != nil {
 		return err
 	}
+	directory, err := team.NewLDAP(c.LDAP)
+	if err != nil {
+		return err
+	}
 	plugins := openPlugins()
 	if plugins != nil {
 		defer plugins.Close()
@@ -236,6 +253,7 @@ func serveTeam(f *teamFlags, host string, port int, agents []string, agentToken 
 	ts := team.New(team.Config{
 		DataDir: dir, Store: st, PublicURL: c.PublicURL, Signup: c.Signup, SignupDomains: c.SignupDomains,
 		MaxLoads: c.MaxLoads, UI: web.Dist(), Mailer: team.NewMailer(c.SMTP), JWTSecret: secret,
+		Directory: directory, LDAPURL: c.LDAP.URL, OIDC: c.OIDC, DatabaseKind: td.kind,
 		Project: func(ws *store.Workspace, id string) server.Config {
 			eng := engine.New(httpdriver.New(httpdriver.Options{FileRoot: ws.Root}))
 			eng.Plugins = plugins
@@ -262,6 +280,16 @@ func serveTeam(f *teamFlags, host string, port int, agents []string, agentToken 
 	}
 	n, _ := st.CountUsers(context.Background())
 	fmt.Printf("Pyro %s team server\n  data       %s\n  database   %s\n  open       %s/\n", version.Version, dir, td.kind, addr)
+	if c.LDAP.URL != "" {
+		fmt.Printf("  sign-in    LDAP %s\n", c.LDAP.URL)
+	}
+	for _, p := range c.OIDC {
+		redirect := addr + "/auth/oidc/" + p.ID + "/callback"
+		fmt.Printf("  sign-in    %s (OpenID Connect; redirect URI %s)\n", p.Name, redirect)
+		if p.ClientSecret == "" {
+			fmt.Printf("             no client secret: set %s if the provider needs one\n", team.ProviderEnvSecret(p.ID))
+		}
+	}
 	if n == 0 {
 		fmt.Println("\nNo accounts yet: the first person to sign up becomes the administrator.")
 	}
@@ -411,7 +439,23 @@ func adminCmd() *cobra.Command {
 			return tw.Flush()
 		},
 	}
-	cmd.AddCommand(create, reset, setAdmin, list)
+	disable := &cobra.Command{
+		Use:   "disable <email>",
+		Short: "Turn an account off and sign it out everywhere (enable turns it back on)",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return setDisabled(cmd, open, args[0], true)
+		},
+	}
+	enable := &cobra.Command{
+		Use:   "enable <email>",
+		Short: "Turn a disabled account back on",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return setDisabled(cmd, open, args[0], false)
+		},
+	}
+	cmd.AddCommand(create, reset, setAdmin, list, disable, enable)
 	return cmd
 }
 
@@ -441,4 +485,21 @@ func readPassword() (string, error) {
 		return "", errors.New("the passwords don't match")
 	}
 	return string(a), nil
+}
+
+func setDisabled(cmd *cobra.Command, open func() (*team.Store, func(), error), email string, disabled bool) error {
+	st, closeDB, err := open()
+	if err != nil {
+		return err
+	}
+	defer closeDB()
+	u, err := st.UserByEmail(cmd.Context(), email)
+	if err != nil {
+		return fmt.Errorf("no account for %s", email)
+	}
+	if err := st.SetDisabled(cmd.Context(), u.ID, disabled); err != nil {
+		return err
+	}
+	fmt.Printf("%s is %s\n", u.Email, map[bool]string{true: "disabled and signed out everywhere", false: "enabled"}[disabled])
+	return nil
 }

@@ -166,6 +166,8 @@ The repository's `.env.example` lists them all:
 | `PYRO_SIGNUP`, `PYRO_SIGNUP_DOMAINS` | `--signup`, `--signup-domain` (comma-separated) |
 | `PYRO_MAX_LOADS` | `--max-loads` |
 | `PYRO_JWT_SECRET` | the key that signs sign-in tokens (default: `<data>/jwt.secret`) |
+| `PYRO_LDAP_URL`, `PYRO_LDAP_BIND_DN`, `PYRO_LDAP_BIND_PASSWORD`, `PYRO_LDAP_BASE_DN`, `PYRO_LDAP_USER_FILTER`, `PYRO_LDAP_ADMIN_GROUP` | the `ldap` settings ([LDAP](#ldap--active-directory)) |
+| `PYRO_OIDC_<ID>_SECRET` | an SSO provider's client secret ([single sign-on](#single-sign-on-openid-connect)) |
 | `PYRO_SMTP_HOST`, `PYRO_SMTP_PORT`, `PYRO_SMTP_USERNAME`, `PYRO_SMTP_PASSWORD`, `PYRO_SMTP_FROM` | the `smtp` settings |
 
 Flags win over the environment, which wins over `server.yaml`. Keep `.env` out of git: it
@@ -212,6 +214,93 @@ Passwords and session cookies must not travel over plain HTTP on a network. Eith
 
 Pyro warns at start-up when it serves plain HTTP on a non-local address.
 
+## Company sign-in
+
+Besides email and password, people can sign in with your company's accounts. Accounts are
+created the first time someone signs in this way, with their personal workspace, whatever the
+sign-up policy. The directory or identity provider decides who gets in.
+
+### LDAP / Active Directory
+
+With LDAP set up, the sign-in form asks for **email or username**:
+
+- Accounts that have a Pyro password sign in with it as before.
+- Anyone else is checked against the directory. Pyro binds with a service account, finds the
+  person, and checks their password by binding as them.
+
+```yaml
+ldap:
+  url: ldaps://dc1.corp.example.com:636      # or ldap://… with startTLS: true
+  bindDN: CN=pyro-svc,OU=Service,DC=corp,DC=example,DC=com
+  # bindPassword: set PYRO_LDAP_BIND_PASSWORD instead
+  baseDN: OU=Staff,DC=corp,DC=example,DC=com
+  userFilter: (sAMAccountName={username})    # default: uid, mail or sAMAccountName
+  emailAttribute: mail                       # default mail
+  nameAttribute: displayName                 # default displayName, then cn
+  adminGroup: CN=Pyro Admins,OU=Groups,DC=corp,DC=example,DC=com   # optional
+```
+
+- `adminGroup` makes the group's members server administrators. Membership (`memberOf`) is
+  checked at every sign-in, so removing someone from the group removes the role.
+- The name, email and admin role are refreshed from the directory each time.
+- If the directory can't be reached, people see that rather than "wrong password". The
+  server log has the details.
+- The settings can also come from the environment: `PYRO_LDAP_URL`, `PYRO_LDAP_BIND_DN`,
+  `PYRO_LDAP_BIND_PASSWORD`, `PYRO_LDAP_BASE_DN`, `PYRO_LDAP_USER_FILTER` and
+  `PYRO_LDAP_ADMIN_GROUP`.
+
+### Single sign-on (OpenID Connect)
+
+Each provider adds a **Sign in with …** button.
+
+```yaml
+oidc:
+  - id: entra                       # used in the redirect URI
+    name: Microsoft                 # the button says "Sign in with Microsoft"
+    issuer: https://login.microsoftonline.com/<tenant-id>/v2.0
+    clientID: 00000000-0000-0000-0000-000000000000
+    # clientSecret: set PYRO_OIDC_ENTRA_SECRET instead
+    allowedDomains: [example.com]   # optional: only these email domains
+    trustEmail: true                # your tenant controls the addresses
+    adminGroup: <group object id>   # optional: from the "groups" claim
+  - id: google
+    name: Google
+    issuer: https://accounts.google.com
+    clientID: 1234.apps.googleusercontent.com
+```
+
+- Register Pyro with the provider as a web app, with the redirect URI
+  `<public URL>/auth/oidc/<id>/callback`. `pyro serve --team` prints it for each provider.
+  Set `--public-url` so it matches what people open.
+- The client secret goes in `PYRO_OIDC_<ID>_SECRET`, e.g. `PYRO_OIDC_ENTRA_SECRET`.
+- Sign-in uses the authorization code flow with PKCE. Pyro checks the ID token's signature,
+  audience, expiry and nonce.
+- **Same email, existing account.** The sign-in joins that account only if the provider
+  says the email is verified, or the provider has `trustEmail: true`. Entra ID doesn't send
+  `email_verified`, so set `trustEmail` for your own tenant. Otherwise the person is asked to
+  sign in the way they did before.
+- An invite link works with SSO too: open it, click **Sign in with …**, and you join the
+  workspace.
+- Keycloak, Okta, Auth0 and others work the same way with their issuer URL.
+
+## Administration
+
+Server administrators find **Administration** in the account menu.
+
+- **Users:** everyone with an account and how they sign in (password, LDAP or SSO).
+  - **Administrator** switch.
+  - **Active** switch. Turning it off signs the person out everywhere at once and stops their
+    API tokens. Their workspaces and work are kept.
+  - **Reset password** for password accounts: makes a one-time link valid for 24 hours. It's
+    emailed when the server can send email, and shown so you can pass it on.
+  - The server always keeps at least one active administrator.
+- **Server:** how the server is set up (database, sign-up, LDAP, SSO, email). Change these in
+  `server.yaml`, the environment or flags, and restart.
+
+**Forgot password?** When email is set up, the sign-in page offers **Forgot password?**. It
+emails a one-hour link to password accounts, and says the same thing whether or not the
+address has an account.
+
 ## Managing accounts from the command line
 
 Run these on the server machine. They work while the server is running.
@@ -221,24 +310,26 @@ pyro admin create-user alice@example.com --name "Alice"     # asks for a passwor
 pyro admin create-user bob@example.com --admin
 pyro admin reset-password alice@example.com                 # also signs her out everywhere
 pyro admin set-admin bob@example.com --revoke
+pyro admin disable carol@example.com                        # signs her out; enable undoes it
 pyro admin users
 ```
 
 Pass the same `--data` and `--database` as the server (or run it where the server's `.env`
-is). A password can also be
-piped in, e.g. `echo "$PW" | pyro admin create-user …`.
+is). A password can also be piped in, e.g. `echo "$PW" | pyro admin create-user …`. These
+commands are also how you recover if nobody can reach the admin page.
 
 ## Your account
 
 The **account menu** (the person icon, top right) has:
 
-- **Account**: change your name or password. Changing your password signs out your other
-  sessions and revokes your API tokens.
+- **Account**:
+  - change your name or password (password accounts). Changing your password signs out your
+    other sessions;
+  - manage your **API tokens** (below);
+  - **Sign out everywhere**: ends your sessions on every browser and app.
 - **Workspaces and projects**.
+- **Administration** (administrators).
 - **Sign out**.
-
-- **Sign out everywhere** (Account page): ends your session on every browser and revokes your
-  API tokens.
 
 You stay signed in for 14 days from your last visit. Behind the scenes, the browser holds a
 short-lived access token (a JWT, renewed every 15 minutes) and a refresh token, both in
@@ -247,22 +338,38 @@ for that account.
 
 ## API tokens for scripts and CI
 
-Scripts can call the team server's API with a Bearer token:
+**Personal access tokens** are the easiest way:
+
+1. Go to **Account → API tokens → New token**.
+2. Name the token (e.g. "GitLab CI") and pick an expiry (30 days, 90 days, a year, or never).
+3. Copy the token. It starts with `pyro_pat_` and is shown only once.
+
+```sh
+curl -H "Authorization: Bearer $PYRO_TOKEN" https://pyro.example.com/api/v1/workspaces
+```
+
+- A token acts as you, with your roles.
+- The list shows when each token was last used. **Revoke** stops one at once.
+- Tokens stop working if your account is disabled. They keep working after a password change
+  or "sign out everywhere", so revoke them separately if one leaks.
+
+Scripts can also sign in with a password and get short-lived tokens:
 
 ```sh
 TOKEN=$(curl -s https://pyro.example.com/api/v1/auth/token \
   -d '{"email":"ci@example.com","password":"…"}' | jq -r .accessToken)
-curl -H "Authorization: Bearer $TOKEN" https://pyro.example.com/api/v1/workspaces
 ```
 
-- The access token lasts 15 minutes.
+- That access token lasts 15 minutes.
 - The response also carries a `refreshToken`. Trade it for a new access token at
   `/api/v1/auth/refresh`, and sign it out at `/api/v1/auth/logout`.
+- This works for LDAP accounts too.
 - Details are in the [API reference](../api.md).
 
-The server signs tokens with a key in `<data>/jwt.secret`, made on first start. If several
-servers share one database, give them all the same key in `PYRO_JWT_SECRET` (32 characters or
-more). Changing the key signs everyone out.
+The server signs sign-in tokens with a key in `<data>/jwt.secret`, made on first start. If
+several servers share one database, give them all the same key in `PYRO_JWT_SECRET` (32
+characters or more). Changing the key signs everyone out. Personal access tokens aren't
+affected by the key.
 
 ## What's different from local Pyro
 

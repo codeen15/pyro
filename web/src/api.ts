@@ -836,6 +836,28 @@ export interface TeamUser {
   name: string;
   provider: string;
   admin: boolean;
+  disabled?: boolean;
+  created?: string;
+}
+
+export interface APIToken {
+  id: string;
+  name: string;
+  created: string;
+  lastUsed?: string;
+  expires?: string;
+}
+
+export interface AdminSettings {
+  version: string;
+  publicURL: string;
+  database: string;
+  signupPolicy: string;
+  signupDomains?: string[];
+  maxLoads: number;
+  email: boolean;
+  ldap: string;
+  oidc: { id: string; name: string; issuer: string; allowedDomains?: string[]; adminGroup: boolean }[];
 }
 
 export interface TeamProject {
@@ -905,6 +927,10 @@ export interface AuthConfig {
   mode: "team";
   /** Invite emails can be sent (SMTP is configured). */
   email?: boolean;
+  /** Sign-in also checks the company directory (usernames work). */
+  ldap?: boolean;
+  /** Single sign-on providers (OpenID Connect). */
+  providers?: { id: string; name: string }[];
   /** The browser already has a valid session. */
   signedIn: boolean;
   firstUser: boolean;
@@ -968,6 +994,21 @@ export const team = {
     return body;
   },
   acceptInvite: (token: string) => teamCall<InvitePreview>("POST", `/invites/${encodeURIComponent(token)}/accept`),
+  forgotPassword: (email: string) => teamCall<void>("POST", "/auth/forgot", { email }),
+  previewReset: async (token: string): Promise<{ email: string }> => {
+    const res = await fetch(`/api/v1/auth/reset/${encodeURIComponent(token)}`);
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new ApiError(res.status, body.error ?? res.statusText);
+    return body;
+  },
+  resetPassword: (token: string, password: string) => teamCall<Me>("POST", "/auth/reset", { token, password }),
+  apiTokens: () => teamCall<APIToken[]>("GET", "/me/tokens"),
+  createAPIToken: (name: string, days: number) => teamCall<{ token: string; info: APIToken }>("POST", "/me/tokens", { name, days }),
+  revokeAPIToken: (id: string) => teamCall<void>("DELETE", `/me/tokens/${id}`),
+  adminUsers: () => teamCall<TeamUser[]>("GET", "/admin/users"),
+  adminUpdateUser: (id: string, b: { admin?: boolean; disabled?: boolean }) => teamCall<TeamUser>("PATCH", `/admin/users/${id}`, b),
+  adminResetLink: (id: string) => teamCall<{ url: string; expires: string; emailed: boolean }>("POST", `/admin/users/${id}/reset-link`),
+  adminSettings: () => teamCall<AdminSettings>("GET", "/admin/settings"),
 };
 
 /** Decodes a base64 response body into bytes. */

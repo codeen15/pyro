@@ -1,7 +1,8 @@
 import { useRef, useState } from "react";
 import { Alert, App as AntApp, Button, Checkbox, Dropdown, Form, Input, Modal, Radio, Select, Space, Table, Tabs, Tag, type MenuProps } from "antd";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeftRight, BookOpen, Briefcase, ChevronDown, Cookie, Copy, Download, Folder, LogOut, MoreVertical, Pencil, Plus, Trash2, Upload, UserCircle, Users } from "../icons";
+import { APITokens } from "./Admin";
+import { ArrowLeftRight, BookOpen, Briefcase, ChevronDown, Cookie, Copy, Download, Folder, LogOut, MoreVertical, Pencil, Plus, ShieldCheck, Trash2, Upload, UserCircle, Users } from "../icons";
 import { api, team, type Invite, type Member, type MemberRole, type TeamWorkspace, type TreeNode } from "../api";
 import { openProject, useCanEdit, useTeam } from "../team";
 import { useApp } from "../store";
@@ -67,6 +68,7 @@ export function UserMenu() {
           { key: "who", type: "group", label: `${me.user.name} · ${me.user.email}` },
           { key: "account", label: "Account", icon: <UserCircle size={14} /> },
           { key: "projects", label: "Workspaces and projects", icon: <Briefcase size={14} /> },
+          ...(me.user.admin ? [{ key: "admin", label: "Administration", icon: <ShieldCheck size={14} /> }] : []),
           // The top bar hides these buttons on phones; keep them reachable here.
           { key: "cookies", label: "Cookies", icon: <Cookie size={14} />, className: "menu-phone-only" },
           { key: "docs", label: "User guide", icon: <BookOpen size={14} />, className: "menu-phone-only" },
@@ -740,15 +742,16 @@ export function AccountPage() {
         ) : (
           <p className="muted small">You sign in through {me.user.provider.toUpperCase()}; change your password there.</p>
         )}
+        <APITokens />
         <div className="account-form">
           <h2>Sessions</h2>
-          <p className="muted small">Signs you out on every browser and revokes API tokens issued to you, including here.</p>
+          <p className="muted small">Signs you out on every browser and app, including this one. Personal API tokens keep working; revoke those above.</p>
           <Button
             danger
             onClick={() =>
               modal.confirm({
                 title: "Sign out everywhere?",
-                content: "Every browser and API client signed in as you has to sign in again.",
+                content: "Every browser and app signed in as you has to sign in again.",
                 okText: "Sign out everywhere",
                 okButtonProps: { danger: true },
                 onOk: async () => {

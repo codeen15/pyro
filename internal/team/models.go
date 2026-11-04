@@ -88,6 +88,26 @@ type auditRow struct {
 	Target        string `bun:"target,notnull,default:''"`
 }
 
+type apiTokenRow struct {
+	bun.BaseModel `bun:"table:api_tokens"`
+	ID            string `bun:"id,pk"`
+	Hash          string `bun:"hash,notnull,unique"`
+	UserID        string `bun:"user,notnull"`
+	Name          string `bun:"name,notnull"`
+	Created       int64  `bun:"created,notnull"`
+	LastUsed      int64  `bun:"last_used,notnull,default:0"`
+	Expires       int64  `bun:"expires,notnull,default:0"` // 0 = never
+}
+
+type resetRow struct {
+	bun.BaseModel `bun:"table:password_resets"`
+	Hash          string `bun:"hash,pk"`
+	UserID        string `bun:"user,notnull"`
+	Created       int64  `bun:"created,notnull"`
+	Expires       int64  `bun:"expires,notnull"`
+	Used          bool   `bun:"used,notnull,default:false"`
+}
+
 // migrations build the schema; add new steps at the end, never edit old ones.
 var migrations = []db.Migration{
 	{Name: "1-tables", Up: func(ctx context.Context, tx bun.Tx) error {
@@ -130,5 +150,13 @@ var migrations = []db.Migration{
 	}},
 	{Name: "2-tokens-after", Up: func(ctx context.Context, tx bun.Tx) error {
 		return db.AddColumn(ctx, tx, "users", "tokens_after", "tokens_after BIGINT NOT NULL DEFAULT 0")
+	}},
+	{Name: "3-api-tokens-and-resets", Up: func(ctx context.Context, tx bun.Tx) error {
+		for _, m := range []any{(*apiTokenRow)(nil), (*resetRow)(nil)} {
+			if _, err := tx.NewCreateTable().Model(m).IfNotExists().ForeignKey(`("user") REFERENCES "users" ("id") ON DELETE CASCADE`).Exec(ctx); err != nil {
+				return err
+			}
+		}
+		return db.CreateIndex(ctx, tx, (*apiTokenRow)(nil), "api_tokens_user", `"user"`)
 	}},
 }

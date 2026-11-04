@@ -200,3 +200,61 @@ test("team server: invite a viewer, promote them, copy a collection and resolve 
 
   await bobCtx.close();
 });
+
+test("team server: administration, password reset links and API tokens", async ({ browser, page, request }) => {
+  await waitForTeam(request);
+  // The server's first account (from the first test) is the administrator.
+  await page.goto(TEAM);
+  await page.getByLabel("Email").fill("owner@example.com");
+  await page.getByLabel("Password").fill(PASSWORD);
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await page.getByRole("button", { name: "Account menu for Olivia Owner" }).click();
+  await page.getByRole("menuitem", { name: "Administration" }).click();
+  await expect(page.getByRole("heading", { name: "Administration" })).toBeVisible();
+  const bobRow = page.getByRole("row", { name: /bob\.viewer@example\.com/ });
+  await expect(bobRow).toBeVisible();
+
+  // A one-time password link for Bob.
+  await bobRow.getByRole("button", { name: "Reset password" }).click();
+  const link = await page.getByLabel("Password link", { exact: true }).inputValue();
+  expect(link).toContain("/reset/");
+  await page.getByRole("button", { name: "Done" }).click();
+
+  const bobCtx = await browser.newContext();
+  const bob = await bobCtx.newPage();
+  await bob.goto(link);
+  await expect(bob.getByRole("heading", { name: "Choose a new password" })).toBeVisible();
+  await expect(bob.getByText("bob.viewer@example.com")).toBeVisible();
+  await bob.getByLabel("New password", { exact: true }).fill("a brand new password");
+  await bob.getByRole("button", { name: "Set password and sign in" }).click();
+  await expect(bob.getByRole("button", { name: /^Project:/ })).toBeVisible();
+
+  // Disabling Bob signs him out.
+  await bobRow.getByRole("switch", { name: "Active: Bob" }).click();
+  await page.getByRole("button", { name: "Disable" }).click();
+  await expect(page.getByText("Bob is disabled")).toBeVisible();
+  await bob.reload();
+  await expect(bob.getByRole("button", { name: "Sign in" })).toBeVisible();
+  await bobCtx.close();
+
+  // The Server tab shows how the server is set up.
+  await page.getByRole("tab", { name: "Server" }).click();
+  await expect(page.getByText("By invitation").or(page.getByText("Open to anyone"))).toBeVisible();
+
+  // An API token works as a Bearer token and can be revoked.
+  await page.getByRole("button", { name: "Account menu for Olivia Owner" }).click();
+  await page.getByRole("menuitem", { name: "Account" }).click();
+  await page.getByRole("button", { name: "New token" }).click();
+  await page.getByLabel("Token name").fill("CI pipeline");
+  await page.getByRole("button", { name: "Create token" }).click();
+  const token = await page.getByLabel("API token", { exact: true }).inputValue();
+  expect(token).toMatch(/^pyro_pat_/);
+  await page.getByRole("button", { name: "Done" }).click();
+  const me = await request.get(`${TEAM}/api/v1/me`, { headers: { Authorization: `Bearer ${token}` } });
+  expect(me.status()).toBe(200);
+  expect((await me.json()).user.email).toBe("owner@example.com");
+  await page.getByRole("button", { name: "Revoke token CI pipeline" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Revoke", exact: true }).click();
+  await expect(page.getByText("No tokens.")).toBeVisible();
+  expect((await request.get(`${TEAM}/api/v1/me`, { headers: { Authorization: `Bearer ${token}` } })).status()).toBe(401);
+});

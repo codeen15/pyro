@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from "react";
-import { Alert, Button, Form, Input, Tabs } from "antd";
+import { Alert, Button, Divider, Form, Input, Tabs } from "antd";
+import { KeyRound } from "../icons";
 import logo from "../assets/pyro-logo.png";
 import { team, type AuthConfig } from "../api";
 
@@ -21,8 +22,20 @@ export function AuthPage({
   invite?: InviteContext;
 }) {
   const [tab, setTab] = useState(config.firstUser || invite ? "signup" : "signin");
-  const [error, setError] = useState<string | null>(null);
+  // A failed single sign-on comes back as ?signin_error=…; show it once.
+  const [error, setError] = useState<string | null>(() => {
+    const params = new URLSearchParams(window.location.search);
+    const e = params.get("signin_error");
+    if (e) {
+      params.delete("signin_error");
+      const qs = params.toString();
+      window.history.replaceState(null, "", window.location.pathname + (qs ? `?${qs}` : ""));
+    }
+    return e;
+  });
   const [busy, setBusy] = useState(false);
+  const [forgot, setForgot] = useState<"closed" | "open" | "sent">("closed");
+  const providers = config.providers ?? [];
 
   const submit = async (how: "signin" | "signup", fn: () => Promise<unknown>) => {
     setError(null);
@@ -39,8 +52,12 @@ export function AuthPage({
 
   const signIn = (
     <Form layout="vertical" requiredMark={false} initialValues={{ email: invite?.email }} onFinish={(v: { email: string; password: string }) => submit("signin", () => team.login(v))}>
-      <Form.Item label="Email" name="email" rules={[{ required: true, message: "Enter your email" }]}>
-        <Input type="email" autoComplete="username" autoFocus />
+      <Form.Item
+        label={config.ldap ? "Email or username" : "Email"}
+        name="email"
+        rules={[{ required: true, message: config.ldap ? "Enter your email or username" : "Enter your email" }]}
+      >
+        <Input type={config.ldap ? "text" : "email"} autoComplete="username" autoFocus={!providers.length} />
       </Form.Item>
       <Form.Item label="Password" name="password" rules={[{ required: true, message: "Enter your password" }]}>
         <Input.Password autoComplete="current-password" />
@@ -48,8 +65,69 @@ export function AuthPage({
       <Button type="primary" htmlType="submit" block loading={busy}>
         Sign in
       </Button>
-      <p className="muted small auth-hint">Forgot your password? Ask a Pyro administrator to reset it.</p>
+      {config.email ? (
+        <p className="auth-hint">
+          <Button type="link" onClick={() => setForgot("open")}>
+            Forgot password?
+          </Button>
+        </p>
+      ) : (
+        <p className="muted small auth-hint">Forgot your password? Ask a Pyro administrator to reset it.</p>
+      )}
     </Form>
+  );
+
+  const forgotForm =
+    forgot === "sent" ? (
+      <>
+        <Alert type="success" showIcon className="auth-alert" message="If that address has a Pyro account, we've emailed it a link. It works for an hour." />
+        <Button block onClick={() => setForgot("closed")}>
+          Back to sign in
+        </Button>
+      </>
+    ) : (
+      <Form
+        layout="vertical"
+        requiredMark={false}
+        onFinish={async (v: { email: string }) => {
+          setError(null);
+          setBusy(true);
+          try {
+            await team.forgotPassword(v.email);
+            setForgot("sent");
+          } catch (e) {
+            setError((e as Error).message);
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        <p className="muted small">We'll email you a link to choose a new password.</p>
+        <Form.Item label="Email" name="email" rules={[{ required: true, message: "Enter your email" }]}>
+          <Input type="email" autoComplete="username" autoFocus />
+        </Form.Item>
+        <Button type="primary" htmlType="submit" block loading={busy}>
+          Email me a link
+        </Button>
+        <p className="auth-hint">
+          <Button type="link" onClick={() => setForgot("closed")}>
+            Back to sign in
+          </Button>
+        </p>
+      </Form>
+    );
+
+  const sso = providers.length > 0 && (
+    <div className="sso-list">
+      {providers.map((p) => (
+        <Button key={p.id} block icon={<KeyRound size={14} />} href={`/auth/oidc/${encodeURIComponent(p.id)}/start${invite ? `?invite=${encodeURIComponent(invite.token)}` : ""}`}>
+          Sign in with {p.name}
+        </Button>
+      ))}
+      <Divider plain className="sso-divider">
+        or
+      </Divider>
+    </div>
   );
 
   const signUp = (
@@ -97,10 +175,17 @@ export function AuthPage({
         </header>
         {invite?.banner}
         {error && <Alert type="error" showIcon className="auth-alert" message={error} />}
-        {items.length > 1 ? (
-          <Tabs destroyOnHidden activeKey={tab} onChange={(k) => { setTab(k); setError(null); }} items={items} />
+        {forgot !== "closed" ? (
+          forgotForm
         ) : (
-          items[0]?.children
+          <>
+            {sso}
+            {items.length > 1 ? (
+              <Tabs destroyOnHidden activeKey={tab} onChange={(k) => { setTab(k); setError(null); }} items={items} />
+            ) : (
+              items[0]?.children
+            )}
+          </>
         )}
         {!config.signup && !invite && <p className="muted small auth-hint">New here? Ask a workspace owner to invite you.</p>}
       </section>
