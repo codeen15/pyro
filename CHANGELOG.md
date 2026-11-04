@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+- Response bodies: the Pretty view is a collapsible JSON tree, with expand all and collapse
+  all.
+- Collection and folder settings: `Ctrl` + `S` saves; variables show initial and current
+  values.
+- Current values show what requests set (extractors, set-variables processors, scripts),
+  marked *from a request*, on the settings and environments pages.
+- The `{{variable}}` card stays open while you use it, and appears in assertion and extractor
+  fields too; those fields now fill in `{{variables}}` when they run.
+- Sidebar names use the whole row, with the buttons over the end on hover and a tooltip for
+  cut-off names; more room at the bottom of the request editor.
+- Local builds stamp the app version, not the plugin SDK tag.
+
 ## v0.1.0 (2026-11-04)
 
 First public release.
