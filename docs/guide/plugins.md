@@ -50,6 +50,7 @@ Plugins are written in Go with Pyro's SDK and built with the standard Go toolcha
 ```sh
 pyro plugin new ./my-plugin --kind protocol --id redis      # or --kind auth, --kind processor
 cd my-plugin
+go mod tidy               # fetches the SDK, github.com/codeen15/pyro/plugins/sdk/go
 GOOS=wasip1 GOARCH=wasm go build -buildmode=c-shared -o redis.wasm .
 pyro plugin install .
 pyro plugin pack .        # writes redis-0.1.0.pyro-plugin and prints its sha256

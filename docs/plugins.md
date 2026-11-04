@@ -131,8 +131,9 @@ SDK API: `RegisterProtocol`, `RegisterAuth`, `Request` (`Option`, `Header`, `Set
 `SetReadTimeout`; `ErrTimeout`, `io.EOF`), `Logf`. Panics in plugin code become error replies.
 
 `pyro plugin new <dir> --kind protocol|auth|processor --id <id> [--sdk <path>]` scaffolds a plugin.
-The SDK module isn't published yet, so pass `--sdk` with the path to `plugins/sdk/go` in a
-Pyro checkout. A Go plugin module is about 2–5 MB; instances start in 2–4 ms and are pooled
+The template requires the published SDK module `github.com/codeen15/pyro/plugins/sdk/go`
+(v0.1.0, tagged `plugins/sdk/go/v0.1.0`); run `go mod tidy` before the first build. `--sdk`
+points at a local copy instead (a `replace` directive), for working on the SDK itself. A Go plugin module is about 2–5 MB; instances start in 2–4 ms and are pooled
 (one per concurrent call), so load tests pay that once per VU.
 
 **Rust SDK: not written yet.** The ABI is language-neutral, so any language that targets
