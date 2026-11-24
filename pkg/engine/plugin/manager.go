@@ -103,6 +103,7 @@ func Open(dir string) (*Manager, error) {
 	if err != nil {
 		return nil, err
 	}
+	migrated := false
 	for _, e := range entries {
 		if !e.IsDir() || strings.HasPrefix(e.Name(), ".") || e.Name() == "cache" {
 			continue
@@ -114,9 +115,19 @@ func Open(dir string) (*Manager, error) {
 		}
 		if err != nil {
 			l.err = err
-			l.man = &Manifest{Name: e.Name()}
+			l.man = &Manifest{Name: e.Name(), Limits: Limits{MemoryMB: DefaultMemoryMBWasm}}
+		} else if ps := m.st.Plugins[l.man.Name]; ps != nil && ps.Approved != nil && ps.ApprovedMemoryMB == 0 {
+			// Approved before memory limits were part of approval: the
+			// user approved what the manifest asks for now.
+			ps.ApprovedMemoryMB = l.man.Limits.MemoryMB
+			migrated = true
 		}
 		m.byNm[l.man.Name] = l
+	}
+	if migrated {
+		if err := m.saveState(); err != nil {
+			return nil, err
+		}
 	}
 	return m, nil
 }

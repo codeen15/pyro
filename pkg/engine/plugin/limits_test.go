@@ -105,3 +105,69 @@ func TestLegacyApprovalStillValid(t *testing.T) {
 		t.Fatalf("approval without approvedMemoryMB must count as 128 MB, got %+v", info)
 	}
 }
+
+func TestLegacyApprovalKeepsNonDefaultMemory(t *testing.T) {
+	dir := t.TempDir()
+	first, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := first.InstallDir(built["tcp"], true); err != nil {
+		t.Fatal(err)
+	}
+	first.Close()
+	// The installed manifest asks for 256 MB; the state predates approvedMemoryMB.
+	installed := filepath.Join(dir, "tcp", ManifestFile)
+	manifest, _ := os.ReadFile(installed)
+	if err := os.WriteFile(installed, append(manifest, []byte("\nlimits: { memoryMB: 256 }\n")...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	legacy := `{"plugins":{"tcp":{"enabled":true,"approved":{"network":["*:*"]}}}}`
+	if err := os.WriteFile(filepath.Join(dir, "state.json"), []byte(legacy), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(m.Close)
+	info, err := m.Get("tcp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Limits.MemoryMB != 256 || !info.Approved || !info.Ready {
+		t.Fatalf("a legacy approval must stay valid for the installed manifest, got %+v", info)
+	}
+	if data, _ := os.ReadFile(filepath.Join(dir, "state.json")); !strings.Contains(string(data), `"approvedMemoryMB": 256`) {
+		t.Fatalf("migrated state not saved: %s", data)
+	}
+
+	// A later version asking for more memory needs approval again.
+	bigger := t.TempDir()
+	module, _ := os.ReadFile(filepath.Join(built["tcp"], "tcp.wasm"))
+	src, _ := os.ReadFile(filepath.Join(built["tcp"], ManifestFile))
+	if err := os.WriteFile(filepath.Join(bigger, ManifestFile), append(src, []byte("\nlimits: { memoryMB: 512 }\n")...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(bigger, "tcp.wasm"), module, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if info, err = m.InstallDir(bigger, false); err != nil || info.Approved {
+		t.Fatalf("512 MB must need approval, got %+v, %v", info, err)
+	}
+}
+
+func TestBrokenPluginPlaceholderKeepsDefaultMemory(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "bad"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	m, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(m.Close)
+	if info, _ := m.Get("bad"); info.Error == "" || info.Limits.MemoryMB != DefaultMemoryMBWasm {
+		t.Fatalf("broken placeholder = %+v", info)
+	}
+}
