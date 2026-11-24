@@ -2,7 +2,7 @@
 
 Pyro is an API client (REST, WebSocket, Socket.IO, Postman import) and load-testing
 tool (stress, spike, soak, concurrency) with WASM plugins. A single Go binary runs the
-engine and serves a React web UI on localhost. **Current phase: 16 (test reports) done; next: push, check CI, tag v0.1.0**
+engine and serves a React web UI on localhost. **Current phase: all 16 phases done; v0.1.0 tagged and released. No next phase planned yet**
 (see `docs/roadmap.md`). Product context: `PRODUCT.md`; visual system: `DESIGN.md`.
 
 ## Layout
