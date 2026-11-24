@@ -98,7 +98,7 @@ func (c *Client) Prepare(ctx context.Context, job load.Job) error {
 		}
 		return err
 	}
-	if err := prepareConn(ctx, conn, job); err != nil {
+	if err := prepareConn(ctx, conn, wsRead(conn), job); err != nil {
 		conn.CloseNow()
 		return err
 	}
@@ -108,14 +108,22 @@ func (c *Client) Prepare(ctx context.Context, job load.Job) error {
 	return nil
 }
 
+// readFunc reads the agent's next message.
+type readFunc func(ctx context.Context, m *message) error
+
+// wsRead reads straight from conn, for connections nothing else reads.
+func wsRead(conn *websocket.Conn) readFunc {
+	return func(ctx context.Context, m *message) error { return wsjson.Read(ctx, conn, m) }
+}
+
 // prepareConn sends a job over an agent connection and waits for "ready".
-func prepareConn(ctx context.Context, conn *websocket.Conn, job load.Job) error {
+func prepareConn(ctx context.Context, conn *websocket.Conn, read readFunc, job load.Job) error {
 	conn.SetReadLimit(64 << 20)
 	if err := wsjson.Write(ctx, conn, message{Type: "job", Job: &job}); err != nil {
 		return err
 	}
 	var m message
-	if err := wsjson.Read(ctx, conn, &m); err != nil {
+	if err := read(ctx, &m); err != nil {
 		return err
 	}
 	switch m.Type {
@@ -135,18 +143,18 @@ func (c *Client) Run(ctx context.Context, report func(load.Report)) error {
 		return errors.New("not prepared")
 	}
 	defer c.Close()
-	return runConn(ctx, conn, report)
+	return runConn(ctx, conn, wsRead(conn), report)
 }
 
 // runConn starts a prepared job and relays its reports until "done".
-func runConn(ctx context.Context, conn *websocket.Conn, report func(load.Report)) error {
+func runConn(ctx context.Context, conn *websocket.Conn, read readFunc, report func(load.Report)) error {
 	if err := wsjson.Write(ctx, conn, message{Type: "begin"}); err != nil {
 		return err
 	}
 	for {
 		rctx, cancel := context.WithTimeout(ctx, silence)
 		var m message
-		err := wsjson.Read(rctx, conn, &m)
+		err := read(rctx, &m)
 		cancel()
 		if err != nil {
 			if ctx.Err() != nil {
