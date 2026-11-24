@@ -38,6 +38,7 @@ func invalid(format string, args ...any) error {
 type Store struct {
 	db  *bun.DB
 	own bool
+	box *tokenBox // seals direct agents' tokens; set by SetAgentKey
 }
 
 // Open opens (creating if needed) a SQLite database file.

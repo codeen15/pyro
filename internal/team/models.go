@@ -108,6 +108,23 @@ type resetRow struct {
 	Used          bool   `bun:"used,notnull,default:false"`
 }
 
+// agentRow is a load agent registered on the team server. Direct agents keep an
+// encrypted token (token_enc) Pyro sends to them; connecting agents keep only the
+// hash of the token they present (token_hash).
+type agentRow struct {
+	bun.BaseModel `bun:"table:agents"`
+	ID            string `bun:"id,pk"`
+	Name          string `bun:"name,notnull,unique"`
+	Mode          string `bun:"mode,notnull"` // direct | connect
+	Address       string `bun:"address,notnull,default:''"`
+	TokenEnc      string `bun:"token_enc,notnull,default:''"`
+	TokenHash     string `bun:"token_hash,notnull,default:''"`
+	InsecureTLS   bool   `bun:"insecure_tls,notnull,default:false"`
+	CreatedBy     string `bun:"created_by,notnull,default:''"`
+	CreatedAt     int64  `bun:"created_at,notnull"`
+	LastSeenAt    int64  `bun:"last_seen_at,notnull,default:0"`
+}
+
 // migrations build the schema; add new steps at the end, never edit old ones.
 var migrations = []db.Migration{
 	{Name: "1-tables", Up: func(ctx context.Context, tx bun.Tx) error {
@@ -158,5 +175,11 @@ var migrations = []db.Migration{
 			}
 		}
 		return db.CreateIndex(ctx, tx, (*apiTokenRow)(nil), "api_tokens_user", `"user"`)
+	}},
+	{Name: "4-agents", Up: func(ctx context.Context, tx bun.Tx) error {
+		if _, err := tx.NewCreateTable().Model((*agentRow)(nil)).IfNotExists().Exec(ctx); err != nil {
+			return err
+		}
+		return db.CreateIndex(ctx, tx, (*agentRow)(nil), "agents_token_hash", "token_hash")
 	}},
 }

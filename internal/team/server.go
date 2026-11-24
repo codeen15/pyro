@@ -116,6 +116,9 @@ func New(cfg Config) *Server {
 	if len(cfg.JWTSecret) < minSecret {
 		panic("team: JWTSecret must be at least 32 bytes (use LoadSecret)")
 	}
+	if err := cfg.Store.SetAgentKey(cfg.JWTSecret); err != nil {
+		panic("team: " + err.Error())
+	}
 	s := &Server{
 		tokens: &issuer{secret: cfg.JWTSecret, ttl: cfg.AccessTTL}, oidc: oidcClients{byID: map[string]*oidc.Provider{}},
 		cfg: cfg, st: cfg.Store, log: cfg.Logger,
