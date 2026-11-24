@@ -129,8 +129,15 @@ generate a lot of traffic. Its defences, by boundary:
   clients; guessing a 256-bit token is not feasible either way.
 - Removing or rotating a token cuts the agent off at once, including connections that have
   not finished their handshake.
-- `http://` agent addresses and a plain-HTTP server address send tokens and test data in
-  clear text. The UI marks them **not encrypted**; use `https://` on untrusted networks.
+- `http://` and bare `host:port` agent addresses and a plain-HTTP server address send tokens
+  and test data in clear text. In **Administration → Agents**, direct agents with such an
+  address show a **not encrypted** tag, and the add/edit dialog notes it under the address;
+  the dialog for a connecting agent notes it under the server address when that starts with
+  `http://`. The table doesn't mark connecting agents (behind a proxy that ends TLS the server
+  can't tell how they connected). Use `https://` on untrusted networks.
+- An administrator who changes a direct agent's address without entering a token keeps the
+  stored token, so it is sent to the new address. Administrators are trusted with every token;
+  to move an agent to a new host, enter its token again (or give the new host its own).
 - The command shown for a connecting agent takes the server address from `PYRO_PUBLIC_URL`;
   without it, from the request's Host header, which a client controls. So the address is used
   only when it is a plain `http(s)://host[:port]` URL, and every value is single-quoted for a

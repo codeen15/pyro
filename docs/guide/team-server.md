@@ -401,8 +401,9 @@ Each agent has its own token, so removing one never affects the others.
    agent is still saved and Pyro says why (wrong address, wrong token, agent not started);
    fix it with **Edit** or start the agent, and the server keeps checking.
 
-An address that starts with `http://` is not encrypted: the token and the test data cross the
-network in clear text, and the table marks it **not encrypted**. That's fine on a private
+An address that starts with `http://`, or a bare `10.0.0.5:7979`, is not encrypted: the token
+and the test data cross the network in clear text. The dialog says so under the address, and
+the table marks the agent **not encrypted**. That's fine on a private
 network; use `https://` (a domain, or `--tls-cert` and `--tls-key` on the agent) anywhere
 else.
 
@@ -436,8 +437,17 @@ The address in the command is your `PYRO_PUBLIC_URL` when it is set, otherwise t
 your browser used. Check it in the **Server address** box and edit it if the agent has to
 reach the server some other way (a public address, another port); the commands update. If
 the address isn't a plain `http://` or `https://` URL, the command shows `<server-url>`
-instead and Pyro warns you: set `PYRO_PUBLIC_URL`, or replace it yourself. Run **one agent per
-token**: two machines started with the same token replace each other.
+instead and Pyro warns you: set `PYRO_PUBLIC_URL`, or replace it yourself. A server address
+that starts with `http://` is marked **Not encrypted** under the box.
+
+The token is shown only while the dialog is open, so clicking outside it or pressing Esc
+doesn't close it: use **Done** (or the close button) once you've copied a command.
+
+Run **one agent per token**. When a second machine connects with a token that's already
+connected, the newer connection replaces the old one if that one is idle (and the replaced
+machine reconnects, so they keep displacing each other); if the old one is running a test,
+both stay connected and the test keeps its machine. Either way the two machines share one
+entry, so give each machine its own agent.
 
 #### The Agents tab
 

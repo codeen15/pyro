@@ -12,6 +12,13 @@
   connecting agents' tokens only as a hash. Failed dial-in attempts are rate limited per
   address (`429` after 5 in a minute). `--agent` flags on `serve --team` still work and show
   as read-only entries. See "Load agents on other machines" in the guide.
+- API change: `GET /api/v1/agents` now returns one status object per agent,
+  `[{id, name, mode, address, status, detail, version, cpus, maxVUs, encrypted, fromFlags, lastSeen}]`
+  (`mode` is `direct` or `connect`, `status` is `available`, `busy`, `offline` or `error`),
+  instead of `[{mode, address, info?, error?}]`, and needs the editor role (viewers get `403`).
+  `POST /api/v1/loadtests/{name}/start` accepts `agents: [id]` to run on just those agents.
+- Agents that get no share of a small load test (fewer VUs than agents) are handed back when
+  the test starts instead of staying busy.
 - Pick agents per load test run: **Run on: Agents (n available)** shows a checklist with every
   available agent ticked; busy, offline and error agents are greyed out with the reason, and
   what you untick is remembered per project and load test. The start request takes
