@@ -522,6 +522,25 @@ export interface AgentRunStatus {
   memMB: number;
 }
 
+/** A load agent in the administrator's list (GET /admin/agents): AgentStatus plus who added it. */
+export interface AdminAgent extends AgentStatus {
+  insecureTLS?: boolean;
+  createdBy?: string;
+  /** Unix seconds. */
+  created?: number;
+}
+
+/** What adding or rotating a connecting agent returns, shown once. */
+export interface AgentConnectInfo {
+  token: string;
+  /** The server address the agent should dial. Data only: it can come from the request's Host header. */
+  base: string;
+  /** `docker run …` with the address and token shell-quoted. */
+  command: string;
+  /** Set when `command` carries a `<server-url>` placeholder instead of `base`. */
+  warning?: string;
+}
+
 /** A load agent the project can run distributed tests on (GET /agents). */
 export interface AgentStatus {
   /** `flag:<address>` or `hub:<name>@<remote>` locally; the registry id on a team server. */
@@ -1142,6 +1161,15 @@ export const team = {
   adminUpdateUser: (id: string, b: { admin?: boolean; disabled?: boolean }) => teamCall<TeamUser>("PATCH", `/admin/users/${id}`, b),
   adminResetLink: (id: string) => teamCall<{ url: string; expires: string; emailed: boolean }>("POST", `/admin/users/${id}/reset-link`),
   adminSettings: () => teamCall<AdminSettings>("GET", "/admin/settings"),
+  adminAgents: () => teamCall<AdminAgent[]>("GET", "/admin/agents"),
+  adminAddAgent: (b: { name: string; mode: "direct" | "connect"; address?: string; token?: string; insecureTLS?: boolean }) =>
+    teamCall<{ agent: AdminAgent } & Partial<AgentConnectInfo>>("POST", "/admin/agents", b),
+  /** `insecureTLS` is for direct agents only; the server refuses it for connecting ones. */
+  adminUpdateAgent: (id: string, b: { name?: string; address?: string; token?: string; insecureTLS?: boolean }) =>
+    teamCall<AdminAgent>("PATCH", `/admin/agents/${encodeURIComponent(id)}`, b),
+  adminDeleteAgent: (id: string) => teamCall<void>("DELETE", `/admin/agents/${encodeURIComponent(id)}`),
+  adminTestAgent: (id: string) => teamCall<AdminAgent>("POST", `/admin/agents/${encodeURIComponent(id)}/test`),
+  adminRotateAgent: (id: string) => teamCall<AgentConnectInfo>("POST", `/admin/agents/${encodeURIComponent(id)}/token`),
 };
 
 /** Decodes a base64 response body into bytes. */

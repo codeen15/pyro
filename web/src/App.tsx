@@ -87,6 +87,19 @@ function usePluginChanges() {
   useEffect(() => subscribe("plugins", () => qc.invalidateQueries({ queryKey: ["plugins"] })), [qc]);
 }
 
+/** The agent list changes when agents connect, disconnect or are claimed; refresh the pickers and the Admin tab. */
+function useAgentChanges() {
+  const qc = useQueryClient();
+  useEffect(
+    () =>
+      subscribe("agents", () => {
+        qc.invalidateQueries({ queryKey: ["agents"] });
+        qc.invalidateQueries({ queryKey: ["admin-agents"] });
+      }),
+    [qc],
+  );
+}
+
 /** Opens a report from its address (/reports/<id>, or /p/<project>/reports/<id>). */
 function useReportLink() {
   useEffect(() => {
@@ -100,6 +113,7 @@ function useReportLink() {
 export function App() {
   useCollaboration();
   usePluginChanges();
+  useAgentChanges();
   useReportLink();
   const health = useQuery({ queryKey: ["health"], queryFn: api.health, refetchInterval: 10_000 });
   const ws = useQuery({ queryKey: ["workspace"], queryFn: api.workspace });

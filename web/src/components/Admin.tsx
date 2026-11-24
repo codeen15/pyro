@@ -1,28 +1,15 @@
 import { useState } from "react";
-import { Alert, App as AntApp, Button, Descriptions, Input, Modal, Select, Space, Switch, Table, Tabs, Tag, Tooltip } from "antd";
+import { Alert, App as AntApp, Button, Descriptions, Input, Modal, Select, Switch, Table, Tabs, Tag, Tooltip } from "antd";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Copy, KeyRound, Plus, Trash2 } from "../icons";
+import { KeyRound, Plus, Trash2 } from "../icons";
 import { team, type APIToken, type TeamUser } from "../api";
 import { useTeam } from "../team";
+import { AdminAgents } from "./AdminAgents";
+import { CopyField } from "./CopyField";
 
 // Server administration (users, settings) and personal API tokens.
 
 const PROVIDER_LABEL: Record<string, string> = { local: "Password", ldap: "LDAP", oidc: "SSO" };
-
-function CopyField({ label, value }: { label: string; value: string }) {
-  const { message } = AntApp.useApp();
-  return (
-    <Space.Compact block>
-      <Input readOnly value={value} aria-label={label} onFocus={(e) => e.target.select()} />
-      <Button
-        icon={<Copy size={14} />}
-        onClick={() => navigator.clipboard.writeText(value).then(() => message.success("Copied"), () => message.error("Couldn't copy; select it and copy"))}
-      >
-        Copy
-      </Button>
-    </Space.Compact>
-  );
-}
 
 export function AdminPage() {
   const me = useTeam((s) => s.me);
@@ -30,6 +17,9 @@ export function AdminPage() {
   const { message, modal } = AntApp.useApp();
   const users = useQuery({ queryKey: ["admin-users"], queryFn: team.adminUsers, enabled: !!me?.user.admin });
   const settings = useQuery({ queryKey: ["admin-settings"], queryFn: team.adminSettings, enabled: !!me?.user.admin });
+  const [tab, setTab] = useState("users");
+  // Agents connect and drop at any time; the project's event socket usually says so, the poll is the fallback.
+  const agents = useQuery({ queryKey: ["admin-agents"], queryFn: team.adminAgents, enabled: !!me?.user.admin, refetchInterval: tab === "agents" ? 5000 : false });
   const [search, setSearch] = useState("");
   const [link, setLink] = useState<{ email: string; url: string; emailed: boolean } | null>(null);
 
@@ -66,6 +56,8 @@ export function AdminPage() {
           </div>
         </header>
         <Tabs
+          activeKey={tab}
+          onChange={setTab}
           items={[
             {
               key: "users",
@@ -153,6 +145,11 @@ export function AdminPage() {
                   />
                 </>
               ),
+            },
+            {
+              key: "agents",
+              label: `Agents${agents.data ? ` (${agents.data.length})` : ""}`,
+              children: <AdminAgents agents={agents.data} loading={agents.isPending} error={agents.error?.message} />,
             },
             {
               key: "server",

@@ -4916,3 +4916,106 @@ h1 .report-status {
     flex-wrap: wrap;
   }
 }
+
+/* Admin → Agents */
+.admin-agents-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+.admin-agents-head > p {
+  margin: 0;
+  max-width: 560px;
+}
+.admin-agents > .ant-alert,
+.modal-alert {
+  margin-bottom: 12px;
+}
+.agent-status {
+  display: flex;
+  flex-direction: column;
+}
+.agent-status-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.agent-detail {
+  max-width: 320px;
+  white-space: normal;
+}
+.agent-address {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.agent-actions {
+  display: inline-flex;
+  gap: 8px;
+}
+/* Status: a dot beside neutral text. Available and busy are filled, offline is hollow. */
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+  display: inline-block;
+  background: var(--text-faint);
+}
+.status-dot.is-available {
+  background: var(--ok);
+}
+.status-dot.is-busy {
+  background: var(--warn);
+}
+.status-dot.is-error {
+  background: var(--error);
+}
+.status-dot.is-offline {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--text-faint);
+}
+.modal-switch {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+}
+.modal-switch > span:first-child {
+  font-weight: normal;
+}
+.agent-command-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+.agent-command {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  padding: 8px 12px;
+  background: var(--iron-2);
+  border: 1px solid var(--rule-strong);
+  border-radius: 6px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+.agent-wait {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+@media (max-width: 640px) {
+  .admin-agents-head {
+    flex-direction: column;
+  }
+  .agent-command-row {
+    flex-direction: column;
+  }
+}
