@@ -37,6 +37,10 @@ stays inactive until you **approve** it on its page (or `pyro plugin approve <na
 also **disable**, **configure** (plugin-wide settings declared by the plugin) and **remove**
 plugins there.
 
+The permissions include the plugin's **memory limit** (128 MB unless its manifest says
+otherwise; JavaScript plugins default to 256 MB). A new version that asks for a different
+limit needs approval again, like one that asks for new network access.
+
 Installed plugins live in `~/.pyro/plugins` (or `$PYRO_PLUGINS_DIR`), outside your
 workspace. A workspace that uses a plugin type keeps working without it: requests are kept
 as written and say which plugin they need.

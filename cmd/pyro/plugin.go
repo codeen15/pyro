@@ -79,7 +79,7 @@ func pluginCmd() *cobra.Command {
 				return nil
 			}
 			for _, in := range infos {
-				fmt.Printf("%-14s %-9s %-16s %s\n", in.Name, in.Version, status(in), provides(in.Manifest))
+				fmt.Printf("%-14s %-9s %-16s %s (%s)\n", in.Name, in.Version, status(in), provides(in.Manifest), limits(in.Manifest))
 			}
 			return nil
 		},
@@ -254,6 +254,10 @@ func approveFlow(m *plugin.Manager, info plugin.Info, yes bool) error {
 	} else {
 		fmt.Printf("It asks to connect to: %s\n", strings.Join(net, ", "))
 	}
+	if info.IsJS() {
+		fmt.Println("runtime: js")
+	}
+	fmt.Printf("memory: %d MB\n", info.Limits.MemoryMB)
 	if !yes {
 		if !stdinIsTerminal() {
 			fmt.Printf("Not approved yet. Approve with: pyro plugin approve %s --yes\n", info.Name)
@@ -292,6 +296,15 @@ func provides(m plugin.Manifest) string {
 		parts = append(parts, fmt.Sprintf("%s plugin:%s", p.Kind, p.ID))
 	}
 	return strings.Join(parts, ", ")
+}
+
+// limits summarises a plugin's runtime and memory limit for listings.
+func limits(m plugin.Manifest) string {
+	s := fmt.Sprintf("memory: %d MB", m.Limits.MemoryMB)
+	if m.IsJS() {
+		s = "runtime: js, " + s
+	}
+	return s
 }
 
 func firstNonEmpty(s ...string) string {

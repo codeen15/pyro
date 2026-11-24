@@ -42,8 +42,20 @@ provides:
 capabilities:
   network: ["*:*"]        # host:port patterns; see below
 config: []                # optional plugin-wide settings, same field format
-limits: { memoryMB: 128 } # optional
+limits: { memoryMB: 128 } # optional; see Limits below
 ```
+
+`runtime` (optional) is `wasm` (the default) or `js`; it decides what `module` must be: a
+`.wasm` file for `wasm`, a `.js` file for `js`.
+
+### Limits
+- `limits.memoryMB`: the most memory one plugin instance may use. Default 128 for `wasm`,
+  256 for `js`; at most 1024.
+- `limits.maxInstances`: the most live instances of the plugin at once. Default 32 for `js`;
+  0 (the default for `wasm`) means unbounded. It can't be negative.
+- The memory limit is part of what you approve: a plugin whose new version asks for a
+  different `memoryMB` needs approval again. Approvals saved before limits existed count as
+  128 MB.
 
 Field `type`: `string`, `secret` (masked), `number`, `boolean`, `select` (with `options`),
 `text` (multi-line). Values are strings and may contain `{{variables}}`, which Pyro resolves
@@ -57,7 +69,7 @@ before the plugin sees the request.
   sandboxed module, and they can't open connections except through `net_dial`, which checks
   the capabilities on every call.
 - A newly installed plugin is **not usable until approved**. Approval records the exact
-  capability set. Upgrading to a version that asks for anything different needs approval
+  capability set and the memory limit. Upgrading to a version that asks for anything different needs approval
   again; reinstalling with the same capabilities keeps it.
 - Approve in the Plugins tab, with `pyro plugin approve <name>`, or with
   `pyro plugin install … --yes`.

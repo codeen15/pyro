@@ -310,12 +310,20 @@ export function PluginPage({ name }: { name: string }) {
                 </div>
               </>
             )}
+            <p className="small">Memory {p.limits?.memoryMB ?? 128} MB</p>
             {p.approved && (
               <p className="muted small caps-approved">
-                <ShieldCheck size={13} /> Approved. A new version asking for anything different needs approval again.
+                <ShieldCheck size={13} /> Approved. A new version asking for anything different, including more memory, needs approval again.
               </p>
             )}
           </dd>
+
+          {p.runtime === "js" && (
+            <>
+              <dt>Runtime</dt>
+              <dd>JavaScript</dd>
+            </>
+          )}
 
           <dt>Module</dt>
           <dd className="mono">{p.module}</dd>

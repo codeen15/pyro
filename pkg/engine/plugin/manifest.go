@@ -26,15 +26,31 @@ const (
 	KindProcessor = "processor"
 )
 
+// Runtimes a plugin may use.
+const (
+	RuntimeWasm = "wasm"
+	RuntimeJS   = "js"
+)
+
+// Limit defaults and ceilings.
+const (
+	DefaultMemoryMBWasm = 128
+	DefaultMemoryMBJS   = 256
+	MaxMemoryMB         = 1024
+	DefaultMaxInstances = 32 // js runtime; 0 means unbounded for wasm
+)
+
 type Manifest struct {
-	Name         string       `yaml:"name" json:"name"`
-	Version      string       `yaml:"version" json:"version"`
-	ABI          int          `yaml:"abi" json:"abi"`
-	Title        string       `yaml:"title,omitempty" json:"title,omitempty"`
-	Description  string       `yaml:"description,omitempty" json:"description,omitempty"`
-	Author       string       `yaml:"author,omitempty" json:"author,omitempty"`
-	License      string       `yaml:"license,omitempty" json:"license,omitempty"`
-	Homepage     string       `yaml:"homepage,omitempty" json:"homepage,omitempty"`
+	Name        string `yaml:"name" json:"name"`
+	Version     string `yaml:"version" json:"version"`
+	ABI         int    `yaml:"abi" json:"abi"`
+	Title       string `yaml:"title,omitempty" json:"title,omitempty"`
+	Description string `yaml:"description,omitempty" json:"description,omitempty"`
+	Author      string `yaml:"author,omitempty" json:"author,omitempty"`
+	License     string `yaml:"license,omitempty" json:"license,omitempty"`
+	Homepage    string `yaml:"homepage,omitempty" json:"homepage,omitempty"`
+	// Runtime is wasm (default) or js.
+	Runtime      string       `yaml:"runtime,omitempty" json:"runtime,omitempty"`
 	Module       string       `yaml:"module" json:"module"`
 	Provides     []Provide    `yaml:"provides" json:"provides"`
 	Capabilities Capabilities `yaml:"capabilities" json:"capabilities"`
@@ -115,14 +131,21 @@ func splitHostPort(s string) (host, port string, ok bool) {
 
 // Limits bound a plugin's resources.
 type Limits struct {
-	MemoryMB int `yaml:"memoryMB,omitempty" json:"memoryMB,omitempty"` // default 128
+	MemoryMB int `yaml:"memoryMB,omitempty" json:"memoryMB,omitempty"` // default 128 (wasm), 256 (js); at most 1024
+	// MaxInstances bounds live instances of the plugin: default 32 for js,
+	// 0 (unbounded) for wasm.
+	MaxInstances int `yaml:"maxInstances,omitempty" json:"maxInstances,omitempty"`
 }
 
+// IsJS reports whether the plugin runs on the JavaScript runtime.
+func (m *Manifest) IsJS() bool { return m.Runtime == RuntimeJS }
+
 var (
-	nameRe    = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
-	idRe      = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,62}$`)
-	moduleRe  = regexp.MustCompile(`^[A-Za-z0-9._-]+\.wasm$`)
-	versionRe = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$`)
+	nameRe       = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
+	idRe         = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,62}$`)
+	wasmModuleRe = regexp.MustCompile(`^[A-Za-z0-9._-]+\.wasm$`)
+	jsModuleRe   = regexp.MustCompile(`^[A-Za-z0-9._-]+\.js$`)
+	versionRe    = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$`)
 )
 
 // ParseManifest parses and validates a manifest.
@@ -141,8 +164,26 @@ func ParseManifest(data []byte) (*Manifest, error) {
 	if m.ABI != ABIVersion {
 		problems = append(problems, fmt.Sprintf("abi %d is not supported (this Pyro speaks ABI %d)", m.ABI, ABIVersion))
 	}
-	if !moduleRe.MatchString(m.Module) {
-		problems = append(problems, "module must be a .wasm file name in the plugin directory")
+	if m.Runtime == "" {
+		m.Runtime = RuntimeWasm
+	}
+	switch m.Runtime {
+	case RuntimeWasm:
+		if !wasmModuleRe.MatchString(m.Module) {
+			problems = append(problems, "module must be a .wasm file name in the plugin directory")
+		}
+	case RuntimeJS:
+		if !jsModuleRe.MatchString(m.Module) {
+			problems = append(problems, "module must be a .js file name in the plugin directory")
+		}
+	default:
+		problems = append(problems, fmt.Sprintf("runtime must be wasm or js, not %q", m.Runtime))
+	}
+	if m.Limits.MemoryMB > MaxMemoryMB {
+		problems = append(problems, fmt.Sprintf("limits: memoryMB must be at most %d", MaxMemoryMB))
+	}
+	if m.Limits.MaxInstances < 0 {
+		problems = append(problems, "limits: maxInstances must not be negative")
 	}
 	if len(m.Provides) == 0 {
 		problems = append(problems, "provides is empty")
@@ -177,7 +218,13 @@ func ParseManifest(data []byte) (*Manifest, error) {
 		m.Title = m.Name
 	}
 	if m.Limits.MemoryMB <= 0 {
-		m.Limits.MemoryMB = 128
+		m.Limits.MemoryMB = DefaultMemoryMBWasm
+		if m.IsJS() {
+			m.Limits.MemoryMB = DefaultMemoryMBJS
+		}
+	}
+	if m.IsJS() && m.Limits.MaxInstances == 0 {
+		m.Limits.MaxInstances = DefaultMaxInstances
 	}
 	return &m, nil
 }

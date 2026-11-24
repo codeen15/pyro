@@ -41,8 +41,19 @@ type pluginState struct {
 	Enabled bool `json:"enabled"`
 	// Approved is the capability set the user approved; a plugin whose
 	// manifest asks for anything different needs approval again.
-	Approved *Capabilities     `json:"approved,omitempty"`
-	Config   map[string]string `json:"config,omitempty"`
+	Approved *Capabilities `json:"approved,omitempty"`
+	// ApprovedMemoryMB is the memory limit the user approved; 0 (state
+	// written before limits were approved) means the old default, 128.
+	ApprovedMemoryMB int               `json:"approvedMemoryMB,omitempty"`
+	Config           map[string]string `json:"config,omitempty"`
+}
+
+// approvedMem returns the memory limit ps covers.
+func (ps *pluginState) approvedMem() int {
+	if ps.ApprovedMemoryMB == 0 {
+		return DefaultMemoryMBWasm
+	}
+	return ps.ApprovedMemoryMB
 }
 
 // Info describes an installed plugin.
@@ -126,7 +137,7 @@ func (m *Manager) info(l *loaded) Info {
 	in := Info{Manifest: *l.man}
 	if ps != nil {
 		in.Enabled = ps.Enabled
-		in.Approved = ps.Approved != nil && ps.Approved.Equal(l.man.Capabilities)
+		in.Approved = ps.Approved != nil && ps.Approved.Equal(l.man.Capabilities) && ps.approvedMem() == l.man.Limits.MemoryMB
 		in.Config = ps.Config
 	}
 	if l.err != nil {
@@ -260,6 +271,7 @@ func (m *Manager) install(man *Manifest, manifest, module []byte, approve bool) 
 	if approve {
 		caps := man.Capabilities
 		ps.Approved = &caps
+		ps.ApprovedMemoryMB = man.Limits.MemoryMB
 	}
 	l := &loaded{man: man, dir: dest}
 	m.byNm[man.Name] = l
@@ -341,11 +353,12 @@ func (m *Manager) Remove(name string) error {
 	return m.saveState()
 }
 
-// Approve records the plugin's current capabilities as approved.
+// Approve records the plugin's current capabilities and memory limit as approved.
 func (m *Manager) Approve(name string) (Info, error) {
 	return m.update(name, func(l *loaded, ps *pluginState) {
 		caps := l.man.Capabilities
 		ps.Approved = &caps
+		ps.ApprovedMemoryMB = l.man.Limits.MemoryMB
 	})
 }
 

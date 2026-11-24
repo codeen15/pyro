@@ -704,9 +704,12 @@ export interface PluginInfo {
   author?: string;
   license?: string;
   homepage?: string;
+  /** "wasm" (default) or "js". */
+  runtime?: "wasm" | "js";
   module: string;
   provides: PluginProvide[];
   capabilities: { network?: string[] };
+  limits?: { memoryMB?: number; maxInstances?: number };
   config?: PluginField[] | null;
   enabled: boolean;
   approved: boolean;
