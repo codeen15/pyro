@@ -6,8 +6,9 @@
 #
 # See docs/guide/team-server.md, "Deploying the team server".
 
-# The web UI, embedded into the binary.
-FROM node:24-bookworm-slim AS ui
+# The web UI, embedded into the binary. Static files, so it's built once on the
+# build machine's own platform, whatever the target.
+FROM --platform=$BUILDPLATFORM node:24-bookworm-slim AS ui
 WORKDIR /src/web
 COPY web/package.json web/package-lock.json ./
 RUN npm ci
