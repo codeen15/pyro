@@ -129,12 +129,18 @@ func loadCmd() *cobra.Command {
 				where = fmt.Sprintf(" on %d agents", len(opts.Workers))
 			}
 			fmt.Printf("Load test %q: %d scenario(s), up to %d VUs%s\n", plan.Name, len(plan.Scenarios), load.PeakVUs(plan), where)
-			test, err := load.Start(plan, opts)
+			test, err := load.Prepare(plan, opts)
 			if err != nil {
 				sinks.Close()
 				return err
 			}
+			// Warn before the run, not only in the summary: a capped
+			// plugin makes VUs queue from the first second.
+			for _, w := range test.PluginWarnings() {
+				fmt.Fprintln(os.Stderr, "Warning:", w)
+			}
 			started.Store(test)
+			test.Begin()
 			sigs := make(chan os.Signal, 2)
 			signal.Notify(sigs, os.Interrupt)
 			defer signal.Stop(sigs)

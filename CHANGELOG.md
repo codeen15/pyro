@@ -22,6 +22,11 @@
   test's peak VUs. Plugins get the real wall clock, a real monotonic clock and cryptographic
   random numbers, but no real sleep. Writes to `state.json` are locked, so the CLI and a
   running server no longer overwrite each other's changes. The Go plugin SDK gains `HandleOp`.
+  A plugin past its memory limit fails with
+  `plugin <name> ran out of memory (limit <n> MB; raise limits.memoryMB)`.
+- **Upgrade note:** all plugins used to share one 512 MB memory ceiling; now each plugin is
+  held to its own `limits.memoryMB` (default 128 MB for Go/WebAssembly plugins, 256 MB for
+  JavaScript). A plugin that needs more must declare it in its manifest (and be approved again).
 
 - WebSocket and Socket.IO requests have an action, chosen when created: **Connect** (the
   console, now with a connection name), **Send & receive** (send messages, then wait for a

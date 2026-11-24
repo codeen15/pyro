@@ -187,7 +187,8 @@ Agents table. CPU isn't measured on platforms other than Unix-likes and Windows.
 plugins default to 32; WASM plugins are unbounded unless the manifest sets a cap), and extra
 calls queue. When a local test's peak VUs exceed the cap of a plugin it uses (as a protocol,
 auth or processor type), the result carries one warning naming the plugin and the cap; for a
-JavaScript plugin it suggests a Go plugin for heavier load. Distributed agents check their own
+JavaScript plugin it suggests a Go plugin for heavier load. The warnings are known once the
+test is prepared (`Test.PluginWarnings`), and `pyro load` prints them before the run starts. Distributed agents check their own
 plugins.
 
 Results: the live dashboard (event WebSocket, one tick per second), saved runs in SQLite

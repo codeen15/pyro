@@ -58,3 +58,17 @@ func TestPluginCapWarnings(t *testing.T) {
 		}
 	}
 }
+
+// TestPluginWarningsBeforeBegin: a prepared test hands out its plugin
+// warnings (a copy) before it starts, so the CLI can print them first.
+func TestPluginWarningsBeforeBegin(t *testing.T) {
+	lt := &Test{pluginWarns: []string{"plugin tcp runs at most 4 calls at once; the test peaks at 10 VUs"}}
+	got := lt.PluginWarnings()
+	if !reflect.DeepEqual(got, lt.pluginWarns) {
+		t.Fatalf("PluginWarnings = %q", got)
+	}
+	got[0] = "changed"
+	if lt.pluginWarns[0] == "changed" {
+		t.Fatal("PluginWarnings returned the test's own slice")
+	}
+}

@@ -538,6 +538,11 @@ func (t *Test) maxVUs() int {
 
 func (t *Test) Plan() *Plan { return t.plan }
 
+// PluginWarnings returns the warnings about plugins whose instance cap is
+// below the test's peak VUs, known once the test is prepared, so a caller
+// can show them before the run starts. The result's Warnings repeat them.
+func (t *Test) PluginWarnings() []string { return append([]string(nil), t.pluginWarns...) }
+
 // PeakVUs estimates the most VUs a plan can allocate at once.
 func PeakVUs(p *Plan) int {
 	total := 0

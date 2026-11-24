@@ -114,7 +114,8 @@ pyro run payments/orders -d data/users.csv --junit results.xml
 
 ## pyro load
 Run a load test (a name from `loadtests/`, or a plan file). Exits non-zero unless every
-threshold passes.
+threshold passes. When a plugin the test uses runs fewer calls at once than the test's peak
+VUs, a `Warning:` line on stderr says so before the run starts (the summary repeats it).
 
 ```sh
 pyro load checkout-stress -e staging --html report.html
