@@ -230,6 +230,7 @@ func (s *Store) UpdateAgent(ctx context.Context, id string, name, address, token
 		if err != nil {
 			return err
 		}
+		var cols []string
 		if (address != nil || token != nil || insecure != nil) && row.Mode != AgentDirect {
 			return invalid("only direct agents have an address, a stored token and a certificate setting")
 		}
@@ -242,11 +243,13 @@ func (s *Store) UpdateAgent(ctx context.Context, id string, name, address, token
 				return err
 			}
 			row.Name = n
+			cols = append(cols, "name")
 		}
 		if address != nil {
 			if row.Address, err = checkAgentAddress(*address); err != nil {
 				return err
 			}
+			cols = append(cols, "address")
 		}
 		if token != nil {
 			if *token == "" {
@@ -255,17 +258,30 @@ func (s *Store) UpdateAgent(ctx context.Context, id string, name, address, token
 			if row.TokenEnc, err = box.seal(*token); err != nil {
 				return err
 			}
+			cols = append(cols, "token_enc")
 		}
 		if insecure != nil {
 			row.InsecureTLS = *insecure
+			cols = append(cols, "insecure_tls")
 		}
-		if _, err := tx.NewUpdate().Model(row).WherePK().Exec(ctx); err != nil {
+		if err := saveAgent(ctx, tx, row, cols); err != nil {
 			return err
 		}
 		out = row.agent()
 		return nil
 	})
 	return out, err
+}
+
+// saveAgent writes only these columns of row, so it never puts back a
+// token hash or last seen that changed since row was read (a rotate or a
+// touch running at the same time).
+func saveAgent(ctx context.Context, q bun.IDB, row *agentRow, cols []string) error {
+	if len(cols) == 0 {
+		return nil
+	}
+	_, err := q.NewUpdate().Model(row).Column(cols...).WherePK().Exec(ctx)
+	return err
 }
 
 // RotateAgentToken replaces a connecting agent's token and returns the new one.

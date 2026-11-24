@@ -187,6 +187,42 @@ func TestAgentRotate(t *testing.T) {
 	}
 }
 
+// An update writes only the columns it changes: a rename that read the row
+// before a concurrent rotate (or touch) can't write the old token hash (or
+// last seen) back.
+func TestAgentUpdateKeepsConcurrentWrites(t *testing.T) {
+	ctx := context.Background()
+	st := newAgentStore(t)
+	a, old, _ := st.AddConnectAgent(ctx, "edge", "u")
+	stale, err := st.loadAgent(ctx, st.db, a.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fresh, err := st.RotateAgentToken(ctx, a.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	at := time.Unix(1_700_000_000, 0)
+	if err := st.TouchAgent(ctx, a.ID, at); err != nil {
+		t.Fatal(err)
+	}
+	// The rename's write, from the row it read before the rotate.
+	stale.Name = "edge-2"
+	if err := saveAgent(ctx, st.db, stale, []string{"name"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, _ := st.AgentByToken(ctx, old); ok {
+		t.Fatal("the rename reinstated the revoked token")
+	}
+	got, ok, _ := st.AgentByToken(ctx, fresh)
+	if !ok || got.Name != "edge-2" {
+		t.Fatalf("after rename: %+v %v", got, ok)
+	}
+	if !got.LastSeen.Equal(at) {
+		t.Fatalf("the rename lost last seen: %v", got.LastSeen)
+	}
+}
+
 func TestAgentTouchAndDelete(t *testing.T) {
 	ctx := context.Background()
 	st := newAgentStore(t)
