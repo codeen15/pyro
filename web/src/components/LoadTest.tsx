@@ -209,6 +209,11 @@ export function LoadTestPage({ name }: { name: string }) {
                 agents={agents.data ?? []}
               />
             )}
+            {distributed && picked.selected.length === 0 && (
+              <span className="muted small lt-run-hint" role="status">
+                {agents.data?.some((a) => a.status === "available") ? "Tick at least one agent" : "No agent is available"}
+              </span>
+            )}
             <Button
               type="primary"
               className="lt-run"

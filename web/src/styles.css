@@ -3480,28 +3480,36 @@ input[type="checkbox"] {
 }
 .agent-pick-list li {
   display: grid;
-  grid-template-columns: minmax(140px, 220px) 72px minmax(140px, max-content) 1fr;
+  grid-template-columns: minmax(140px, 220px) 72px 1fr;
   align-items: center;
   gap: 4px 12px;
+}
+/* Busy, offline and failed agents can't be picked: the whole row recedes. */
+.agent-pick-list li.is-unavailable {
+  color: var(--text-muted);
+}
+.agent-pick-said {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 12px;
+  min-width: 0;
 }
 .agent-pick-status {
   display: inline-flex;
   align-items: center;
   gap: 8px;
 }
-.agent-pick-detail {
-  min-width: 0;
-}
 @media (max-width: 640px) {
   .agent-pick-list li {
-    grid-template-columns: 1fr auto;
+    grid-template-columns: 1fr;
   }
   .agent-pick-cpus {
     display: none;
   }
-  .agent-pick-detail {
-    grid-column: 1 / -1;
-  }
+}
+.lt-run-hint {
+  white-space: nowrap;
 }
 .agent-name,
 .agent-state {

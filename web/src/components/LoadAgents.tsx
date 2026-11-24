@@ -1,55 +1,58 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useId, useMemo, useState } from "react";
 import { Checkbox, Radio } from "antd";
 import type { AgentStatus } from "../api";
+import { useTeam } from "../team";
 import { StatusDot, statusText } from "./AgentStatus";
 
-// "Run on" for a load test: this server, or a checklist of load agents. Available
-// agents are ticked by default; the choice is remembered per load test in the browser.
+// "Run on" for a load test: this server, or a checklist of load agents. Every
+// available agent is ticked by default; what the user unticks is remembered per
+// project and load test in the browser, so agents that are added later (or come
+// back online) are ticked again.
 
 export type RunOn = "local" | "agents";
 
-const key = (test: string) => `pyro.loadtest.agents.${test}`;
+/** Agent ids are global on a team server and load test names are per project, so the key has both. */
+export const agentsKey = (project: string | undefined, test: string) => `pyro.loadtest.agents.${project ?? "local"}.${test}`;
 
-function readStored(test: string): string[] | null {
+function readUnticked(key: string): string[] {
   try {
-    const raw = localStorage.getItem(key(test));
+    const raw = localStorage.getItem(key);
     const v = raw ? JSON.parse(raw) : null;
-    return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : null;
+    return Array.isArray(v?.unticked) ? v.unticked.filter((x: unknown): x is string => typeof x === "string") : [];
   } catch {
-    return null;
+    return [];
   }
 }
 
 /** Only agents that are free can take part in a run. */
 export const selectable = (a: AgentStatus) => a.status === "available";
 
-/**
- * The agents ticked for a load test. Until the user ticks something, every
- * available agent is; a remembered selection drops agents that no longer exist
- * or can't be used right now.
- */
+/** The agents ticked for a load test: the available ones, minus those the user unticked. */
 export function useAgentSelection(test: string, agents: AgentStatus[] | undefined) {
-  // The stored list is kept in state so the checklist re-renders; it is re-read when the test changes.
-  const [saved, setSaved] = useState<{ test: string; ids: string[] | null }>(() => ({ test, ids: readStored(test) }));
-  const stored = saved.test === test ? saved.ids : readStored(test);
+  const project = useTeam((s) => s.project?.id);
+  const key = agentsKey(project, test);
+  // Kept in state so the checklist re-renders; re-read when the load test or project changes.
+  const [saved, setSaved] = useState<{ key: string; ids: string[] }>(() => ({ key, ids: readUnticked(key) }));
+  const unticked = saved.key === key ? saved.ids : readUnticked(key);
 
   const selected = useMemo(() => {
-    const usable = (agents ?? []).filter(selectable).map((a) => a.id);
-    if (stored === null) return usable;
-    const known = new Set(usable);
-    return stored.filter((id) => known.has(id));
-  }, [agents, stored]);
+    const off = new Set(unticked);
+    return (agents ?? []).filter((a) => selectable(a) && !off.has(a.id)).map((a) => a.id);
+  }, [agents, unticked]);
 
   const set = useCallback(
-    (ids: string[]) => {
-      setSaved({ test, ids });
+    (ticked: string[]) => {
+      // Remember the unticked ones that still exist (so removed agents are dropped).
+      const on = new Set(ticked);
+      const ids = (agents ?? []).filter((a) => !on.has(a.id) && (selectable(a) || unticked.includes(a.id))).map((a) => a.id);
+      setSaved({ key, ids });
       try {
-        localStorage.setItem(key(test), JSON.stringify(ids));
+        localStorage.setItem(key, JSON.stringify({ unticked: ids }));
       } catch {
         // Private windows and blocked storage: the choice just isn't remembered.
       }
     },
-    [test],
+    [agents, key, unticked],
   );
   return { selected, set };
 }
@@ -81,12 +84,12 @@ export function AgentChecklist({
   selected: string[];
   onChange: (ids: string[]) => void;
 }) {
+  const uid = useId();
   const on = new Set(selected);
   const toggle = (id: string, checked: boolean) => {
     const next = new Set(on);
     if (checked) next.add(id);
     else next.delete(id);
-    // Keep the agents' own order.
     onChange(agents.filter((a) => next.has(a.id)).map((a) => a.id));
   };
   return (
@@ -95,19 +98,22 @@ export function AgentChecklist({
         {selected.length} of {agents.length} selected
       </p>
       <ul className="agent-pick-list small">
-        {agents.map((a) => {
+        {agents.map((a, i) => {
           const ok = selectable(a);
+          const said = `${uid}-${i}`;
           return (
             <li key={a.id} className={ok ? undefined : "is-unavailable"}>
-              <Checkbox checked={on.has(a.id)} disabled={!ok} onChange={(e) => toggle(a.id, e.target.checked)}>
+              <Checkbox checked={on.has(a.id)} disabled={!ok} aria-describedby={said} onChange={(e) => toggle(a.id, e.target.checked)}>
                 <span className="mono">{a.name || a.address}</span>
               </Checkbox>
               <span className="muted agent-pick-cpus">{ok && a.cpus > 0 ? `${a.cpus} CPUs` : ""}</span>
-              <span className="agent-pick-status">
-                <StatusDot status={a.status} />
-                {statusText(a)}
+              <span id={said} className="agent-pick-said">
+                <span className="agent-pick-status">
+                  <StatusDot status={a.status} />
+                  {statusText(a)}
+                </span>
+                {!ok && a.detail && <span className="muted agent-pick-detail">{a.detail}</span>}
               </span>
-              {!ok && a.detail && <span className="muted agent-pick-detail">{a.detail}</span>}
             </li>
           );
         })}

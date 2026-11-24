@@ -85,11 +85,17 @@ test("admin adds a connecting agent, sees it connect, and removing it disconnect
     await expect(box).toBeChecked();
     await expect(pick).toContainText("available");
     await expect(pick).toContainText("1 of 1 selected");
+    // Status is part of the checkbox's description, not just its colour.
+    await expect(box).toHaveAccessibleDescription(/available/);
 
     // Unticking it leaves nothing to run on, and the choice is remembered per load test.
     await box.uncheck();
     await expect(pick).toContainText("0 of 1 selected");
     await expect(page.getByRole("button", { name: "Start" })).toBeDisabled();
+    await expect(page.getByText("Tick at least one agent")).toBeVisible();
+    // Only the unticked agents are stored, under a key with the project and the test.
+    const stored = await page.evaluate((k) => localStorage.getItem(k), `pyro.loadtest.agents.${pid}.agent-smoke`);
+    expect(JSON.parse(stored ?? "null").unticked).toHaveLength(1);
     await page.reload();
     await page.getByRole("tab", { name: "Load" }).click();
     await page.locator(".rail .row", { hasText: "Agent smoke" }).first().click();
