@@ -66,8 +66,8 @@ after=$(volume sha256sum /data/jwt.secret)
 [[ $before == "$after" ]] || fail "jwt.secret changed across a restart"
 ok "data survives a restart"
 
-docker exec "$name" /pyro admin --help >/dev/null || fail "/pyro admin --help failed"
-ok "/pyro admin works"
+docker exec "$name" /pyro admin users | grep -q '^EMAIL' || fail "/pyro admin users failed"
+ok "/pyro admin works against the server's data"
 
 size=$(docker image inspect -f '{{.Size}}' "$image")
 ((size < 80 * 1024 * 1024)) || fail "image is $((size / 1024 / 1024)) MB, over 80 MB"

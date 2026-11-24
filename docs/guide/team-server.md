@@ -249,12 +249,15 @@ docker run -d --name pyro --restart unless-stopped \
   ghcr.io/codeen15/pyro:latest
 ```
 
-Or with Compose, from a checkout (or just the `deploy/` folder):
+Or with Compose, from a checkout:
 
 ```sh
 cp deploy/.env.example deploy/.env      # then edit it
 docker compose -f deploy/docker-compose.yml up -d
 ```
+
+Every `PYRO_*` setting in `deploy/.env` reaches the server. Compose expands `$` in `.env`
+values, so write a secret containing `$` as `$$`, or wrap it in single quotes.
 
 The image runs as an unprivileged user and has no shell. Its port is bound to 127.0.0.1, so
 only a reverse proxy on the same machine reaches it (see [HTTPS](#https)). Set
@@ -277,7 +280,7 @@ unprivileged user on a fresh volume, keeps its data across a restart and runs ad
 Dokploy runs the Compose file and puts its Traefik proxy in front of it, with HTTPS:
 
 1. Create a **Compose** service from the repository, with `deploy/docker-compose.yml` as the
-   compose path. (Or create an **Application** from the image `ghcr.io/codeen15/pyro:latest`.)
+   compose path.
 2. In **Environment**, paste the settings you need from `deploy/.env.example`. Set
    `PYRO_PUBLIC_URL` to the address people will open, starting with `https://`.
 3. In **Domains**, add the host name, container port **7878**, and turn HTTPS on.
@@ -286,17 +289,25 @@ Dokploy runs the Compose file and puts its Traefik proxy in front of it, with HT
 Dokploy routes to the container port itself, so the host port mapping isn't needed there.
 Portainer, Coolify and other Compose-based platforms work the same way.
 
+You can also create an **Application** from the image `ghcr.io/codeen15/pyro:latest`. Then
+add a **volume** mounted at `/data` (in the application's advanced settings) before the
+first deploy: without one, every redeploy starts with an empty data directory and loses
+accounts, projects and plugins. The Compose route has the volume already.
+
 ### 4. A machine without Docker
 
-Download the archive for your platform from the GitHub release, then:
+Download the archive for your platform from the GitHub release. The service file and the
+settings template come from the repository's `deploy/` folder:
 
 ```sh
 sudo useradd --system --home /var/lib/pyro --shell /usr/sbin/nologin pyro
 tar xzf pyro_<version>_linux_amd64.tar.gz
 sudo install -m 755 pyro_<version>_linux_amd64/pyro /usr/local/bin/pyro
-sudo install -d -m 750 /etc/pyro
-sudo install -m 640 -g pyro deploy/.env.example /etc/pyro/pyro.env   # then edit it
-sudo install -m 644 deploy/pyro.service /etc/systemd/system/pyro.service
+R=https://raw.githubusercontent.com/codeen15/pyro/v<version>/deploy
+curl -fsSLO $R/pyro.service && curl -fsSLO $R/.env.example
+sudo install -d -m 750 -g pyro /etc/pyro
+sudo install -m 640 -g pyro .env.example /etc/pyro/pyro.env   # then edit it
+sudo install -m 644 pyro.service /etc/systemd/system/pyro.service
 sudo systemctl daemon-reload && sudo systemctl enable --now pyro
 ```
 
@@ -320,8 +331,12 @@ Put a reverse proxy in front and set `PYRO_PUBLIC_URL=https://…`:
 - nginx or Traefik: proxy to `127.0.0.1:7878`, and pass WebSocket upgrades (live updates use
   `/api/v1/events`).
 
-Or let Pyro serve HTTPS itself: set `PYRO_TLS_CERT` and `PYRO_TLS_KEY` (paths inside the
-container or machine) and publish the port (`PYRO_BIND=0.0.0.0`).
+Or let Pyro serve HTTPS itself: set `PYRO_TLS_CERT` and `PYRO_TLS_KEY` to the certificate
+and key files and publish the port (`PYRO_BIND=0.0.0.0`). With Docker, the files must be
+inside the container: uncomment the `./certs:/certs:ro` volume in
+`deploy/docker-compose.yml` and set `PYRO_TLS_CERT=/certs/server.crt`,
+`PYRO_TLS_KEY=/certs/server.key`. With systemd, set `PYRO_HOST=0.0.0.0` too, and keep the
+files readable by the `pyro` user.
 
 ### Admin commands
 
@@ -330,8 +345,7 @@ container or machine) and publish the port (`PYRO_BIND=0.0.0.0`).
 ```sh
 docker exec pyro /pyro admin users                              # Docker
 docker compose -f deploy/docker-compose.yml exec pyro /pyro admin users
-sudo -u pyro env $(grep -v '^#' /etc/pyro/pyro.env | xargs) \
-  PYRO_DATA_DIR=/var/lib/pyro pyro admin users                  # systemd
+sudo -u pyro pyro admin --env-file /etc/pyro/pyro.env --data /var/lib/pyro users   # systemd
 ```
 
 ### Updating
@@ -371,19 +385,32 @@ docker run -d --name pyro-agent --restart unless-stopped \
 Or `deploy/docker-compose.agent.yml` with `deploy/agent.env.example`, or
 `deploy/pyro-agent.service` without Docker. In Dokploy, deploy the agent Compose file (or an
 Application from the image with the command `agent`); give it its own domain on container
-port **7979** with HTTPS, and the server reaches it as `https://agent1.example.com`.
+port **7979** with HTTPS, and the server reaches it as `https://agent1.example.com`. Set
+`PYRO_AGENT_BIND=127.0.0.1` there so the port isn't also published on the host.
 
-Then start the team server with the agents (add these to its command or Compose `command:`):
+Then start the team server with the agents and the same token:
 
-```sh
-pyro serve --team --agent 10.0.0.5:7979,https://agent1.example.com --agent-token <token>
-```
+- Docker Compose: uncomment `command:` in `deploy/docker-compose.yml` and list the agents;
+  set `PYRO_AGENT_TOKEN` in `.env`. The image's entrypoint is `/pyro`, so the command starts
+  at `serve`:
+  ```yaml
+  command: ["serve", "--team", "--agent", "10.0.0.5:7979,https://agent1.example.com"]
+  ```
+- systemd: run `sudo systemctl edit pyro` and add
+  ```ini
+  [Service]
+  ExecStart=
+  ExecStart=/usr/local/bin/pyro serve --team --agent 10.0.0.5:7979,https://agent1.example.com
+  ```
+  then put `PYRO_AGENT_TOKEN=<token>` in `/etc/pyro/pyro.env`.
 
-and choose **Run on: N agents** next to **Start** on a load test.
+Choose **Run on: N agents** next to **Start** on a load test.
 
 - Use the same image tag (or release) on the server and its agents.
-- Open port 7979 only to the team server (firewall or private network): anyone with the
-  token can make an agent generate load.
+- Open port 7979 only to the team server: anyone with the token can make an agent generate
+  load. Ports published by Docker bypass `ufw` and similar host firewalls, so bind the agent
+  to a private address instead (`PYRO_AGENT_BIND=10.0.0.5`, a private network between your
+  machines) or use your cloud provider's firewall.
 - Plugins a test uses must be installed on every agent too.
 
 ## Company sign-in

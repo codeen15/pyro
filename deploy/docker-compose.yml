@@ -21,25 +21,16 @@ services:
       - "${PYRO_BIND:-127.0.0.1}:${PYRO_HOST_PORT:-7878}:7878"
     volumes:
       - pyro-data:/data
-    environment:
-      PYRO_PUBLIC_URL: ${PYRO_PUBLIC_URL:-}
-      PYRO_DATABASE_URL: ${PYRO_DATABASE_URL:-}
-      PYRO_JWT_SECRET: ${PYRO_JWT_SECRET:-}
-      PYRO_SIGNUP: ${PYRO_SIGNUP:-}
-      PYRO_SIGNUP_DOMAINS: ${PYRO_SIGNUP_DOMAINS:-}
-      PYRO_MAX_LOADS: ${PYRO_MAX_LOADS:-}
-      PYRO_SMTP_HOST: ${PYRO_SMTP_HOST:-}
-      PYRO_SMTP_PORT: ${PYRO_SMTP_PORT:-}
-      PYRO_SMTP_USERNAME: ${PYRO_SMTP_USERNAME:-}
-      PYRO_SMTP_PASSWORD: ${PYRO_SMTP_PASSWORD:-}
-      PYRO_SMTP_FROM: ${PYRO_SMTP_FROM:-}
-      PYRO_LDAP_URL: ${PYRO_LDAP_URL:-}
-      PYRO_LDAP_BIND_DN: ${PYRO_LDAP_BIND_DN:-}
-      PYRO_LDAP_BIND_PASSWORD: ${PYRO_LDAP_BIND_PASSWORD:-}
-      PYRO_LDAP_BASE_DN: ${PYRO_LDAP_BASE_DN:-}
-      PYRO_LDAP_USER_FILTER: ${PYRO_LDAP_USER_FILTER:-}
-      PYRO_LDAP_ADMIN_GROUP: ${PYRO_LDAP_ADMIN_GROUP:-}
-      PYRO_PLUGIN_INDEX: ${PYRO_PLUGIN_INDEX:-}
+      # To serve HTTPS from Pyro itself, mount the certificate and key and set
+      # PYRO_TLS_CERT=/certs/server.crt, PYRO_TLS_KEY=/certs/server.key in .env:
+      # - ./certs:/certs:ro
+    # Every PYRO_* setting in .env reaches the server (see .env.example).
+    env_file:
+      - path: .env
+        required: false
+    # To use load agents, replace the command (the image's entrypoint is /pyro):
+    # command: ["serve", "--team", "--agent", "10.0.0.5:7979,https://agent1.example.com"]
+    # and set PYRO_AGENT_TOKEN in .env.
 
 volumes:
   pyro-data:

@@ -9,3 +9,4 @@ web/playwright-report
 .claude
 .superpowers
 **/*.test
+**/.env
