@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Alert,
+  App,
   AutoComplete,
   Button,
   Checkbox,
@@ -35,6 +36,7 @@ import {
 import { useApp } from "../store";
 import { LineChart, clock } from "./LineChart";
 import { DataEditor, StreamStepEditor } from "./LoadData";
+import { AgentChecklist, RunOnControl, useAgentSelection, type RunOn } from "./LoadAgents";
 import { SaveButton } from "./RequestEditor";
 import { LoadTestMenu } from "./LoadActions";
 
@@ -87,6 +89,7 @@ function planCounts(text: string) {
 
 export function LoadTestPage({ name }: { name: string }) {
   const qc = useQueryClient();
+  const { message } = App.useApp();
   const select = useApp((s) => s.select);
   const environment = useApp((s) => s.environment);
   const q = useQuery({
@@ -103,9 +106,10 @@ export function LoadTestPage({ name }: { name: string }) {
     queryFn: api.agents,
     staleTime: 10_000,
   });
-  const [where, setWhere] = useState<"local" | "agents">("local");
+  const [where, setWhere] = useState<RunOn>("local");
   const agentCount = agents.data?.length ?? 0;
   const distributed = where === "agents" && agentCount > 0;
+  const picked = useAgentSelection(name, agents.data);
   const yamlText = text ?? q.data?.yaml ?? "";
   const dirty = text !== null && text !== q.data?.yaml;
   const counts = useMemo(() => planCounts(yamlText), [yamlText]);
@@ -127,6 +131,7 @@ export function LoadTestPage({ name }: { name: string }) {
         environment: environment ?? undefined,
         confirmHosts,
         distributed,
+        agents: distributed ? picked.selected : undefined,
       });
       setConfirm(null);
       qc.invalidateQueries({ queryKey: ["loadruns"] });
@@ -138,6 +143,10 @@ export function LoadTestPage({ name }: { name: string }) {
         setStartError(
           "Another load test is running. Open it from the Load tab, or stop it first.",
         );
+      } else if (e instanceof ApiError && e.status === 409) {
+        // Chosen agents that are no longer free: say which, and refresh their status.
+        message.error(e.message);
+        agents.refetch();
       } else {
         setStartError((e as Error).message);
       }
@@ -191,22 +200,13 @@ export function LoadTestPage({ name }: { name: string }) {
             />
             <LoadTestMenu name={name} title={v.title || name} />
             {agentCount > 0 && (
-              <Select
-                className="run-on"
+              <RunOnControl
                 value={where}
                 onChange={(w) => {
                   setWhere(w);
                   agents.refetch();
                 }}
-                aria-label="Run on"
-                popupMatchSelectWidth={false}
-                options={[
-                  { value: "local", label: "This machine" },
-                  {
-                    value: "agents",
-                    label: `${agentCount} agent${agentCount === 1 ? "" : "s"}`,
-                  },
-                ]}
+                agents={agents.data ?? []}
               />
             )}
             <Button
@@ -214,32 +214,14 @@ export function LoadTestPage({ name }: { name: string }) {
               className="lt-run"
               icon={<Play size={16} />}
               onClick={() => start(false)}
-              disabled={!!v.error && !dirty}
+              disabled={(!!v.error && !dirty) || (distributed && picked.selected.length === 0)}
             >
               Start
             </Button>
           </div>
         </header>
         {distributed && agents.data && (
-          <ul className="agent-list small" aria-label="Agents">
-            {agents.data.map((a) => (
-              <li key={a.id}>
-                <span className="mono">{a.name || a.address}</span>
-                {a.status === "available" || a.status === "busy" ? (
-                  <span className="muted">
-                    {a.address} · {a.cpus} CPUs ·{" "}
-                    {a.status === "busy" ? "busy with another test" : "ready"}
-                  </span>
-                ) : (
-                  <span className="fail-text">{a.detail}</span>
-                )}
-              </li>
-            ))}
-            <li className="muted">
-              The plan's VUs and arrival rates are split evenly between them;
-              results are merged here.
-            </li>
-          </ul>
+          <AgentChecklist agents={agents.data} selected={picked.selected} onChange={picked.set} />
         )}
         {save.error && (
           <Alert type="error" showIcon title={save.error.message} />

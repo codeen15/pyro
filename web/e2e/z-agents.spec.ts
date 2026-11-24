@@ -62,13 +62,52 @@ test("admin adds a connecting agent, sees it connect, and removing it disconnect
     // The dialog turns to connected by itself, and the row becomes available.
     await expect(dialog.getByText("Connected", { exact: true })).toBeVisible({ timeout: 10_000 });
     await dialog.getByRole("button", { name: "Done" }).click();
-    const row = page.getByRole("row", { name: /e2e-agent/ });
-    await expect(row).toContainText("available", { timeout: 10_000 });
-    await expect(row).toContainText("Connects in");
+    await expect(page.getByRole("row", { name: /e2e-agent/ })).toContainText("available", { timeout: 10_000 });
+    await expect(page.getByRole("row", { name: /e2e-agent/ })).toContainText("Connects in");
     expect(log).toContain("connected to");
 
+    // Run a load test on it from a project: the picker lists it ticked and available.
+    await page.goto(TEAM);
+    await expect(page).toHaveURL(/\/p\/[0-9a-f]+$/);
+    const pid = new URL(page.url()).pathname.split("/")[2];
+    const api = `${TEAM}/api/v1/projects/${pid}`;
+    const col = await page.request.post(`${api}/collections`, { headers, data: { slug: "agentdemo", name: "Agent demo" } });
+    expect([201, 409]).toContain(col.status());
+    expect((await page.request.put(`${api}/requests/agentdemo/items`, { headers, data: { kind: "http", name: "Items", method: "GET", url: "http://127.0.0.1:7891/items" } })).status()).toBe(200);
+    const plan = "name: Agent smoke\nscenarios:\n  s:\n    executor: constant-vus\n    vus: 2\n    duration: 2s\n    flow: [ { request: agentdemo/items }, { think: 50ms } ]\n";
+    expect((await page.request.put(`${api}/loadtests/agent-smoke`, { headers, data: { yaml: plan } })).status()).toBe(200);
+    await page.reload();
+    await page.getByRole("tab", { name: "Load" }).click();
+    await page.locator(".rail .row", { hasText: "Agent smoke" }).first().click();
+    await page.getByRole("radio", { name: /^Agents/ }).check();
+    const pick = page.getByRole("group", { name: "Agents to run on" });
+    const box = pick.getByRole("checkbox", { name: /e2e-agent/ });
+    await expect(box).toBeChecked();
+    await expect(pick).toContainText("available");
+    await expect(pick).toContainText("1 of 1 selected");
+
+    // Unticking it leaves nothing to run on, and the choice is remembered per load test.
+    await box.uncheck();
+    await expect(pick).toContainText("0 of 1 selected");
+    await expect(page.getByRole("button", { name: "Start" })).toBeDisabled();
+    await page.reload();
+    await page.getByRole("tab", { name: "Load" }).click();
+    await page.locator(".rail .row", { hasText: "Agent smoke" }).first().click();
+    await page.getByRole("radio", { name: /^Agents/ }).check();
+    await expect(pick.getByRole("checkbox", { name: /e2e-agent/ })).not.toBeChecked();
+    await pick.getByRole("checkbox", { name: /e2e-agent/ }).check();
+    await expect(pick).toContainText("1 of 1 selected");
+    await page.getByRole("button", { name: "Start" }).click();
+    await expect(page.locator(".loadrun .verdict.v-passed")).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator(".loadrun .agent-table")).toContainText("e2e-agent");
+
+    // Back to the administration page for the removal.
+    await page.getByRole("button", { name: "Account menu for Olivia Owner" }).click();
+    await page.getByRole("menuitem", { name: "Administration" }).click();
+    await page.getByRole("tab", { name: /^Agents/ }).click();
+
     // Removing it asks first, drops the row and the agent's connection.
-    await row.getByRole("button", { name: "Remove" }).click();
+    await page.getByRole("row", { name: /e2e-agent/ }).getByRole("button", { name: "Remove" }).click();
     await page.getByRole("dialog").getByRole("button", { name: "Remove", exact: true }).click();
     await expect(page.getByRole("row", { name: /e2e-agent/ })).toHaveCount(0);
     await expect.poll(() => log, { timeout: 10_000 }).toMatch(/rejected this agent/);

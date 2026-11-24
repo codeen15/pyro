@@ -4,31 +4,18 @@ import { useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, Copy, Plus, TriangleAlert } from "../icons";
 import { team, type AdminAgent, type AgentConnectInfo } from "../api";
 import { dockerCommand, imageTag, plainCommand } from "../agentCommand";
+import { StatusDot, statusText } from "./AgentStatus";
 import { CopyField, useCopy } from "./CopyField";
 
 // Admin → Agents: the load agents this team server can run tests on. Direct
 // agents are dialled by the server; connecting ones dial in with their own token.
 
-const STATUS_CLASS: Record<AdminAgent["status"], string> = { available: "is-available", busy: "is-busy", offline: "is-offline", error: "is-error" };
-
-/** "3 h ago" for Unix seconds. */
-function ago(sec: number): string {
-  const s = Math.max(0, Math.floor(Date.now() / 1000 - sec));
-  if (s < 60) return "just now";
-  if (s < 3600) return `${Math.floor(s / 60)} min ago`;
-  if (s < 86400) return `${Math.floor(s / 3600)} h ago`;
-  return `${Math.floor(s / 86400)} d ago`;
-}
-
 function StatusCell({ a }: { a: AdminAgent }) {
   return (
     <div className="agent-status">
       <span className="agent-status-line">
-        <span className={`status-dot ${STATUS_CLASS[a.status]}`} aria-hidden />
-        <span>
-          {a.status}
-          {a.status === "offline" && a.lastSeen > 0 ? ` (last seen ${ago(a.lastSeen)})` : ""}
-        </span>
+        <StatusDot status={a.status} />
+        <span>{statusText(a)}</span>
       </span>
       {a.detail && a.status !== "available" && <span className="muted small agent-detail">{a.detail}</span>}
     </div>
@@ -417,11 +404,11 @@ function ConnectCommands({ info, base, setBase, connected }: { info: AgentConnec
       <p className="agent-wait" role="status">
         {connected ? (
           <>
-            <span className="status-dot is-available" aria-hidden /> <Typography.Text>Connected</Typography.Text>
+            <StatusDot status="available" /> <Typography.Text>Connected</Typography.Text>
           </>
         ) : (
           <>
-            <span className="status-dot is-offline" aria-hidden /> <Typography.Text>Waiting for the agent to connect…</Typography.Text>
+            <StatusDot status="offline" /> <Typography.Text>Waiting for the agent to connect…</Typography.Text>
           </>
         )}
       </p>

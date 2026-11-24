@@ -2017,8 +2017,11 @@ input[type="checkbox"] {
 .lt-run.ant-btn {
   min-width: 136px;
 }
-.run-on.ant-select {
-  min-width: 140px;
+.run-on.ant-radio-group {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 0;
 }
 .lt-pre {
   margin: 0;
@@ -3459,17 +3462,46 @@ input[type="checkbox"] {
 }
 
 /* Distributed load tests */
-.agent-list {
+.agent-pick {
+  margin-top: 8px;
+}
+.agent-pick > p {
+  margin: 0 0 6px;
+}
+.agent-pick > p:last-child {
+  margin: 6px 0 0;
+}
+.agent-pick-list {
   display: grid;
-  gap: 4px;
-  margin: 8px 0 0;
+  gap: 6px;
+  margin: 0;
   padding: 0;
   list-style: none;
 }
-.agent-list li {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 10px;
+.agent-pick-list li {
+  display: grid;
+  grid-template-columns: minmax(140px, 220px) 72px minmax(140px, max-content) 1fr;
+  align-items: center;
+  gap: 4px 12px;
+}
+.agent-pick-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.agent-pick-detail {
+  min-width: 0;
+}
+@media (max-width: 640px) {
+  .agent-pick-list li {
+    grid-template-columns: 1fr auto;
+  }
+  .agent-pick-cpus {
+    display: none;
+  }
+  .agent-pick-detail {
+    grid-column: 1 / -1;
+  }
 }
 .agent-name,
 .agent-state {
