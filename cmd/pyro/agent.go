@@ -56,16 +56,17 @@ func agentCmd() *cobra.Command {
 			srv := &agent.Server{Token: token, Name: name, Version: version.Version, MaxVUs: maxVUs, Logf: func(f string, a ...any) {
 				fmt.Printf("%s  %s\n", time.Now().Format("15:04:05"), fmt.Sprintf(f, a...))
 			}}
+			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+			defer stop()
 			if srv.Plugins = openPlugins(); srv.Plugins != nil {
 				defer srv.Plugins.Close()
+				defer watchPlugins(ctx, srv.Plugins)()
 			}
 			if connect != "" {
 				if generated {
 					return errors.New("--connect needs the controller's agent token: pass --token or set PYRO_AGENT_TOKEN")
 				}
 				fmt.Printf("Pyro agent %s (%s)\n  connecting to %s\n\n", version.Version, name, connect)
-				ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-				defer stop()
 				return srv.Connect(ctx, connect, insecure)
 			}
 			ln, err := net.Listen("tcp", net.JoinHostPort(host, fmt.Sprint(port)))
@@ -86,8 +87,6 @@ func agentCmd() *cobra.Command {
 			}
 			fmt.Printf("\nUse it with: pyro load <test> --agent <this-host>:%d --agent-token <token>\n\n", ln.Addr().(*net.TCPAddr).Port)
 
-			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-			defer stop()
 			errc := make(chan error, 1)
 			go func() {
 				if certFile != "" {

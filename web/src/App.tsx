@@ -81,6 +81,12 @@ function useCollaboration() {
   }, [me, qc, message]);
 }
 
+/** The server watches the plugins folder; refresh the plugin list when it changes (e.g. `pyro plugin install` in a terminal). */
+function usePluginChanges() {
+  const qc = useQueryClient();
+  useEffect(() => subscribe("plugins", () => qc.invalidateQueries({ queryKey: ["plugins"] })), [qc]);
+}
+
 /** Opens a report from its address (/reports/<id>, or /p/<project>/reports/<id>). */
 function useReportLink() {
   useEffect(() => {
@@ -93,6 +99,7 @@ function useReportLink() {
 
 export function App() {
   useCollaboration();
+  usePluginChanges();
   useReportLink();
   const health = useQuery({ queryKey: ["health"], queryFn: api.health, refetchInterval: 10_000 });
   const ws = useQuery({ queryKey: ["workspace"], queryFn: api.workspace });

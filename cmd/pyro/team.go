@@ -246,9 +246,12 @@ func serveTeam(f *teamFlags, host string, port int, agents []string, agentToken 
 	if err != nil {
 		return err
 	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 	plugins := openPlugins()
 	if plugins != nil {
 		defer plugins.Close()
+		defer watchPlugins(ctx, plugins)()
 	}
 	ts := team.New(team.Config{
 		DataDir: dir, Store: st, PublicURL: c.PublicURL, Signup: c.Signup, SignupDomains: c.SignupDomains,
@@ -301,8 +304,6 @@ func serveTeam(f *teamFlags, host string, port int, agents []string, agentToken 
 	}
 	fmt.Println("\nPress Ctrl+C to stop.")
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 	errc := make(chan error, 1)
 	go func() {
 		if f.tlsCert != "" {

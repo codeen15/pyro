@@ -93,6 +93,8 @@ type Server struct {
 	cookieMu    sync.Mutex
 	cookieTimer *time.Timer
 	cookieSave  func()
+
+	unsubPlugins func()
 }
 
 func New(cfg Config) *Server {
@@ -111,11 +113,17 @@ func New(cfg Config) *Server {
 		mocks:    &mockRegistry{bySlg: map[string]*runningMock{}},
 	}
 	s.persistCookies()
+	if cfg.Engine != nil && cfg.Engine.Plugins != nil {
+		s.unsubPlugins = cfg.Engine.Plugins.Subscribe(func() { s.hub.publish("plugins", "changed", nil) })
+	}
 	return s
 }
 
 // Close ends open sessions and cancels running collection runs.
 func (s *Server) Close() {
+	if s.unsubPlugins != nil {
+		s.unsubPlugins()
+	}
 	s.flushCookies()
 	s.closeMocks()
 	s.closeAllSessions()

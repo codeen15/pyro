@@ -26,6 +26,9 @@ pyro plugin install tcp                            # from the index ($PYRO_PLUGI
 pyro plugin list
 ```
 
+A running `pyro serve` picks up plugin changes made by the CLI within about a second, and the
+Plugins tab refreshes on its own.
+
 Release archives include two example plugins: `plugin-tcp` (raw TCP requests) and
 `plugin-hmac` (HMAC auth plus the `hmac-var` processor).
 

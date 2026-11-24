@@ -45,6 +45,19 @@ func openPlugins() *plugin.Manager {
 	return nil
 }
 
+// watchPlugins keeps a long-running command's manager in step with changes
+// other processes (the CLI) make to the plugins folder. The returned func
+// stops the watch and waits for it; call it before closing the manager.
+func watchPlugins(ctx context.Context, m *plugin.Manager) (stop func()) {
+	wctx, cancel := context.WithCancel(ctx)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		m.Watch(wctx, time.Second)
+	}()
+	return func() { cancel(); <-done }
+}
+
 func indexURL(flag string) string {
 	if flag != "" {
 		return flag

@@ -175,8 +175,11 @@ func serveCmd() *cobra.Command {
 				defer hist.Close()
 			}
 			eng := engine.New(httpdriver.New(httpdriver.Options{FileRoot: ws.Root, AllowOutsideRoot: ws.Meta.AllowFilesOutsideWorkspace}))
+			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+			defer stop()
 			if eng.Plugins = openPlugins(); eng.Plugins != nil {
 				defer eng.Plugins.Close()
+				defer watchPlugins(ctx, eng.Plugins)()
 			}
 			api := server.New(server.Config{
 				Workspace: ws, Engine: eng, History: hist, Token: token, UI: web.Dist(),
@@ -213,8 +216,6 @@ func serveCmd() *cobra.Command {
 				}
 			}
 
-			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-			defer stop()
 			errc := make(chan error, 1)
 			go func() { errc <- srv.Serve(ln) }()
 			select {

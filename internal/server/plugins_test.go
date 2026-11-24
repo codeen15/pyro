@@ -140,3 +140,42 @@ func TestPluginInfoJSON(t *testing.T) {
 		t.Fatalf("json = %s", b)
 	}
 }
+
+// A change made behind the server's back (the CLI) reaches the UI as a
+// `plugins` event once the manager notices it.
+func TestPluginsEventOnChange(t *testing.T) {
+	archive := buildTCPArchive(t)
+	dir := t.TempDir()
+	pm, err := plugin.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pm.Close()
+	ws, _ := store.Init(t.TempDir(), "test")
+	eng := engine.New(httpdriver.New(httpdriver.Options{}))
+	eng.Plugins = pm
+	srv := New(Config{Workspace: ws, Engine: eng, Token: testToken})
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+	c := subscribe(t, ts, "plugins")
+
+	other, err := plugin.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer other.Close()
+	if _, err := other.InstallArchive(archive, false); err != nil {
+		t.Fatal(err)
+	}
+	if changed, err := pm.Reload(); err != nil || !changed {
+		t.Fatalf("reload = %v, %v", changed, err)
+	}
+	if ev := readEvent(t, c); ev.Topic != "plugins" || ev.Type != "changed" {
+		t.Fatalf("event = %+v", ev)
+	}
+
+	// Closing the server drops its subscription.
+	srv.Close()
+	other.Remove("tcp")
+	pm.Reload()
+}

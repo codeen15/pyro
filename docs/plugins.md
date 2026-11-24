@@ -173,8 +173,8 @@ make plugins                                      # builds and packs the example
 ```
 Plugins install to `~/.pyro/plugins/<name>/` (or `$PYRO_PLUGINS_DIR`); approvals, enabled
 state and settings are in `state.json` there; compiled modules are cached in `cache/`.
-`pyro serve` reads the folder at start, so changes made with the CLI while it runs show up
-after a restart (changes made in the UI apply immediately).
+A running `pyro serve` picks up plugin changes made by the CLI within about a second, and the
+UI's plugin list refreshes on its own (changes made in the UI apply immediately).
 
 The UI's Plugins tab lists plugins, installs archives, shows capabilities with an Approve
 button, toggles plugins on and off, edits settings and removes plugins. A request's
