@@ -12,6 +12,11 @@
 - The WebSocket and Socket.IO console saves the message you're composing with the request
   (`compose`). Clearing or half-typing a JSON argument no longer drops the argument list and
   switches to raw JSON.
+- The Socket.IO log has a **Frames** view showing the raw packets as sent and received
+  (`42["event",{...}]`), including the handshake and its `sid`. Packets the client used to drop
+  silently, such as replies on a namespace you didn't join, now show in the log.
+- Socket.IO takes the namespace from the URL's path when none is set, as `socket.io-client`
+  does: `https://host/chat` joins `/chat` (it used to join `/` and ignore the path).
 
 - Response bodies: the Pretty view is a collapsible JSON tree, with expand all and collapse
   all.

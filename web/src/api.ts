@@ -229,6 +229,8 @@ export interface SessionMessage {
   ackId?: number;
   rttMs?: number;
   size: number;
+  /** Socket.IO: the raw text packet as sent or received, e.g. 42["event",{...}]. */
+  frame?: string;
 }
 
 export type SocketAction = "connect" | "send" | "ping" | "close";

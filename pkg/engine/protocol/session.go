@@ -23,6 +23,9 @@ type Message struct {
 	// RTT is set on Socket.IO acks: time from emit to ack.
 	RTT  time.Duration `json:"-"`
 	Size int           `json:"size"`
+	// Frame is the raw text packet as it went over the wire, for Socket.IO
+	// (e.g. 42["event",{...}]). Binary attachments follow as separate frames.
+	Frame string `json:"frame,omitempty"`
 }
 
 // Outgoing is a message to send. For Socket.IO, Data is a JSON array of

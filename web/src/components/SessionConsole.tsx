@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Alert, Button, Checkbox, Input, Select, Space, Tabs, Tag, Tooltip } from "antd";
+import { Alert, Button, Checkbox, Input, Segmented, Select, Space, Tabs, Tag, Tooltip } from "antd";
 import { ArrowDownLeft, ArrowLeftRight, ArrowUpRight, Bookmark, Plug, PlugZap, Search, SendHorizontal, Trash2, Unplug } from "../icons";
 import { api, type PyroRequest, type SavedMessage, type SessionMessage, type SessionState, type SocketIOConfig } from "../api";
 import { subscribe } from "../events";
@@ -343,7 +343,7 @@ export function SocketIOSettings({ cfg, onChange }: { cfg: SocketIOConfig; onCha
     <div className="auth-editor">
       <label className="field-row">
         <span className="field-label">Namespace</span>
-        <Input className="mono wide" value={cfg.namespace ?? ""} placeholder="/" onChange={(e) => onChange({ ...cfg, namespace: e.target.value || undefined })} />
+        <Input className="mono wide" value={cfg.namespace ?? ""} placeholder="From the URL path, else /" onChange={(e) => onChange({ ...cfg, namespace: e.target.value || undefined })} />
       </label>
       <label className="field-row">
         <span className="field-label">Path</span>
@@ -395,12 +395,19 @@ function Timeline({
 }) {
   const [filter, setFilter] = useState("");
   const [follow, setFollow] = useState(true);
+  const [view, setView] = useState<"events" | "frames">("events");
   const scroller = useRef<HTMLDivElement>(null);
+  // Socket.IO sessions carry raw frames; the Frames view shows them like a browser's network panel.
+  const hasFrames = useMemo(() => (live?.messages ?? []).some((m) => m.frame), [live]);
+  const frames = hasFrames && view === "frames";
   const messages = useMemo(() => {
     const q = filter.trim().toLowerCase();
-    const all = live?.messages ?? [];
-    return q ? all.filter((m) => (m.data ?? "").toLowerCase().includes(q) || (m.event ?? "").toLowerCase().includes(q)) : all;
-  }, [live, filter]);
+    // Handshake frames only belong in the Frames view.
+    const all = (live?.messages ?? []).filter((m) => frames || m.kind !== "frame");
+    return q
+      ? all.filter((m) => (m.data ?? "").toLowerCase().includes(q) || (m.event ?? "").toLowerCase().includes(q) || (m.frame ?? "").toLowerCase().includes(q))
+      : all;
+  }, [live, filter, frames]);
 
   useEffect(() => {
     if (follow && scroller.current) scroller.current.scrollTop = scroller.current.scrollHeight;
@@ -436,6 +443,18 @@ function Timeline({
           </span>
         )}
         <span className="timeline-tools">
+          {hasFrames && (
+            <Segmented
+              size="small"
+              value={view}
+              onChange={(v) => setView(v as "events" | "frames")}
+              options={[
+                { value: "events", label: "Events" },
+                { value: "frames", label: "Frames" },
+              ]}
+              aria-label="Show events or raw frames"
+            />
+          )}
           <Input
             className="filter"
             allowClear
@@ -472,13 +491,47 @@ function Timeline({
           )
         ) : (
           <ol className="msg-list">
-            {messages.map((m) => (
-              <MessageRow key={m.seq} m={m} />
-            ))}
+            {messages.map((m) => (frames && m.frame ? <FrameRow key={m.seq} m={m} /> : <MessageRow key={m.seq} m={m} />))}
           </ol>
         )}
       </div>
     </section>
+  );
+}
+
+function clock(at: string) {
+  const d = new Date(at);
+  return d.toLocaleTimeString(undefined, { hour12: false }) + "." + String(d.getMilliseconds()).padStart(3, "0");
+}
+
+/** One raw frame, as it went over the wire. Expanding it pretty-prints the JSON after the packet prefix. */
+function FrameRow({ m }: { m: SessionMessage }) {
+  const [open, setOpen] = useState(false);
+  const frame = m.frame ?? "";
+  // Handshake and ignored packets are system entries; their label ends in (sent) or (received).
+  const dir = m.direction !== "system" ? m.direction : /\(sent\)$/.test(m.data ?? "") ? "sent" : "received";
+  const label = m.direction === "system" ? (m.data ?? "").replace(/\s*\((sent|received)\)$/, "") : undefined;
+  const pretty = useMemo(() => {
+    if (!open) return frame;
+    const i = frame.search(/[[{]/);
+    if (i < 0) return frame;
+    try {
+      return frame.slice(0, i) + JSON.stringify(JSON.parse(frame.slice(i)), null, 2);
+    } catch {
+      return frame;
+    }
+  }, [open, frame]);
+  return (
+    <li className={`msg frame ${dir} ${m.kind === "unhandled" ? "is-unhandled" : ""}`}>
+      <button className="msg-head" onClick={() => setOpen(!open)} aria-expanded={open}>
+        <span className="msg-icon">{dir === "sent" ? <ArrowUpRight size={13} aria-label="sent" /> : <ArrowDownLeft size={13} aria-label="received" />}</span>
+        <time>{clock(m.at)}</time>
+        <span className="msg-event">{label && <span className="meta frame-label">{label}</span>}</span>
+        <span className="msg-data mono">{frame}</span>
+        <span className="msg-size">{m.size} B</span>
+      </button>
+      {open && <pre className="code-view mono msg-body">{pretty}</pre>}
+    </li>
   );
 }
 
@@ -492,16 +545,19 @@ export function MessageRow({ m }: { m: SessionMessage }) {
       return m.data;
     }
   }, [open, m.data]);
-  const time = new Date(m.at).toLocaleTimeString(undefined, { hour12: false }) + "." + String(new Date(m.at).getMilliseconds()).padStart(3, "0");
+  const time = clock(m.at);
 
   if (m.direction === "system") {
     return (
-      <li className={`msg system ${m.kind === "error" ? "is-error" : ""}`}>
+      <li className={`msg system ${m.kind === "error" ? "is-error" : m.kind === "unhandled" ? "is-unhandled" : ""}`}>
         <span className="msg-icon">
           <Plug size={13} />
         </span>
         <time>{time}</time>
-        <span className="msg-system mono">{m.data}</span>
+        <span className="msg-system mono">
+          {m.data}
+          {m.frame && <span className="meta"> {m.frame}</span>}
+        </span>
       </li>
     );
   }

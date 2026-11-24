@@ -1796,6 +1796,16 @@ input[type="checkbox"] {
 .msg.system.is-error {
   color: var(--error);
 }
+/* Packets the Socket.IO client ignored (another namespace, unknown type). */
+.msg.is-unhandled {
+  box-shadow: inset 2px 0 0 var(--warn);
+}
+.frame-label {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .heat-chip.small {
   padding: 1px 6px;
   font-size: 11px;

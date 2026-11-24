@@ -37,7 +37,7 @@ Tabs:
 | **Saved** | Messages saved with **Save message**; **Load** puts one back in the composer |
 | **Headers** | Headers sent with the handshake |
 | **Auth** | The same auth types as HTTP (applied to the handshake) |
-| **Socket.IO** | Socket.IO only: namespace, path (default `/socket.io/`), auth JSON sent with CONNECT, and the transport |
+| **Socket.IO** | Socket.IO only: namespace, path (default `/socket.io/`), auth JSON sent with CONNECT, and the transport. Left empty, the namespace is the URL's path, as in `socket.io-client`: `https://host/chat` joins `/chat` |
 
 The message in the composer is part of the request: **Save** (`Ctrl` + `S`) keeps it, so it's
 there next time you open the request. **Save message** adds it to the **Saved** list as well.
@@ -62,13 +62,29 @@ A Socket.IO message is an **event** plus any number of **arguments**, as in Post
    | Binary | `AAEC/w==` (base64) | a binary attachment |
 
 3. Reorder arguments with the arrows. Turn on the **JSON** switch to see or edit the whole
-   argument list as the JSON array that's sent, e.g. `["lobby", {"user": "{{user}}"}, 42]`.
+   argument list as a JSON array, e.g. `["lobby", {"user": "{{user}}"}, 42]`. The array is the
+   argument list, not an extra wrapper: one JSON argument `{"token": "t"}` goes out exactly like
+   `socket.emit("auth", {token: "t"})`, as the frame `42["auth",{"token":"t"}]`.
 4. Tick **Ask for an ack** to have the server acknowledge it. The ack and its round-trip time
    show in the log.
 5. Press **Send** (`Ctrl` + `Enter`).
 
 A variable can stand in for a whole number, boolean or JSON argument (`{{count}}`); it is
 filled in before the message is built.
+
+### Events and frames
+
+The log shows Socket.IO messages as **Events** (the event name, then its arguments). Switch to
+**Frames** to see the raw packets as they went over the wire, like a browser's network panel:
+the Engine.IO open packet with the `sid`, the CONNECT (`40`) and its reply, then each event
+(`42["auth",{...}]`), ack request (`420[...]`) and ack (`430[...]`). Click a frame to
+pretty-print its JSON.
+
+Packets the client doesn't act on are never dropped silently: a packet for a namespace you
+didn't join (`42/other,[...]`), a CONNECT error after connecting or an unknown packet shows in
+the log with an amber edge. If the server seems not to reply, compare the frames with your
+browser's: in `42/chat,["auth",{...}]` the part between `42` and the comma is the namespace.
+Put it in the URL (`https://host/chat`) or the **Socket.IO** tab's namespace.
 
 ## Sending WebSocket messages
 

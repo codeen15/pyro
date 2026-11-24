@@ -195,7 +195,7 @@ Server → client:
 
 | Topic | Events |
 |---|---|
-| `session:<id>` | `message` (`{seq, at, direction, kind, data, event?, ackId?, rttMs?, size}`), `closed` (`{error}`) |
+| `session:<id>` | `message` (`{seq, at, direction, kind, data, event?, ackId?, rttMs?, size, frame?}`; for Socket.IO, `frame` is the raw text packet, e.g. `42["auth",{...}]`, and system entries of kind `frame` (handshake) and `unhandled` (ignored packets) carry one too), `closed` (`{error}`) |
 | `run:<id>` | `result` (`{done, total, item}`, bodies trimmed to 64 KB), `finished` (the run view) |
 | `load:<id>` | `tick` (`{tick, requests, errors}` once a second), `finished` (`{id, test, status, result}`) |
 | `workspace` (planned) | `changed` (files edited on disk, through a file watcher) |

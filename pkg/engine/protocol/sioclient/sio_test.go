@@ -64,6 +64,28 @@ func TestArgsAndURL(t *testing.T) {
 	}
 }
 
+// Like socket.io-client, the URL path is the namespace unless one is set.
+func TestNamespaceFromURL(t *testing.T) {
+	for _, c := range []struct{ url, ns, want string }{
+		{"http://h", "", "/"},
+		{"http://h/", "", "/"},
+		{"https://h/aisha/chat/api/v1/chat/chat_answer?x=1", "", "/aisha/chat/api/v1/chat/chat_answer"},
+		{"h:3000/admin", "", "/admin"},
+		{"http://h/admin", "/other", "/other"},
+		{"http://h", "admin", "/admin"},
+	} {
+		if got := namespace(c.url, c.ns); got != c.want {
+			t.Errorf("namespace(%q, %q) = %q, want %q", c.url, c.ns, got, c.want)
+		}
+	}
+	ts := fakeServer(t)
+	a, err := Dial(context.Background(), ts.URL+"/admin", Options{Auth: `{"token":"secret"}`})
+	if err != nil || a.Info().SID != "sock-2" {
+		t.Fatalf("dial /admin from URL: %v", err)
+	}
+	a.Close()
+}
+
 // fakeServer speaks just enough Engine.IO/Socket.IO: it accepts "/" and
 // "/admin" (which requires auth), refuses others, echoes events as "echo"
 // and acks events that ask for one.
@@ -111,6 +133,10 @@ func fakeServer(t *testing.T) *httptest.Server {
 					send("41" + prefix)
 					continue
 				}
+				if event == "elsewhere" {
+					send(`42/other,["stray"]`)
+					continue
+				}
 				send(`42` + prefix + `["echo",` + strings.TrimSuffix(strings.TrimPrefix(args, "["), "]") + `]`)
 				if p.ackID != nil {
 					send("43" + prefix + itoa(*p.ackID) + `["got ` + event + `"]`)
@@ -124,7 +150,18 @@ func fakeServer(t *testing.T) *httptest.Server {
 
 func itoa(i int) string { return strconv.Itoa(i) }
 
+// next returns the next message, skipping raw frame entries.
 func next(t *testing.T, c *Client) protocol.Message {
+	t.Helper()
+	for {
+		m := nextAny(t, c)
+		if m.Kind != "frame" {
+			return m
+		}
+	}
+}
+
+func nextAny(t *testing.T, c *Client) protocol.Message {
 	t.Helper()
 	select {
 	case m := <-c.Messages():
@@ -133,6 +170,41 @@ func next(t *testing.T, c *Client) protocol.Message {
 		t.Fatal("timed out")
 	}
 	return protocol.Message{}
+}
+
+func TestWireFrames(t *testing.T) {
+	ts := fakeServer(t)
+	ctx := context.Background()
+	c, err := Dial(ctx, ts.URL, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	for _, want := range []string{`0{"sid":"eio-1","pingInterval":25000,"pingTimeout":20000}`, `40`, `40{"sid":"sock-1"}`} {
+		if m := nextAny(t, c); m.Direction != "system" || m.Kind != "frame" || m.Frame != want {
+			t.Fatalf("handshake frame = %+v, want %s", m, want)
+		}
+	}
+	sent, err := c.Send(ctx, protocol.Outgoing{Event: "auth", Data: `{"Authorization": "t", "tab_id": "x"}`})
+	if err != nil || sent.Frame != `42["auth",{"Authorization": "t", "tab_id": "x"}]` || sent.Data != `[{"Authorization": "t", "tab_id": "x"}]` {
+		t.Fatalf("sent = %+v %v", sent, err)
+	}
+	if m := nextAny(t, c); m.Kind != "event" || m.Frame != `42["echo",{"Authorization":"t","tab_id":"x"}]` {
+		t.Fatalf("received = %+v", m)
+	}
+	sent, _ = c.Send(ctx, protocol.Outgoing{Event: "ping", Data: `[]`, Ack: true})
+	if sent.Frame != `420["ping"]` {
+		t.Fatalf("ack frame = %q", sent.Frame)
+	}
+	nextAny(t, c) // echo
+	if m := nextAny(t, c); m.Kind != "ack" || m.Frame != `430["got ping"]` {
+		t.Fatalf("ack = %+v", m)
+	}
+	// A packet for a namespace this client didn't join isn't dropped silently.
+	c.Send(ctx, protocol.Outgoing{Event: "elsewhere"})
+	if m := nextAny(t, c); m.Direction != "system" || m.Frame != `42/other,["stray"]` || !strings.Contains(m.Data, "namespace /other") {
+		t.Fatalf("stray = %+v", m)
+	}
 }
 
 func TestEventsAcksAndNamespaces(t *testing.T) {

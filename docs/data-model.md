@@ -188,7 +188,7 @@ name: Chat
 url: https://chat.example.com
 socketio:
   path: /socket.io/             # default
-  namespace: /
+  namespace: /                  # default: the URL's path (as socket.io-client), else /
   auth: '{"token":"{{token}}"}' # CONNECT packet payload (JSON)
   listen: [ "chat message" ]    # events shown in the console
   transport: auto               # auto (WebSocket, falling back to long-polling) | websocket | polling

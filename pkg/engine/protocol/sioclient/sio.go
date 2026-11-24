@@ -66,13 +66,7 @@ type Options struct {
 
 // Dial connects and waits until the namespace is joined.
 func Dial(ctx context.Context, rawURL string, opts Options) (*Client, error) {
-	ns := opts.Namespace
-	if ns == "" {
-		ns = "/"
-	}
-	if !strings.HasPrefix(ns, "/") {
-		ns = "/" + ns
-	}
+	ns := namespace(rawURL, opts.Namespace)
 	if opts.Auth != "" && !json.Valid([]byte(opts.Auth)) {
 		return nil, errors.New("Socket.IO auth must be a JSON object")
 	}
@@ -124,6 +118,7 @@ func Dial(ctx context.Context, rawURL string, opts Options) (*Client, error) {
 	}
 	_ = json.Unmarshal(open[1:], &hello)
 	c.info.SID = hello.SID
+	c.wire("frame", "Engine.IO open (received)", string(open))
 
 	// Socket.IO CONNECT to the namespace.
 	connect := string(eioMessage) + "0"
@@ -131,6 +126,7 @@ func Dial(ctx context.Context, rawURL string, opts Options) (*Client, error) {
 		connect += ns + ","
 	}
 	connect += opts.Auth
+	c.wire("frame", "Socket.IO connect (sent)", connect)
 	if err := tr.writeText(ctx, connect); err != nil {
 		tr.close(false)
 		return nil, err
@@ -153,7 +149,8 @@ func Dial(ctx context.Context, rawURL string, opts Options) (*Client, error) {
 			continue
 		}
 		p, err := parsePacket(string(data[1:]))
-		if err != nil || p.ns != ns {
+		if err != nil || p.ns != ns || (p.typ != sioConnect && p.typ != sioConnectError) {
+			c.wire("unhandled", "Ignored before connect (received)", string(data))
 			continue
 		}
 		switch p.typ {
@@ -165,6 +162,7 @@ func Dial(ctx context.Context, rawURL string, opts Options) (*Client, error) {
 			if ack.SID != "" {
 				c.info.SID = ack.SID
 			}
+			c.wire("frame", "Socket.IO connected (received)", string(data))
 			c.info.ConnectTime = time.Since(start)
 			go c.readLoop()
 			return c, nil
@@ -244,9 +242,31 @@ func pathOr(p string) string {
 	return p
 }
 
+// namespace is the explicit one, else the URL's path as socket.io-client
+// does (io("https://host/chat") joins /chat), else "/".
+func namespace(rawURL, explicit string) string {
+	ns := strings.TrimSpace(explicit)
+	if ns == "" {
+		raw := strings.TrimSpace(rawURL)
+		if !strings.Contains(raw, "://") {
+			raw = "http://" + raw
+		}
+		if u, err := url.Parse(raw); err == nil {
+			ns = u.Path
+		}
+	}
+	if ns == "" {
+		return "/"
+	}
+	if !strings.HasPrefix(ns, "/") {
+		ns = "/" + ns
+	}
+	return ns
+}
+
 // engineURL converts http(s)://host/ns?query into the Engine.IO websocket
-// endpoint. The URL path is ignored (Socket.IO uses it for nothing); the
-// namespace comes from Options.
+// endpoint. The URL path isn't part of it: it names the namespace (see
+// namespace); Options.Path is the Engine.IO path.
 func engineURL(raw, path, transport string) (string, error) {
 	raw = strings.TrimSpace(raw)
 	if !strings.Contains(raw, "://") {
@@ -291,6 +311,7 @@ type packet struct {
 	ns          string
 	ackID       *int
 	payload     string
+	frame       string // the Engine.IO text packet as received
 }
 
 // parsePacket decodes "<type>[<n>-][<ns>,][<id>][<json>]".
@@ -371,6 +392,15 @@ func (c *Client) stamp(m protocol.Message) protocol.Message {
 	return m
 }
 
+// wire records a frame no event or ack carries (handshake, ignored and
+// control packets) as a system entry, so the timeline shows everything the
+// socket saw, like a browser's frame view.
+// Kind is frame for the handshake and control packets, and unhandled for
+// packets the client doesn't act on (another namespace, unknown or unreadable).
+func (c *Client) wire(kind, what, frame string) {
+	c.deliver(protocol.Message{Direction: "system", Kind: kind, Data: what, Frame: frame, Size: len(frame)})
+}
+
 func (c *Client) deliver(m protocol.Message) {
 	m = c.stamp(m)
 	select {
@@ -413,6 +443,8 @@ func (c *Client) readLoop() {
 			return
 		case eioMessage:
 			c.handle(string(data[1:]))
+		default:
+			c.wire("unhandled", "Engine.IO packet (received)", string(data))
 		}
 	}
 }
@@ -440,9 +472,15 @@ func (c *Client) attachment(data []byte) {
 
 func (c *Client) handle(raw string) {
 	p, err := parsePacket(raw)
-	if err != nil || p.ns != c.ns {
+	switch {
+	case err != nil:
+		c.wire("unhandled", "Unreadable packet (received)", string(eioMessage)+raw)
+		return
+	case p.ns != c.ns:
+		c.wire("unhandled", "Ignored: namespace "+p.ns+", not "+c.ns+" (received)", string(eioMessage)+raw)
 		return
 	}
+	p.frame = string(eioMessage) + raw
 	if (p.typ == sioBinaryEvent || p.typ == sioBinaryAck) && p.attachments > 0 {
 		c.pending, c.attachments = &p, nil
 		return
@@ -460,13 +498,13 @@ func (c *Client) dispatch(p packet, size int) {
 	switch p.typ {
 	case sioEvent:
 		event, args := splitEvent(p.payload)
-		c.deliver(protocol.Message{Direction: "received", Kind: "event", Event: event, Data: args, AckID: p.ackID, Size: size})
+		c.deliver(protocol.Message{Direction: "received", Kind: "event", Event: event, Data: args, AckID: p.ackID, Size: size, Frame: p.frame})
 		// The server asked for an ack; answer with no arguments so it doesn't hang.
 		if p.ackID != nil {
 			_ = c.writeEIO(context.Background(), eioMessage, c.frame(sioAck, 0, p.ackID, "[]"))
 		}
 	case sioAck:
-		m := protocol.Message{Direction: "received", Kind: "ack", Data: p.payload, AckID: p.ackID, Size: size}
+		m := protocol.Message{Direction: "received", Kind: "ack", Data: p.payload, AckID: p.ackID, Size: size, Frame: p.frame}
 		if p.ackID != nil {
 			c.mu.Lock()
 			if t, ok := c.pendingAcks[*p.ackID]; ok {
@@ -477,8 +515,13 @@ func (c *Client) dispatch(p packet, size int) {
 		}
 		c.deliver(m)
 	case sioDisconnect:
+		c.wire("frame", "Socket.IO disconnect (received)", p.frame)
 		c.finish(nil, "server disconnected the namespace")
 		c.tr.close(true)
+	case sioConnectError:
+		c.wire("unhandled", "Socket.IO connect error (received)", p.frame)
+	default:
+		c.wire("unhandled", "Socket.IO packet (received)", p.frame)
 	}
 }
 
@@ -653,8 +696,9 @@ func (c *Client) Send(ctx context.Context, out protocol.Outgoing) (protocol.Mess
 		typ = sioBinaryEvent
 	}
 	// Stamped before writing: a fast reply or ack must come after the emit.
+	m.Frame = string(eioMessage) + c.frame(typ, len(atts), ackID, wire)
 	m = c.stamp(m)
-	if err := c.writeEIO(ctx, eioMessage, c.frame(typ, len(atts), ackID, wire)); err != nil {
+	if err := c.tr.writeText(ctx, m.Frame); err != nil {
 		return m, fmt.Errorf("emit failed: %w", err)
 	}
 	for _, a := range atts {
