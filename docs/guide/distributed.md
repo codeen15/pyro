@@ -4,6 +4,10 @@ When one machine can't generate enough load (the dashboard warns when the load g
 CPU is saturated), run the same test from several machines. One Pyro is the **controller**;
 the others run `pyro agent`.
 
+On a **team server** you add and manage agents in the app instead, with no flags: see
+[Load agents on other machines](team-server.md#load-agents-on-other-machines). The sections
+below are for `pyro load` and a local `pyro serve`.
+
 ## Agents the controller connects to
 
 On each load machine:
@@ -41,15 +45,18 @@ pyro agent --connect controller.example.com:7980 --token s3cret
 ```
 
 Connected agents wait for tests and reconnect by themselves. The agent listener is separate
-from the UI, which stays on your machine.
+from the UI, which stays on your machine. (On a team server, agents that dial out connect to
+the server's own address and port instead; there is no separate listener.)
 
 ## Running agents with Docker or systemd
 
 Agents use the same Docker image as the team server, with `agent` as the command, and
 `deploy/` has a Compose file and a systemd unit for them. See
-[Load agents on other machines](team-server.md#load-agents-on-other-machines). A team
-server connects to its agents (`--agent`); agents that dial out (`--agent-listen`) work with
-`pyro serve` and `pyro load`, not with `pyro serve --team`.
+[Load agents on other machines](team-server.md#load-agents-on-other-machines). That page
+also covers the team server, where administrators add agents (direct, or connecting in with
+their own token) under **Administration → Agents**. `--agent-listen` is for `pyro serve` and
+`pyro load`; `pyro serve --team` rejects it, because its agents connect through the main
+port.
 
 ## What to know
 
@@ -65,7 +72,8 @@ server connects to its agents (`--agent`); agents that dial out (`--agent-listen
   The controller checks before starting.
 - **Failures:** if an agent drops out for 30 seconds, the test stops and fails, naming the
   agent.
-- **Security:** agents trust any controller with the token. Keep it secret, set it with
+- **Security:** agents trust any controller with the token. On a team server each agent has
+  its own token. Keep it secret, set it with
   `PYRO_AGENT_TOKEN`, and expose port 7979 only to controllers. For TLS, start agents with
   `--tls-cert` and `--tls-key` and address them as `https://host:port`.
 

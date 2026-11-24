@@ -366,29 +366,118 @@ credentials in Dokploy.
 ### Load agents on other machines
 
 [Load agents](distributed.md) use the **same image** (or binary), started as `pyro agent`. An
-agent has no web UI: the team server sends it a share of each load test on port 7979.
+agent has no web UI: it runs a share of each load test the team server sends it. You add and
+manage agents in the app (**Administration → Agents**), with no flags and no restart. There
+are two ways to connect an agent, and you can mix them:
 
-| | Team server | Agent |
+| | Direct | Connects in |
 |---|---|---|
-| Command | the default, `serve --team` | `agent` |
-| Port | 7878: web UI and API | 7979: agent endpoints only |
-| Settings | `PYRO_PUBLIC_URL`, `PYRO_DATABASE_URL`, … | `PYRO_AGENT_TOKEN` |
-| Data | needed: database, projects, plugins | optional: installed plugins only |
+| Who dials | the server dials the agent | the agent dials the server |
+| Use it when | the server can reach the agent: a VPS, or a machine on the same internal network | the agent is behind NAT or a firewall and can only call out |
+| On the agent | `pyro agent --token <token>`, port 7979 open to the server | `pyro agent --connect <server> --token <token>`, no open port |
+| Token | you choose it (`openssl rand -hex 32`) and enter it in the app | the app generates it and shows it once |
 
-On each load machine, with a long random token (`openssl rand -hex 32`):
+Each agent has its own token, so removing one never affects the others.
 
-```sh
-docker run -d --name pyro-agent --restart unless-stopped \
-  -p 7979:7979 -e PYRO_AGENT_TOKEN=<token> ghcr.io/codeen15/pyro:latest agent
-```
+#### Add an agent that the server dials
 
-Or `deploy/docker-compose.agent.yml` with `deploy/agent.env.example`, or
-`deploy/pyro-agent.service` without Docker. In Dokploy, deploy the agent Compose file (or an
-Application from the image with the command `agent`); give it its own domain on container
-port **7979** with HTTPS, and the server reaches it as `https://agent1.example.com`. Set
-`PYRO_AGENT_BIND=127.0.0.1` there so the port isn't also published on the host.
+1. On the load machine, start the agent with a long random token (`openssl rand -hex 32`):
 
-Then start the team server with the agents and the same token:
+   ```sh
+   docker run -d --name pyro-agent --restart unless-stopped \
+     -p 7979:7979 -e PYRO_AGENT_TOKEN=<token> ghcr.io/codeen15/pyro:latest agent
+   ```
+
+   Or use `deploy/docker-compose.agent.yml` with `deploy/agent.env.example`, or
+   `deploy/pyro-agent.service` without Docker. In Dokploy, deploy the agent Compose file (or
+   an Application from the image with the command `agent`); give it its own domain on
+   container port **7979** with HTTPS, and set `PYRO_AGENT_BIND=127.0.0.1` so the port isn't
+   also published on the host.
+2. In Pyro, open **Administration → Agents**, then **Add agent → Direct…**. Enter a **name**,
+   the **address** (`10.0.0.5:7979` on an internal network, `https://agent1.example.com`
+   behind a domain), the **token**, and tick **Skip certificate check** only for a
+   self-signed certificate.
+3. Click **Add and test**. Pyro saves the agent and calls it once. If the test fails, the
+   agent is still saved and Pyro says why (wrong address, wrong token, agent not started);
+   fix it with **Edit** or start the agent, and the server keeps checking.
+
+An address that starts with `http://` is not encrypted: the token and the test data cross the
+network in clear text, and the table marks it **not encrypted**. That's fine on a private
+network; use `https://` (a domain, or `--tls-cert` and `--tls-key` on the agent) anywhere
+else.
+
+#### Add an agent that connects in
+
+1. In **Administration → Agents**, click **Add agent → Connects in…** and enter a name.
+2. Pyro shows the agent token **once**, with two commands to run on the load machine: one with
+   Docker and one with the plain `pyro` program:
+
+   ```sh
+   docker run -d --name pyro-agent --restart unless-stopped \
+     ghcr.io/codeen15/pyro:<tag> agent --connect 'https://pyro.example.com' --token '<token>'
+
+   pyro agent --connect 'https://pyro.example.com' --token '<token>'
+   ```
+
+   The image tag matches your server's version. Copy a command now: only a hash of the token
+   is kept, so it can't be shown again (use **Rotate** for a new one).
+3. Run it. The dialog changes from **Waiting for the agent to connect…** to **Connected**,
+   and the agent appears as available. It reconnects by itself if the connection drops.
+
+The agent connects to the team server's own address and port (`/agent/v1/connect`), so
+nothing else needs opening or routing:
+
+- Behind a domain, for example Dokploy with Traefik and HTTPS, the agent uses
+  `https://pyro.example.com`.
+- On an internal network reached by IP, it uses `http://10.0.0.1:7878`. That's plain HTTP:
+  the agent token crosses the network in clear text.
+
+The address in the command is your `PYRO_PUBLIC_URL` when it is set, otherwise the address
+your browser used. Check it in the **Server address** box and edit it if the agent has to
+reach the server some other way (a public address, another port); the commands update. If
+the address isn't a plain `http://` or `https://` URL, the command shows `<server-url>`
+instead and Pyro warns you: set `PYRO_PUBLIC_URL`, or replace it yourself. Run **one agent per
+token**: two machines started with the same token replace each other.
+
+#### The Agents tab
+
+| Column | Meaning |
+|---|---|
+| **Name**, **How** | The name you gave it, and **Direct** or **Connects in** |
+| **Address** | Direct agents: where the server dials. Connecting agents have none. Agents from server flags say "from server flags" |
+| **Status** | **available**, **busy** (running a test, or taken by one), **offline** (with "last seen" if it was seen before) or **error** (with the reason) |
+| **Version**, **CPUs**, **Max VUs** | What the agent reported |
+
+- **Test** (direct agents) calls the agent now. Otherwise the server checks every direct
+  agent every 15 seconds. A connecting agent is available while it is connected.
+- **Edit** changes a direct agent's name, address, token (leave the token empty to keep it)
+  or certificate setting.
+- **Rotate** (connecting agents) makes a new token and command, and disconnects the agent that
+  used the old one.
+- **Remove** deletes the agent, revokes its token and disconnects it, also in the middle of a
+  test (which then fails, naming the agent).
+
+The list updates live. Adding, changing, removing and rotating are recorded in the server's
+activity log.
+
+#### Tokens
+
+Direct agents' tokens are stored **encrypted** (AES-256-GCM), with a key derived from the
+server's sign-in secret (`PYRO_JWT_SECRET`, or the `jwt.secret` file in the data directory). The server has to present the
+token to the agent, so it can decrypt it; keep the database and the secret apart. If you
+change the secret, the stored tokens become unreadable: those agents show an **error**, and
+you open **Edit** and enter each token again. Connecting agents' tokens are stored only as a
+SHA-256 hash.
+
+A wrong token on `/agent/v1/connect` is answered with `401`. After 5 wrong attempts from one
+address within a minute, that address gets `429` until the minute is over. A correct token is
+always accepted, so agents behind a shared proxy aren't locked out by someone else's
+mistakes.
+
+#### Agents from flags (alternative)
+
+You can still list direct agents on the command line. They show in **Agents** as read-only
+entries ("from server flags") and are used like the others. They all share one token:
 
 - Docker Compose: uncomment `command:` in `deploy/docker-compose.yml` and list the agents;
   set `PYRO_AGENT_TOKEN` in `.env`. The image's entrypoint is `/pyro`, so the command starts
@@ -404,13 +493,22 @@ Then start the team server with the agents and the same token:
   ```
   then put `PYRO_AGENT_TOKEN=<token>` in `/etc/pyro/pyro.env`.
 
-Choose **Run on: N agents** next to **Start** on a load test.
+`--agent-listen` is not used with `--team`: connecting agents come in through the main port.
+
+#### Running a test on agents
+
+On a load test, choose **Run on: Agents** next to **Start**
+([Load tests](load-testing.md#running-a-test)). Everyone who can start load tests can pick
+agents; only administrators manage them.
 
 - Use the same image tag (or release) on the server and its agents.
-- Open port 7979 only to the team server: anyone with the token can make an agent generate
-  load. Ports published by Docker bypass `ufw` and similar host firewalls, so bind the agent
-  to a private address instead (`PYRO_AGENT_BIND=10.0.0.5`, a private network between your
-  machines) or use your cloud provider's firewall.
+- Run **one team server process per data directory**. Connecting agents are tracked in that
+  process's memory.
+- A direct agent's port (7979) is open to the team server only: anyone with its token can
+  make it generate load. Ports published by Docker bypass `ufw` and similar host firewalls,
+  so bind the agent to a private address instead (`PYRO_AGENT_BIND=10.0.0.5`, a private
+  network between your machines) or use your cloud provider's firewall. Agents that connect
+  in open no port at all.
 - Plugins a test uses must be installed on every agent too.
 
 ## Company sign-in
@@ -493,6 +591,8 @@ Server administrators find **Administration** in the account menu.
   - **Reset password** for password accounts: makes a one-time link valid for 24 hours. It's
     emailed when the server can send email, and shown so you can pass it on.
   - The server always keeps at least one active administrator.
+- **Agents:** the load agents the server can run tests on: add, test and remove them, see
+  their status ([details](#load-agents-on-other-machines)).
 - **Server:** how the server is set up (database, sign-up, LDAP, SSO, email). Change these in
   `server.yaml`, the environment or flags, and restart.
 
@@ -567,7 +667,8 @@ TOKEN=$(curl -s https://pyro.example.com/api/v1/auth/token \
 
 The server signs sign-in tokens with a key in `<data>/jwt.secret`, made on first start. If
 several servers share one database, give them all the same key in `PYRO_JWT_SECRET` (32
-characters or more). Changing the key signs everyone out. Personal access tokens aren't
+characters or more). Changing the key signs everyone out and makes the stored tokens of
+[direct load agents](#tokens) unreadable (enter them again). Personal access tokens aren't
 affected by the key.
 
 ## What's different from local Pyro

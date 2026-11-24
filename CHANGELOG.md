@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- Manage load agents from the team server's UI: **Administration → Agents** lists every agent
+  with its status, version, CPUs and max VUs, and administrators add, test, edit, rotate and
+  remove them without flags or a restart. An agent is either direct (the server dials its
+  address) or connects in (`pyro agent --connect <server> --token <token>` on the server's own
+  address and port, so it works through Dokploy's Traefik or by IP on an internal network; the
+  app shows the `docker run` and `pyro agent` commands once). Every agent has its own token:
+  direct agents' tokens are stored encrypted (key derived from the server's JWT secret),
+  connecting agents' tokens only as a hash. Failed dial-in attempts are rate limited per
+  address (`429` after 5 in a minute). `--agent` flags on `serve --team` still work and show
+  as read-only entries. See "Load agents on other machines" in the guide.
+- Pick agents per load test run: **Run on: Agents (n available)** shows a checklist with every
+  available agent ticked; busy, offline and error agents are greyed out with the reason, and
+  what you untick is remembered per project and load test. The start request takes
+  `agents: [id]`. Agents are now claimed only after the other start checks pass (a refused
+  start used to leave dial-in agents claimed), and results name agents by their registry names.
 - Deploying the team server anywhere: a Docker image (`ghcr.io/codeen15/pyro`, amd64 and
   arm64, non-root, data on `/data`), a Compose file that pulls it or builds it from source, a
   systemd unit for machines without Docker, and the same for load agents (`pyro agent`) in

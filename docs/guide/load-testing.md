@@ -173,8 +173,19 @@ Press **Start**.
 - If the plan targets hosts that aren't on your machine and aren't on the workspace's allow
   list, Pyro lists them and asks you to confirm.
 - The environment selected in the top bar is used.
-- With agents connected, choose **Run on**: this machine or the agents
-  ([Distributed](distributed.md)).
+- With agents available, choose **Run on**: **This server**, or **Agents
+  (n available)** ([Distributed](distributed.md)).
+
+**Picking agents.** **Agents** opens a checklist under **Start**, with every available agent
+ticked. An agent that is busy (in another test), offline or in error is greyed out with the
+reason and can't be ticked. Untick an agent to leave it out; Pyro remembers what you
+unticked, in this browser, for each project and load test, so agents added later are ticked
+by default. The plan's VUs and arrival rates are split between the ticked agents. **Start**
+is disabled, with a hint, when nothing is ticked or no agent is available. If an agent
+became unavailable after you opened the page, the start is refused and names it. On a team
+server, administrators add the agents
+([Load agents](team-server.md#load-agents-on-other-machines)). The results name each agent
+as it is named there.
 
 The **dashboard** updates every second:
 - **Stat tiles:** VUs, requests per second, p95 response time (with a heat swatch) and total

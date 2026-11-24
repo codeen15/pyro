@@ -12,7 +12,7 @@ engine and serves a React web UI on localhost. **Current phase: 17 (plugin build
   extractors incl. boundary/XPath), `process/` (timers, set-variables and counter processors), `script/` (goja + pm.* shim, vendored chai), `runner/`, `report/` (run reports with masking and comparison; JUnit, JSON, CSV,
   Excel via excelize, printable run HTML, load HTML),
   `load/` (plans, executors, VUs, thresholds, script steps (`scripting.go`, goja with `pyro.*`), segments and workers for distributed runs), `metrics/` (HDR histograms,
-  deltas), `agent/` (distributed load agents), `output/` (InfluxDB, Prometheus, NDJSON/CSV live outputs), `plugin/` (wazero host), `importer/{postman,openapi,har,curl,jmeter,auto}/`, `exporter/postman/`, `docs/` (HTML API reference), `mock/` (mock server from examples),
+  deltas), `agent/` (distributed load agents; the hub takes per-agent tokens through `Authenticate`, claims by id with `ClaimIDs`/`Release`, drops one with `Disconnect`), `output/` (InfluxDB, Prometheus, NDJSON/CSV live outputs), `plugin/` (wazero host), `importer/{postman,openapi,har,curl,jmeter,auto}/`, `exporter/postman/`, `docs/` (HTML API reference), `mock/` (mock server from examples),
   `protocol/{httpdriver,wsdriver,sioclient}/`.
 - `internal/store`: workspace persistence (YAML files, path safety, atomic writes, `Import`)
 - `internal/db`: opens SQLite or PostgreSQL behind the Bun ORM; `db.Migrate` runs each store's schema steps.
@@ -27,6 +27,7 @@ engine and serves a React web UI on localhost. **Current phase: 17 (plugin build
   Tests use an in-process LDAP server (gldap) and a fake OIDC provider (`oidc_test.go`)
   (SQLite, `<data>/pyro.db`). It proxies `/api/v1/projects/{id}/*` to that project's `internal/server.Server`, and
   project folders live in `<data>/projects/<id>/`.
+  Load agents: the registry (`agents.go`, `agents_store.go`, token encryption in `agentcrypto.go`) with a 15 s status prober and `/agent/v1/connect`; admin API in `admin_agents.go`.
 - `internal/version`: build metadata (set via ldflags)
 - `web/`: React + TS + Vite UI; `web/embed.go` embeds `web/dist`
 - `plugins/sdk/go`: Go plugin SDK (separate module); `plugins/examples/{tcp,hmac}`: example Go plugins (separate modules); `plugins/examples/redis-js`: a JavaScript example (no build);

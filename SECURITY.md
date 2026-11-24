@@ -107,6 +107,37 @@ generate a lot of traffic. Its defences, by boundary:
   from the UI's listener. Put it behind TLS (e.g. a reverse proxy, then `--connect https://…`)
   across untrusted networks.
 
+**Load agents on a team server**
+- Only server administrators add, change, rotate or remove agents (`/api/v1/admin/agents`,
+  CSRF-protected); each change is recorded in the server activity log. Anyone who can start
+  load tests can pick from the agents, and the server sends them the plan, requests, variables,
+  data rows and body files of the test. An agent is trusted with that data, so only
+  administrators decide which machines are agents.
+- Each agent has its own token. A **direct** agent's token (the server dials it) is stored
+  encrypted with AES-256-GCM, under a key derived with HKDF from the server's JWT secret
+  (`PYRO_JWT_SECRET`, or the `jwt.secret` file in the data directory). The server must present the token, so it can decrypt
+  it: whoever has the database and the secret can read it, and changing the secret makes the
+  stored tokens unreadable (re-enter them). A **connecting** agent's token is generated
+  (256 bits), shown once and stored only as a SHA-256 hash.
+- A connecting agent's token lets that machine register as the agent and run tests the server
+  sends it; it grants no access to the web UI, API or data. A direct agent's token is only
+  ever sent to its own address.
+- `/agent/v1/connect` is on the server's main listener, outside sign-in and CSRF (it is a
+  WebSocket authenticated by the agent token). Unknown tokens get `401`. After 5 failed
+  attempts from one address in a minute, that address gets `429` for a minute. Only failures
+  are limited, so a valid token always connects, also behind a proxy shared with other
+  clients; guessing a 256-bit token is not feasible either way.
+- Removing or rotating a token cuts the agent off at once, including connections that have
+  not finished their handshake.
+- `http://` agent addresses and a plain-HTTP server address send tokens and test data in
+  clear text. The UI marks them **not encrypted**; use `https://` on untrusted networks.
+- The command shown for a connecting agent takes the server address from `PYRO_PUBLIC_URL`;
+  without it, from the request's Host header, which a client controls. So the address is used
+  only when it is a plain `http(s)://host[:port]` URL, and every value is single-quoted for a
+  POSIX shell. Set `PYRO_PUBLIC_URL`.
+- Agents from `--agent` flags keep using the shared `--agent-token`, read from the flag or
+  environment, not the database.
+
 ## Out of scope
 Denial of service by someone who already holds a session or agent token or a team account; load tests you
 point at systems you aren't allowed to test.

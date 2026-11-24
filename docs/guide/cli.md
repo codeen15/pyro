@@ -149,7 +149,7 @@ pyro agent --connect https://controller.example.com:7980 --token s3cret
 |---|---|
 | `--token` | Token controllers must present (default `$PYRO_AGENT_TOKEN`, else random and printed) |
 | `-p, --port`, `--host` | Where to listen (default `0.0.0.0:7979`) |
-| `--connect` | Dial out to a controller instead of listening |
+| `--connect` | Dial out to a controller instead of listening: `host:port` or a URL. A team server takes its own address (`https://pyro.example.com`) and the token from Administration → Agents |
 | `--tls-cert`, `--tls-key` | Serve TLS |
 | `--insecure` | With `--connect`: skip TLS verification |
 | `--name` | Name shown in results (default: host name) |
