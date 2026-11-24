@@ -189,10 +189,12 @@ awaits nothing that needs real I/O (there is none besides `dial`).
 - **Errors:** an exception thrown by a handler becomes the call's error, with the position
   where it was thrown (`plugin.js:2:9 Error: boom`); the instance stays usable.
 - **Startup:** the runtime is compiled once per memory limit used by JS plugins: about 7 s
-  the first time, about 0.25 s from the compilation cache after that. Pyro starts the
-  compile in the background when it finds a JS plugin at start or reload (and an install
-  compiles it before verifying), so requests don't wait for it; one that arrives during the
-  compile waits for that same compile.
+  the first time, about 0.25 s from the compilation cache after that. `pyro serve`,
+  `serve --team` and `pyro agent` start the compile in the background for the ready
+  (enabled and approved) JS plugins they find at start or reload, so requests don't wait for
+  it; one that arrives during the compile waits for that same compile. Short commands
+  (`pyro run`, `pyro load`, `pyro plugin test`) compile on the first JS request instead, and
+  an install compiles it before verifying.
 - **Limits:** defaults are 256 MB of memory and 32 live instances (calls at once); the
   runtime itself takes roughly 30–50 MB of that. Use a Go plugin for heavy load.
 - `pyro plugin pack` and archives take the `.js` module like a `.wasm` one.

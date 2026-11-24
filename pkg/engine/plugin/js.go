@@ -95,24 +95,31 @@ func (m *Manager) compileJS(ctx context.Context, memoryMB int) (*host, wazero.Co
 	return h, cm, nil
 }
 
-// precompileJS starts compiling the JS runtime for memoryMB in the
-// background, so the first request doesn't wait for it. The caller holds
-// m.mu.
-func (m *Manager) precompileJS(memoryMB int) {
-	if m.closed {
-		return
-	}
-	go func() { _, _, _ = m.compileJS(context.Background(), memoryMB) }()
+// Precompile starts compiling the JS runtime in the background for each
+// ready JS plugin's memory limit, so its first request doesn't wait for the
+// compile, and has Reload do the same for JS plugins it finds later. It
+// doesn't block. Only long-lived processes (serve, agent) should call it:
+// Close waits for a compile in progress, which would hold up a short
+// command, and a short command compiles on demand instead.
+func (m *Manager) Precompile() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.precompile = true
+	m.precompileReady(m.byNm)
 }
 
-// precompileFound precompiles the runtime for each working JS plugin in
-// byNm. The caller holds m.mu.
-func (m *Manager) precompileFound(byNm map[string]*loaded) {
+// precompileReady precompiles the runtime for each ready JS plugin in byNm
+// when Precompile mode is on. The caller holds m.mu.
+func (m *Manager) precompileReady(byNm map[string]*loaded) {
+	if !m.precompile || m.closed {
+		return
+	}
 	seen := map[int]bool{}
 	for _, l := range byNm {
-		if l.err == nil && l.man.IsJS() && !seen[l.man.Limits.MemoryMB] {
-			seen[l.man.Limits.MemoryMB] = true
-			m.precompileJS(l.man.Limits.MemoryMB)
+		mb := l.man.Limits.MemoryMB
+		if l.man.IsJS() && m.info(l).Ready && !seen[mb] {
+			seen[mb] = true
+			go func() { _, _, _ = m.compileJS(context.Background(), mb) }()
 		}
 	}
 }

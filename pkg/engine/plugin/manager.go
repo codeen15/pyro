@@ -67,13 +67,17 @@ type Manager struct {
 	byNm  map[string]*loaded
 	// closed: Close ran; no new runtimes are made.
 	closed bool
+	// precompile: Precompile ran; Reload precompiles the JS runtime for
+	// JS plugins it finds.
+	precompile bool
 
 	subMu   sync.Mutex
 	subs    map[int]func()
 	nextSub int
 }
 
-// Open loads installed plugins from dir; modules compile on first use.
+// Open loads installed plugins from dir; modules compile on first use
+// (long-lived processes call Precompile to compile the JS runtime early).
 func Open(dir string) (*Manager, error) { return OpenWithCache(dir, "") }
 
 // OpenWithCache is Open with the compilation cache kept in cacheDir instead
@@ -94,9 +98,6 @@ func OpenWithCache(dir, cacheDir string) (*Manager, error) {
 	}
 	m.st, m.byNm = st, found
 	m.saveMigration(migrateApprovals(&m.st, memIn(found)))
-	m.mu.Lock()
-	m.precompileFound(found)
-	m.mu.Unlock()
 	return m, nil
 }
 

@@ -47,9 +47,11 @@ func openPlugins() *plugin.Manager {
 }
 
 // watchPlugins keeps a long-running command's manager in step with changes
-// other processes (the CLI) make to the plugins folder. The returned func
+// other processes (the CLI) make to the plugins folder, and compiles the JS
+// runtime in the background for the JS plugins in use. The returned func
 // stops the watch and waits for it; call it before closing the manager.
 func watchPlugins(ctx context.Context, m *plugin.Manager) (stop func()) {
+	m.Precompile()
 	wctx, cancel := context.WithCancel(ctx)
 	done := make(chan struct{})
 	go func() {

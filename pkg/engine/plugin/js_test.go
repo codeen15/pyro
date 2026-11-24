@@ -258,9 +258,23 @@ func TestJSArchiveInstall(t *testing.T) {
 	}
 }
 
-// TestJSFoundAtOpen: a JS plugin already installed when the manager opens
-// works (the runtime compiles in the background).
-func TestJSFoundAtOpen(t *testing.T) {
+// jsCompileOf returns the JS runtime compile started for memoryMB, if any.
+func jsCompileOf(m *Manager, memoryMB int) *jsrtCompile {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	h := m.hosts[memoryMB]
+	if h == nil {
+		return nil
+	}
+	h.jsMu.Lock()
+	defer h.jsMu.Unlock()
+	return h.js
+}
+
+// TestOpenDoesNotPrecompile: a short-lived process (a CLI command) opens and
+// closes the manager without compiling the JS runtime, so Close doesn't
+// wait for a compile.
+func TestOpenDoesNotPrecompile(t *testing.T) {
 	dir := t.TempDir()
 	m1, err := Open(dir)
 	if err != nil {
@@ -273,30 +287,58 @@ func TestJSFoundAtOpen(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	time.Sleep(50 * time.Millisecond) // a background compile would have started by now
+	if c := jsCompileOf(m2, DefaultMemoryMBJS); c != nil {
+		t.Fatal("Open started compiling the JS runtime")
+	}
+	start := time.Now()
+	m2.Close()
+	if d := time.Since(start); d > time.Second {
+		t.Fatalf("Close took %v", d)
+	}
+}
+
+// TestPrecompile: Precompile compiles the runtime for a ready JS plugin in
+// the background, and the first request uses that compile. A plugin that
+// isn't ready isn't compiled for.
+func TestPrecompile(t *testing.T) {
+	dir := t.TempDir()
+	m1, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	installJS(t, m1, "echo")
+	// A JS plugin that isn't approved, with its own memory limit.
+	if _, err := m1.InstallDir(copyJS(t, "throws", "limits: {memoryMB: 300}\n"), false); err != nil {
+		t.Fatal(err)
+	}
+	m1.Close()
+
+	m2, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
 	t.Cleanup(m2.Close)
-	// Open started the compile in the background...
+	start := time.Now()
+	m2.Precompile()
+	if d := time.Since(start); d > time.Second {
+		t.Fatalf("Precompile blocked for %v", d)
+	}
 	var started *jsrtCompile
 	for deadline := time.Now().Add(5 * time.Second); started == nil && time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
-		m2.mu.Lock()
-		if h := m2.hosts[DefaultMemoryMBJS]; h != nil {
-			h.jsMu.Lock()
-			started = h.js
-			h.jsMu.Unlock()
-		}
-		m2.mu.Unlock()
+		started = jsCompileOf(m2, DefaultMemoryMBJS)
 	}
 	if started == nil {
-		t.Fatal("Open did not start compiling the JS runtime")
+		t.Fatal("Precompile did not start compiling the JS runtime")
 	}
-	// ...and the request uses that compile rather than starting another.
-	defer func() {
-		h := m2.hosts[DefaultMemoryMBJS]
-		if h == nil || h.js != started {
-			t.Error("the request compiled the JS runtime again")
-		}
-	}()
+	if jsCompileOf(m2, 300) != nil {
+		t.Fatal("Precompile compiled for a plugin that isn't approved")
+	}
 	if res, _, err := m2.Execute(context.Background(), "js-echo", echoReq(echoServer(t), "open")); err != nil || string(res.Body) != "echo:open" {
 		t.Fatalf("execute = %v, %v", res, err)
+	}
+	if jsCompileOf(m2, DefaultMemoryMBJS) != started {
+		t.Error("the request compiled the JS runtime again")
 	}
 }
 
