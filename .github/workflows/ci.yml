@@ -33,6 +33,13 @@ jobs:
       - name: Plugin SDK
         working-directory: plugins/sdk/go
         run: go test ./...
+      - name: JS plugin runtime
+        working-directory: plugins/runtime/js
+        shell: bash
+        run: go vet ./... && go test ./...
+      - name: JS plugin runtime build is up to date
+        if: runner.os == 'Linux'
+        run: make jsrt && git diff --exit-code pkg/engine/plugin/jsrt.wasm.gz
       - name: Race detector
         if: runner.os == 'Linux'
         run: go test -race ./internal/... ./pkg/...

@@ -2,7 +2,7 @@ VERSION ?= $(shell git describe --tags --match 'v[0-9]*' --always --dirty 2>/dev
 COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
 LDFLAGS := -s -w -X github.com/codeen15/pyro/internal/version.Version=$(VERSION) -X github.com/codeen15/pyro/internal/version.Commit=$(COMMIT)
 
-.PHONY: all build ui ui-deps test vet dev-api dev-ui plugins dist clean
+.PHONY: all build ui ui-deps test vet dev-api dev-ui plugins jsrt dist clean
 
 all: build
 
@@ -20,6 +20,7 @@ ui-deps:
 test: vet
 	go test ./...
 	cd plugins/sdk/go && go test ./...
+	cd plugins/runtime/js && go vet ./... && go test ./...
 	cd web && npm run typecheck
 
 vet:
@@ -39,6 +40,18 @@ plugins: build
 		(cd plugins/examples/$$p && GOOS=wasip1 GOARCH=wasm go build -buildmode=c-shared -ldflags="-s -w" -o $$p.wasm .) && \
 		./bin/pyro plugin pack plugins/examples/$$p -o plugins/dist/$$p-0.1.0.pyro-plugin; \
 	done
+
+# The JavaScript plugin runtime, embedded in the engine. The build is
+# reproducible (CI checks the committed file is up to date): it uses the Go
+# version named in the runtime's go.mod, no build ID and a gzip without a
+# timestamp.
+JSRT_GO := go$(shell awk '/^go /{print $$2}' plugins/runtime/js/go.mod)
+JSRT_TMP := $(shell mktemp -u)
+jsrt:
+	cd plugins/runtime/js && GOTOOLCHAIN=$(JSRT_GO) CGO_ENABLED=0 GOOS=wasip1 GOARCH=wasm \
+		go build -trimpath -buildmode=c-shared -ldflags="-s -w -buildid=" -o $(JSRT_TMP) .
+	gzip -n -9 -c $(JSRT_TMP) > pkg/engine/plugin/jsrt.wasm.gz
+	rm -f $(JSRT_TMP)
 
 clean:
 	rm -rf bin dist
