@@ -1,5 +1,6 @@
 // Command alloc is a test plugin for the host's limits: option mb allocates
-// that many megabytes and touches every page; option sleepMs sleeps first.
+// that many megabytes and touches every page; option sleepMs first spins
+// for that long.
 package main
 
 import (
@@ -19,7 +20,11 @@ var keep []byte
 
 func execute(_ *pyro.Context, req *pyro.Request) (*pyro.Response, error) {
 	if ms, _ := strconv.Atoi(req.Option("sleepMs", "0")); ms > 0 {
-		time.Sleep(time.Duration(ms) * time.Millisecond)
+		// Busy-wait: the host doesn't really sleep, and a loop in wasm
+		// code stays interruptible by the call's deadline.
+		d, start := time.Duration(ms)*time.Millisecond, time.Now()
+		for time.Since(start) < d {
+		}
 	}
 	if mb, _ := strconv.Atoi(req.Option("mb", "0")); mb > 0 {
 		keep = make([]byte, mb<<20)

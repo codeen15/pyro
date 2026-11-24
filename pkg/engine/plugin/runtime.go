@@ -291,11 +291,12 @@ func (p *pool) get(ctx context.Context) (*instance, error) {
 	}
 	p.mu.Unlock()
 	// Instantiation must outlive the caller's request context, or wazero
-	// would close the module when that context ends. Real clocks let
-	// plugins sleep and measure time.
+	// would close the module when that context ends. Plugins see a real
+	// monotonic clock, but sleeping stays a no-op: a real sleep would run
+	// past the call's deadline, which only cuts in when wasm code runs.
 	mod, err := p.h.rt.InstantiateModule(context.WithoutCancel(ctx), p.cm,
 		wazero.NewModuleConfig().WithName("").WithStartFunctions("_initialize").WithStderr(os.Stderr).
-			WithSysNanotime().WithSysNanosleep())
+			WithSysNanotime())
 	if err != nil {
 		p.release()
 		return nil, fmt.Errorf("starting plugin: %w", err)

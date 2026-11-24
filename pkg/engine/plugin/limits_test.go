@@ -271,3 +271,27 @@ func TestMaxInstancesBusy(t *testing.T) {
 		t.Fatalf("after A finished: %v", err)
 	}
 }
+
+func TestBusyPluginTimesOut(t *testing.T) {
+	m := manager(t)
+	installAlloc(t, m, "{maxInstances: 1}")
+	if err := m.Check(context.Background(), KindProtocol, "alloc"); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	_, _, err := m.Execute(ctx, "alloc", allocReq(map[string]string{"sleepMs": "10000"}))
+	if err == nil || err.Error() != "plugin timed out" {
+		t.Fatalf("10 s call with a 500 ms deadline = %v, want plugin timed out", err)
+	}
+	if d := time.Since(start); d > 2*time.Second {
+		t.Fatalf("timed-out call took %v, want well under 2s", d)
+	}
+	// The trapped instance released the only slot.
+	ctx2, cancel2 := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel2()
+	if _, _, err := m.Execute(ctx2, "alloc", allocReq(nil)); err != nil {
+		t.Fatalf("call after the timeout: %v", err)
+	}
+}
