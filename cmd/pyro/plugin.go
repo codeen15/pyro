@@ -226,7 +226,7 @@ func pluginCmd() *cobra.Command {
 	}
 	search.Flags().StringVar(&index, "index", "", "plugin index URL (default $PYRO_PLUGIN_INDEX)")
 
-	cmd.AddCommand(list, install, approve, toggle("enable", true), toggle("disable", false), remove, search, newPluginCmd(), packCmd(), pluginTestCmd())
+	cmd.AddCommand(list, install, approve, toggle("enable", true), toggle("disable", false), remove, search, newPluginCmd(), packCmd(), pluginTestCmd(), pluginDevCmd())
 	return cmd
 }
 

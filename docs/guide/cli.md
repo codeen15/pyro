@@ -184,6 +184,29 @@ Manage plugins ([Plugins](plugins.md)).
 | `new <dir> --kind protocol\|auth\|processor --id <id>` | Create a plugin from a template using the published Go SDK (`--sdk` uses a local SDK copy instead) |
 | `pack <dir>` | Package a built plugin as `.pyro-plugin` and print its sha256 |
 | `test <dir \| name>` | Run one call of a plugin and print the result (below) |
+| `dev <dir>` | Rebuild and reinstall a plugin whenever its files change (below) |
+
+### pyro plugin dev
+Develop a plugin with a save-and-see loop. `pyro plugin dev <dir>` installs the plugin, then watches
+the directory (dot-files and `node_modules` are ignored) and reinstalls on every change. A Go plugin
+is built first with `GOOS=wasip1 GOARCH=wasm go build -buildmode=c-shared`; a JavaScript plugin is
+just installed. Your permissions (network addresses, memory limit) are approved for you and printed
+when they are new or change. A running `pyro serve` picks the new version up within about a second.
+
+```
+✓ redis 0.1.0 installed (built in 1.4s)
+  approved network: localhost:6379
+✗ build failed:
+./main.go:12:2: undefined: foo
+```
+
+When a build or install fails the error is printed and the previous version stays installed and
+working; fix the file and save again. Press Ctrl-C to stop.
+
+| Flag | Does |
+|---|---|
+| `--interval 500ms` | How often to look for changes |
+| `--once` | Build and install once, then exit with a non-zero status if that fails (for scripts and CI) |
 
 ### pyro plugin test
 Try a plugin without building a collection around it. A directory is installed into a temporary
