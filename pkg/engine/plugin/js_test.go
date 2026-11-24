@@ -217,8 +217,9 @@ func TestJSMemoryLimit(t *testing.T) {
 	small := manager(t)
 	installJS(t, small, "alloc")
 	req := &model.Request{Kind: "plugin:js-alloc", URL: "x://", Options: map[string]string{"mb": "300"}}
-	if _, _, err := small.Execute(context.Background(), "js-alloc", req); err == nil {
-		t.Fatal("allocating 300 MiB under the default 256 MB: want an error")
+	_, _, err := small.Execute(context.Background(), "js-alloc", req)
+	if want := "plugin js-alloc ran out of memory (limit 256 MB; raise limits.memoryMB)"; err == nil || err.Error() != want {
+		t.Fatalf("allocating 300 MiB under the default 256 MB: err = %v, want %q", err, want)
 	}
 	// The plugin still works after the failure.
 	if _, _, err := small.Execute(context.Background(), "js-alloc", &model.Request{Kind: "plugin:js-alloc", URL: "x://", Options: map[string]string{"mb": "1"}}); err != nil {

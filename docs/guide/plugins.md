@@ -44,7 +44,8 @@ plugins there.
 The permissions include the plugin's **memory limit** (128 MB unless its manifest says
 otherwise; JavaScript plugins default to 256 MB). A new version that asks for a different
 limit needs approval again, like one that asks for new network access. A plugin that uses
-more memory than its limit fails that call with `plugin crashed`; the next call starts
+more memory than its limit fails that call with
+`plugin <name> ran out of memory (limit <n> MB; raise limits.memoryMB)`; the next call starts
 fresh. A plugin can also cap how many copies of it run at once (`maxInstances`): extra
 calls wait their turn, and one that runs out of time while waiting fails with
 `plugin <name> is busy: all <n> instances in use`.
@@ -176,8 +177,8 @@ to Pyro itself.
 
 A manifest's `limits` section sets two caps. Both are shown when you approve the plugin.
 `memoryMB` is the most memory one copy of the plugin may use (default 128 for Go, 256 for
-JavaScript, at most 1024); past it a call fails with `plugin crashed` and the next call starts
-fresh. `maxInstances` is how many copies may run at once (default 32 for JavaScript, unlimited
+JavaScript, at most 1024); past it a call fails with `plugin <name> ran out of memory` and
+the next call starts fresh. `maxInstances` is how many copies may run at once (default 32 for JavaScript, unlimited
 for Go): further calls wait for a free one, and a call that times out while waiting fails with
 `plugin <name> is busy: all <n> instances in use`. A load test warns before it starts when a
 plugin's `maxInstances` is below the test's peak number of virtual users, since the extra

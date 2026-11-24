@@ -220,8 +220,8 @@ func TestMemoryLimitEnforced(t *testing.T) {
 	small := manager(t)
 	installAlloc(t, small, "{memoryMB: 64}")
 	_, _, err := small.Execute(context.Background(), "alloc", allocReq(map[string]string{"mb": "100"}))
-	if err == nil || !strings.Contains(err.Error(), "plugin crashed") {
-		t.Fatalf("allocating 100 MB under a 64 MB limit: want a crash, got %v", err)
+	if want := "plugin alloc ran out of memory (limit 64 MB; raise limits.memoryMB)"; err == nil || err.Error() != want {
+		t.Fatalf("allocating 100 MB under a 64 MB limit: err = %v, want %q", err, want)
 	}
 	// The plugin still works after the trap (the broken instance is discarded).
 	if _, _, err := small.Execute(context.Background(), "alloc", allocReq(map[string]string{"mb": "1"})); err != nil {

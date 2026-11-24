@@ -1,6 +1,7 @@
 package plugin
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/tls"
@@ -21,8 +22,9 @@ import (
 // host owns one wazero runtime, shared by every plugin with the same memory
 // limit (the runtime enforces the limit on each instance's memory).
 type host struct {
-	rt    wazero.Runtime
-	cache wazero.CompilationCache
+	rt       wazero.Runtime
+	cache    wazero.CompilationCache
+	memoryMB int // the memory limit of each instance
 
 	// js is the compile of the JS runtime, started on first use (js.go).
 	jsMu   sync.Mutex
@@ -54,7 +56,7 @@ func newHost(ctx context.Context, cacheDir string, memoryMB int) (*host, error) 
 		rt.Close(ctx)
 		return nil, err
 	}
-	return &host{rt: rt, cache: cache}, nil
+	return &host{rt: rt, cache: cache, memoryMB: memoryMB}, nil
 }
 
 // close closes the runtime, after a compile of the JS runtime in progress
@@ -233,6 +235,56 @@ type instance struct {
 	alloc  api.Function
 	free   api.Function
 	invoke api.Function
+	stderr *stderrWatch
+}
+
+// stderrWatch passes an instance's stderr through to the host's and notes
+// whether the plugin reported running out of memory (as the Go runtime
+// does before it traps).
+type stderrWatch struct {
+	mu   sync.Mutex
+	tail []byte // the last bytes written, so a message split across writes is seen
+	oom  bool
+}
+
+func (w *stderrWatch) Write(b []byte) (int, error) {
+	w.mu.Lock()
+	w.tail = append(w.tail, b...)
+	if bytes.Contains(w.tail, []byte("out of memory")) {
+		w.oom = true
+	}
+	if n := len(w.tail); n > 64 {
+		w.tail = append(w.tail[:0], w.tail[n-64:]...)
+	}
+	w.mu.Unlock()
+	return os.Stderr.Write(b)
+}
+
+func (w *stderrWatch) sawOOM() bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.oom
+}
+
+// outOfMemory reports whether a trapped instance most likely ran out of
+// memory: it said so on stderr, or its memory is within 10% of the limit
+// (a runtime that traps without saying why).
+func (in *instance) outOfMemory(limitMB int) bool {
+	if in.stderr != nil && in.stderr.sawOOM() {
+		return true
+	}
+	limit := uint64(limitMB) << 20
+	return limit > 0 && uint64(in.mod.Memory().Size())*10 >= limit*9
+}
+
+// failed turns a failed send's error into the one the caller sees: a
+// crash of an instance that ran out of memory says so.
+func (p *pool) failed(in *instance, err error) error {
+	var c *crashError
+	if errors.As(err, &c) && in.outOfMemory(p.h.memoryMB) {
+		return fmt.Errorf("plugin %s ran out of memory (limit %d MB; raise limits.memoryMB)", p.name, p.h.memoryMB)
+	}
+	return err
 }
 
 // pool keeps idle instances of one compiled module and caps how many are
@@ -337,14 +389,15 @@ func (p *pool) get(ctx context.Context) (*instance, error) {
 	// defaults are a fixed 2022 clock and the same random sequence in every
 	// instance), but sleeping stays a no-op: a real sleep would run past
 	// the call's deadline, which only cuts in when wasm code runs.
+	stderr := &stderrWatch{}
 	mod, err := p.h.rt.InstantiateModule(context.WithoutCancel(ctx), p.cm,
-		wazero.NewModuleConfig().WithName("").WithStartFunctions("_initialize").WithStderr(os.Stderr).
+		wazero.NewModuleConfig().WithName("").WithStartFunctions("_initialize").WithStderr(stderr).
 			WithSysWalltime().WithSysNanotime().WithRandSource(rand.Reader))
 	if err != nil {
 		p.done(nil)
 		return nil, fmt.Errorf("starting plugin: %w", err)
 	}
-	in := &instance{mod: mod, alloc: mod.ExportedFunction("pyro_alloc"), free: mod.ExportedFunction("pyro_free"), invoke: mod.ExportedFunction("pyro_invoke")}
+	in := &instance{mod: mod, alloc: mod.ExportedFunction("pyro_alloc"), free: mod.ExportedFunction("pyro_free"), invoke: mod.ExportedFunction("pyro_invoke"), stderr: stderr}
 	if in.alloc == nil || in.free == nil || in.invoke == nil {
 		mod.Close(ctx)
 		p.done(nil)
@@ -355,6 +408,7 @@ func (p *pool) get(ctx context.Context) (*instance, error) {
 		// instance is never used again.
 		var r loadReply
 		if err := in.send(ctx, p.init, &r); err != nil {
+			err = p.failed(in, err)
 			p.discard(in)
 			return nil, err
 		}
@@ -440,6 +494,7 @@ func (p *pool) call(ctx context.Context, st *callState, msg any, out any) error 
 		return err
 	}
 	if err := in.send(ctx, msg, out); err != nil {
+		err = p.failed(in, err) // before discard closes the instance
 		p.discard(in)
 		return err
 	}
@@ -486,5 +541,11 @@ func trap(err error) error {
 	if errors.Is(err, context.Canceled) {
 		return errors.New("cancelled")
 	}
-	return fmt.Errorf("plugin crashed: %v", err)
+	return &crashError{err: err}
 }
+
+// crashError is a trap in plugin code (not a timeout or cancellation).
+type crashError struct{ err error }
+
+func (e *crashError) Error() string { return fmt.Sprintf("plugin crashed: %v", e.err) }
+func (e *crashError) Unwrap() error { return e.err }
