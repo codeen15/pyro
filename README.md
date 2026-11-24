@@ -21,7 +21,8 @@ pyro serve --open
 ```
 
 Pyro is one self-contained binary (no runtime, no CGO). The release also carries the example
-plugins (`plugin-tcp_*.pyro-plugin`, `plugin-hmac_*.pyro-plugin`).
+plugins (`plugin-tcp_*.pyro-plugin`, `plugin-hmac_*.pyro-plugin`,
+`plugin-redis-js_*.pyro-plugin`).
 
 ## Build from source
 

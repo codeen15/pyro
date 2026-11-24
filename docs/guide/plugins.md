@@ -90,7 +90,7 @@ server) picks the new version up within about a second, and the Plugins tab and 
 **Type** menu refresh on their own, so you can try the plugin in the app without a restart.
 
 ```
-✓ redis 0.1.0 installed (built in 1.4s)
+✓ redis 0.1.0 installed (built in 1.4s)      # a Go plugin; JavaScript prints no build time
   approved network: localhost:6379
 ```
 
@@ -164,7 +164,7 @@ JavaScript notes:
 |---|---|---|
 | Build step | none | `go build` for `wasip1` (done by `pyro plugin dev`) |
 | Speed | about 17 times slower than Go on compute-heavy code | native speed |
-| First use | Pyro compiles its JavaScript engine once, about 7 s (then about 0.25 s from the cache); instances take about 17 to 26 ms to start | an instance starts in a few ms |
+| First use | Pyro compiles its JavaScript engine once, about 7 s (then about 0.25 s from the cache); an instance starts in about 17 to 26 ms | an instance starts in 2 to 4 ms |
 | Default limits | 256 MB memory, 32 calls at once | 128 MB memory, no cap on calls |
 | Best for | quick request types, signing and processors; anything run by hand or in small runs | heavy load tests, parsing or compression work |
 

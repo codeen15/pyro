@@ -2,14 +2,14 @@
 
 ## Unreleased
 
-- **Plugin building.** `pyro plugin new --lang go|js` creates a plugin from a template;
+- Plugin building: `pyro plugin new --lang go|js` creates a plugin from a template;
   `pyro plugin dev <dir>` rebuilds (Go) or reinstalls (JavaScript) on every save, approves the
   manifest's permissions for you and prints them; `pyro plugin test <dir|name>` runs one call
   from the terminal and prints the response, the call time and the plugin's log lines.
   `pyro serve`, `serve --team` and `pyro agent` watch the plugins folder, so a plugin installed
   from the terminal shows up in the open app (the request Type menu, the Plugins tab) within
   about a second.
-- **JavaScript plugins.** Set `runtime: js` and `module: plugin.js` in the manifest and write the
+- JavaScript plugins: set `runtime: js` and `module: plugin.js` in the manifest and write the
   plugin as one script with the `pyro` object (`registerProtocol`, `registerAuth`,
   `registerProcessor`, `dial`, `log`, `encoding`, `crypto`); there is no build step. They run on
   an embedded JavaScript engine under the same sandbox, permissions and approval as Go

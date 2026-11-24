@@ -164,12 +164,12 @@ typed description of this API (and gives editors completion).
 |---|---|
 | `pyro.registerProtocol(id, (ctx, req) => …)` | A request type `plugin:<id>`. Return `{status, statusText, headers, body, remoteAddr}` (`headers` is `[{key, value}]` or `{name: value \| [values]}`; `body` is a string or bytes), or nothing for an empty response. Throw to fail the request. |
 | `pyro.registerAuth(id, (ctx, req) => …)` | An auth type. Change `req` (usually `req.setHeader`) to sign the request. |
-| `pyro.registerProcessor(id, (ctx, p) => …)` | A pre/post processor. `p.phase`, `p.request` (change it in the pre phase), `p.response` (`status`, `statusText`, `headers`, `body`, `bodyBytes`, `timeMs`; `null` in the pre phase), `p.vars` (a snapshot), `p.setVar(name, value)`, `p.test(name, passed, message?)`. |
+| `pyro.registerProcessor(id, (ctx, p) => …)` | A pre/post processor. `p.phase`, `p.request` (change it in the pre phase), `p.response` (`status`, `statusText`, `headers`, `body`, `bodyBytes`, `timeMs`; `null` in the pre phase), `p.vars` (the variables when the processor started; `setVar` updates it too), `p.setVar(name, value)`, `p.test(name, passed, message?)`. |
 | `ctx.config`, `ctx.params` | The plugin's settings, and the fields of this request type, auth type or processor; strings with variables already resolved. |
 | `req` | `kind`, `name`, `method`, `url`, `headers`, `query` (`[{key, value}]`), `body` (text), `options` (the manifest's `fields`), and `req.option(key, default)`, `req.header(name)`, `req.setHeader(name, value)`. |
 | `pyro.dial(addr, {tls, timeoutMs})` | Opens a connection to `host:port`; an address the manifest's `network` capability doesn't list throws. A connection has `write(data)`, `read({timeoutMs, max})` (bytes, or `null` at end of stream; throws on timeout) and `close()`. Data is a string (UTF-8), `Uint8Array` or `ArrayBuffer`. Connections left open are closed when the call ends. |
 | `pyro.log.debug/info/warn/error(...)` | Shown in the response's console. |
-| `pyro.encoding.utf8/base64/hex` | `encode` and `decode` between bytes and text. |
+| `pyro.encoding.utf8`, `.base64`, `.hex` | `utf8.encode(text)` returns bytes and `utf8.decode(data)` returns text; for `base64` and `hex`, `encode(data)` returns text and `decode(text)` returns bytes. |
 | `pyro.crypto.sha256(data)`, `pyro.crypto.hmacSHA256(key, data)` | Return bytes. |
 
 Two things to know. Setting `p.vars.x = …` or replacing the request (`p.request = {…}`) does
