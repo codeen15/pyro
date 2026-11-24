@@ -42,3 +42,28 @@ func TestDispatch(t *testing.T) {
 		t.Fatal("invalid input must still produce JSON")
 	}
 }
+
+func TestHandleOp(t *testing.T) {
+	var seen string
+	HandleOp("load", func(raw json.RawMessage) any {
+		seen = string(raw)
+		return map[string]string{"ok": "1"}
+	})
+	HandleOp("boom", func(raw json.RawMessage) any { panic("kaboom") })
+	out := dispatch([]byte(`{"op":"load","x":1}`))
+	if string(out) != `{"ok":"1"}` {
+		t.Fatalf("load reply = %s", out)
+	}
+	if seen != `{"op":"load","x":1}` {
+		t.Fatalf("handler saw %s", seen)
+	}
+	var r reply
+	json.Unmarshal(dispatch([]byte(`{"op":"boom"}`)), &r)
+	if r.Error == "" {
+		t.Fatalf("panic reply = %+v", r)
+	}
+	json.Unmarshal(dispatch([]byte(`{"op":"nope"}`)), &r)
+	if r.Error != `unknown operation "nope"` {
+		t.Fatalf("unknown reply = %+v", r)
+	}
+}

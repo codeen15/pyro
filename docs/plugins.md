@@ -151,6 +151,7 @@ GOOS=wasip1 GOARCH=wasm go build -buildmode=c-shared -o echo.wasm .
 SDK API: `RegisterProtocol`, `RegisterAuth`, `Request` (`Option`, `Header`, `SetHeader`),
 `Response`, `Context` (`Config`, `Params`), `Dial` → `Conn` (`Read`, `Write`, `Close`,
 `SetReadTimeout`; `ErrTimeout`, `io.EOF`), `Logf`. Panics in plugin code become error replies.
+`HandleOp(op, f)` adds an extra host operation for language runtimes (built-in ops cannot be replaced).
 
 `pyro plugin new <dir> --kind protocol|auth|processor --id <id> [--sdk <path>]` scaffolds a plugin.
 The template requires the published SDK module `github.com/codeen15/pyro/plugins/sdk/go`

@@ -177,6 +177,25 @@ func RegisterAuth(id string, a Auth) { auths[id] = a }
 // RegisterProcessor registers a pre/post processor. Call it from init().
 func RegisterProcessor(id string, p Processor) { processors[id] = p }
 
+// HandleOp registers an extra host operation named op, for language runtimes
+// (a runtime that loads plugin code at run time uses it for its "load" step
+// and registers that code's features with RegisterProtocol and friends).
+// f receives the raw JSON of the host message and its return value is
+// encoded as the reply as-is. A panic in f becomes an error reply.
+//
+// The built-in operations (describe, process, execute, sign) cannot be
+// replaced: HandleOp panics if op is one of them. Call it from init(), or
+// from a runtime's own "load" handler while it loads plugin code.
+func HandleOp(op string, f func(raw json.RawMessage) any) {
+	switch op {
+	case "describe", "process", "execute", "sign":
+		panic("pyro: HandleOp cannot replace built-in operation " + op)
+	}
+	ops[op] = f
+}
+
+var ops = map[string]func(raw json.RawMessage) any{}
+
 // Log levels.
 const (
 	LevelDebug = iota
@@ -324,6 +343,14 @@ func dispatch(in []byte) (out []byte) {
 	if err := json.Unmarshal(in, &msg); err != nil {
 		out, _ = json.Marshal(reply{Error: "invalid message: " + err.Error()})
 		return out
+	}
+	if f, ok := ops[msg.Op]; ok {
+		raw := append(json.RawMessage(nil), in...)
+		b, err := json.Marshal(f(raw))
+		if err != nil {
+			b, _ = json.Marshal(reply{Error: "handler reply: " + err.Error()})
+		}
+		return b
 	}
 	out, _ = json.Marshal(handle(&msg))
 	return out
