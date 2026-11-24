@@ -60,17 +60,20 @@ func (h *host) jsrt(ctx context.Context) (wazero.CompiledModule, error) {
 		c = &jsrtCompile{done: make(chan struct{})}
 		h.js = c
 		go func() {
-			defer close(c.done)
-			wasm, err := jsrtWasm()
-			if err != nil {
-				c.err = err
-				return
+			compile := compileJSRT
+			if h.compileJSRT != nil {
+				compile = h.compileJSRT
 			}
-			// Not tied to any caller: the compile is shared.
-			c.cm, c.err = h.rt.CompileModule(context.Background(), wasm)
+			c.cm, c.err = compile(h.rt)
 			if c.err != nil {
-				c.err = fmt.Errorf("compiling the JavaScript runtime: %w", c.err)
+				// Forget a failed compile, so a later call tries again.
+				h.jsMu.Lock()
+				if h.js == c {
+					h.js = nil
+				}
+				h.jsMu.Unlock()
 			}
+			close(c.done)
 		}()
 	}
 	h.jsMu.Unlock()
@@ -80,6 +83,20 @@ func (h *host) jsrt(ctx context.Context) (wazero.CompiledModule, error) {
 	case <-ctx.Done():
 		return nil, fmt.Errorf("waiting for the JavaScript runtime to compile: %w", ctx.Err())
 	}
+}
+
+// compileJSRT unpacks and compiles the JS runtime. It isn't tied to any
+// caller's context: the compile is shared.
+func compileJSRT(rt wazero.Runtime) (wazero.CompiledModule, error) {
+	wasm, err := jsrtWasm()
+	if err != nil {
+		return nil, err
+	}
+	cm, err := rt.CompileModule(context.Background(), wasm)
+	if err != nil {
+		return nil, fmt.Errorf("compiling the JavaScript runtime: %w", err)
+	}
+	return cm, nil
 }
 
 // compileJS returns the host for memoryMB and its compiled JS runtime.

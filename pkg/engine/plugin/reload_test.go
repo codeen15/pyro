@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -90,17 +91,36 @@ func TestReloadDuringCall(t *testing.T) {
 	a.mu.Lock()
 	old := a.byNm["alloc"]
 	a.mu.Unlock()
+	live := func() int {
+		old.pool.mu.Lock()
+		defer old.pool.mu.Unlock()
+		return old.pool.live
+	}
 
+	// The new version goes on disk first; A only sees it at Reload.
+	installAlloc(t, b, "{ maxInstances: 3 }")
 	done := make(chan error, 1)
 	go func() {
-		_, _, err := a.Execute(context.Background(), "alloc", allocReq(map[string]string{"sleepMs": "500"}))
+		_, _, err := a.Execute(context.Background(), "alloc", allocReq(map[string]string{"sleepMs": "1000"}))
 		done <- err
 	}()
-	time.Sleep(100 * time.Millisecond) // the call is running
-
-	installAlloc(t, b, "{ maxInstances: 3 }")
+	// Wait until the call holds an instance of the old pool.
+	for deadline := time.Now().Add(5 * time.Second); live() != 1; time.Sleep(5 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("the slow call never started")
+		}
+	}
 	if changed, err := a.Reload(); err != nil || !changed {
 		t.Fatalf("Reload = %v, %v; want changed", changed, err)
+	}
+	// Reload ran while the call was in flight.
+	select {
+	case err := <-done:
+		t.Fatalf("the call finished before Reload returned (err %v); the test didn't overlap them", err)
+	default:
+	}
+	if n := live(); n != 1 {
+		t.Fatalf("old pool live = %d right after Reload, want the in-flight call's 1", n)
 	}
 	if err := <-done; err != nil {
 		t.Fatalf("in-flight call failed across Reload: %v", err)
@@ -234,5 +254,46 @@ func TestReloadAppliesLegacyMigration(t *testing.T) {
 	}
 	if info, err := a.SetConfig("tcp", map[string]string{"x": "1"}); err != nil || !info.Approved {
 		t.Fatalf("legacy approval lost on write: %+v, %v", info, err)
+	}
+}
+
+// TestCallRetriesAfterReload: a plugin replaced between the lookup and the
+// call (its pool retired, with no instance out) is looked up again, and the
+// call goes to the new version instead of failing with "try again".
+func TestCallRetriesAfterReload(t *testing.T) {
+	m := manager(t)
+	installAlloc(t, m, "{ maxInstances: 2 }")
+	replaced := false
+	var r struct {
+		Error string `json:"error"`
+	}
+	_, _, err := m.invoke(context.Background(), KindProtocol, "alloc", func(l *loaded) error {
+		if !replaced {
+			replaced = true
+			installAlloc(t, m, "{ maxInstances: 3 }") // retires l's pool
+		}
+		return nil
+	}, func(*pluginState) any {
+		return map[string]any{"op": "execute", "id": "alloc", "request": toWire(allocReq(nil))}
+	}, &r)
+	if err != nil || r.Error != "" {
+		t.Fatalf("call across a reinstall = %v, %q", err, r.Error)
+	}
+	if !replaced {
+		t.Fatal("the check never ran")
+	}
+	// Without the retry, the same race fails with ErrReloaded.
+	replaced = false
+	_, _, err = m.invokeOnce(context.Background(), KindProtocol, "alloc", func(l *loaded) error {
+		if !replaced {
+			replaced = true
+			installAlloc(t, m, "{ maxInstances: 2 }")
+		}
+		return nil
+	}, func(*pluginState) any {
+		return map[string]any{"op": "execute", "id": "alloc", "request": toWire(allocReq(nil))}
+	}, &r)
+	if !errors.Is(err, ErrReloaded) {
+		t.Fatalf("one attempt across a reinstall: err = %v, want ErrReloaded", err)
 	}
 }

@@ -30,6 +30,9 @@ type host struct {
 	jsMu   sync.Mutex
 	js     *jsrtCompile
 	closed bool
+	// compileJSRT, when set (by tests, before the first compile), replaces
+	// the JS runtime's compile.
+	compileJSRT func(wazero.Runtime) (wazero.CompiledModule, error)
 }
 
 // testCacheDir, when set (by tests), replaces <dir>/cache so every test
@@ -377,7 +380,7 @@ func (p *pool) get(ctx context.Context) (*instance, error) {
 	if p.cmClosed {
 		p.mu.Unlock()
 		p.release()
-		return nil, fmt.Errorf("plugin %s was reloaded; try again", p.name)
+		return nil, reloaded(p.name)
 	}
 	// Counting the instance now keeps the compiled module open while it
 	// is instantiated, even if the pool is retired meanwhile.

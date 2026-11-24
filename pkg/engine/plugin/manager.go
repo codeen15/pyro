@@ -28,10 +28,22 @@ var (
 	ErrDisabled    = errors.New("plugin is disabled")
 	// ErrBusy: every instance a plugin may run (limits.maxInstances) is in use.
 	ErrBusy = errors.New("plugin busy")
+	// ErrReloaded: the plugin was replaced or removed between looking it
+	// up and calling it. Execute, Sign and Process retry once on it.
+	ErrReloaded = errors.New("plugin was reloaded")
 )
+
+// reloaded is ErrReloaded with the plugin's name.
+func reloaded(name string) error {
+	return fmt.Errorf("plugin %s was reloaded; try again: %w", name, ErrReloaded)
+}
 
 // DefaultTimeout bounds one plugin call.
 const DefaultTimeout = 60 * time.Second
+
+// verifyTimeout bounds an install's check of a module: starting it (for a
+// JS plugin, loading its script) and describe. A var so tests can shorten it.
+var verifyTimeout = 30 * time.Second
 
 // Info describes an installed plugin.
 type Info struct {
@@ -289,21 +301,27 @@ func (m *Manager) verify(man *Manifest, module []byte) error {
 		}
 		js = jsPool(h, cm, man, module, 0)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	defer cancel()
 	p := js
 	if p == nil {
-		h, err := m.host(ctx, man.Limits.MemoryMB)
+		cctx, ccancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		h, err := m.host(cctx, man.Limits.MemoryMB)
 		if err != nil {
+			ccancel()
 			return err
 		}
-		cm, err := h.rt.CompileModule(ctx, module)
+		cm, err := h.rt.CompileModule(cctx, module)
+		ccancel()
 		if err != nil {
 			return fmt.Errorf("compiling %s: %w", man.Module, err)
 		}
 		p = newPool(h, cm, man.Name, 0)
 	}
 	defer p.retire()
+	// Starting the module (for JS, loading the script) and describe get a
+	// budget of their own, so a top-level infinite loop fails the install
+	// quickly.
+	ctx, cancel := context.WithTimeout(context.Background(), verifyTimeout)
+	defer cancel()
 	var r struct {
 		ABI      int `json:"abi"`
 		Provides []struct {
@@ -532,7 +550,7 @@ func (m *Manager) compileJSPlugin(ctx context.Context, l *loaded) error {
 // looked it up: a pool made now would never be retired. The caller holds m.mu.
 func (m *Manager) needsPool(l *loaded) error {
 	if l.pool == nil && m.byNm[l.man.Name] != l {
-		return fmt.Errorf("plugin %s was reloaded; try again", l.man.Name)
+		return reloaded(l.man.Name)
 	}
 	return nil
 }
@@ -559,13 +577,6 @@ func toWire(r *model.Request) wireRequest {
 
 // Execute runs a protocol plugin request. Timings.Total is measured here.
 func (m *Manager) Execute(ctx context.Context, id string, req *model.Request) (*protocol.Response, []Log, error) {
-	l, ps, err := m.find(ctx, KindProtocol, id)
-	if err != nil {
-		return nil, nil, err
-	}
-	ctx, cancel := withTimeout(ctx)
-	defer cancel()
-	st := &callState{caps: l.man.Capabilities, plugin: l.man.Name, conns: map[int32]net.Conn{}}
 	var r struct {
 		Response *struct {
 			Status     int              `json:"status"`
@@ -576,9 +587,9 @@ func (m *Manager) Execute(ctx context.Context, id string, req *model.Request) (*
 		} `json:"response"`
 		Error string `json:"error"`
 	}
-	start := time.Now()
-	err = l.pool.call(ctx, st, map[string]any{"op": "execute", "id": id, "request": toWire(req), "config": cfgOf(ps)}, &r)
-	total := time.Since(start)
+	st, total, err := m.invoke(ctx, KindProtocol, id, nil, func(ps *pluginState) any {
+		return map[string]any{"op": "execute", "id": id, "request": toWire(req), "config": cfgOf(ps)}
+	}, &r)
 	if err != nil {
 		return nil, st.logs, err
 	}
@@ -603,18 +614,14 @@ func (m *Manager) Execute(ctx context.Context, id string, req *model.Request) (*
 // Sign runs an auth plugin on a resolved request, updating its headers,
 // query and URL in place.
 func (m *Manager) Sign(ctx context.Context, id string, req *model.Request, params map[string]string) ([]Log, error) {
-	l, ps, err := m.find(ctx, KindAuth, id)
-	if err != nil {
-		return nil, err
-	}
-	ctx, cancel := withTimeout(ctx)
-	defer cancel()
-	st := &callState{caps: l.man.Capabilities, plugin: l.man.Name, conns: map[int32]net.Conn{}}
 	var r struct {
 		Request *wireRequest `json:"request"`
 		Error   string       `json:"error"`
 	}
-	if err := l.pool.call(ctx, st, map[string]any{"op": "sign", "id": id, "request": toWire(req), "params": params, "config": cfgOf(ps)}, &r); err != nil {
+	st, _, err := m.invoke(ctx, KindAuth, id, nil, func(ps *pluginState) any {
+		return map[string]any{"op": "sign", "id": id, "request": toWire(req), "params": params, "config": cfgOf(ps)}
+	}, &r)
+	if err != nil {
 		return st.logs, err
 	}
 	if r.Error != "" {
@@ -655,24 +662,23 @@ type wireResponse struct {
 
 // Process runs a processor plugin.
 func (m *Manager) Process(ctx context.Context, id string, in ProcessInput) (ProcessOutput, error) {
-	l, ps, err := m.find(ctx, KindProcessor, id)
-	if err != nil {
-		return ProcessOutput{}, err
-	}
-	for _, p := range l.man.Provides {
-		if p.Kind == KindProcessor && p.ID == id && len(p.Phases) > 0 && !slices.Contains(p.Phases, in.Phase) {
-			return ProcessOutput{}, fmt.Errorf("processor %s doesn't run %s-request", id, in.Phase)
+	phases := func(l *loaded) error {
+		for _, p := range l.man.Provides {
+			if p.Kind == KindProcessor && p.ID == id && len(p.Phases) > 0 && !slices.Contains(p.Phases, in.Phase) {
+				return fmt.Errorf("processor %s doesn't run %s-request", id, in.Phase)
+			}
 		}
+		return nil
 	}
-	ctx, cancel := withTimeout(ctx)
-	defer cancel()
-	st := &callState{caps: l.man.Capabilities, plugin: l.man.Name, conns: map[int32]net.Conn{}}
-	msg := map[string]any{"op": "process", "id": id, "phase": in.Phase, "request": toWire(in.Request), "vars": in.Vars, "params": in.Options, "config": cfgOf(ps)}
-	if in.Response != nil {
-		msg["response"] = wireResponse{
-			Status: in.Response.Status, StatusText: in.Response.StatusText, Headers: in.Response.Headers, Body: in.Response.Body,
-			TimeMs: float64(in.Response.Timings.Total.Microseconds()) / 1000,
+	msg := func(ps *pluginState) any {
+		msg := map[string]any{"op": "process", "id": id, "phase": in.Phase, "request": toWire(in.Request), "vars": in.Vars, "params": in.Options, "config": cfgOf(ps)}
+		if in.Response != nil {
+			msg["response"] = wireResponse{
+				Status: in.Response.Status, StatusText: in.Response.StatusText, Headers: in.Response.Headers, Body: in.Response.Body,
+				TimeMs: float64(in.Response.Timings.Total.Microseconds()) / 1000,
+			}
 		}
+		return msg
 	}
 	var r struct {
 		Vars    map[string]string `json:"vars"`
@@ -684,7 +690,8 @@ func (m *Manager) Process(ctx context.Context, id string, in ProcessInput) (Proc
 		} `json:"tests"`
 		Error string `json:"error"`
 	}
-	if err := l.pool.call(ctx, st, msg, &r); err != nil {
+	st, _, err := m.invoke(ctx, KindProcessor, id, phases, msg, &r)
+	if err != nil {
 		return ProcessOutput{Logs: st.logs}, err
 	}
 	out := ProcessOutput{Vars: r.Vars, Logs: st.logs}
@@ -708,6 +715,40 @@ func (m *Manager) Process(ctx context.Context, id string, in ProcessInput) (Proc
 		out.Request = &cp
 	}
 	return out, nil
+}
+
+// invoke finds the ready plugin providing kind/id, checks it with check
+// (if set) and sends it msg(its state), decoding the reply into out. A
+// plugin reloaded between the lookup and the call is looked up and called
+// once more. It returns the call's state (never nil) and how long the call
+// itself took.
+func (m *Manager) invoke(ctx context.Context, kind, id string, check func(*loaded) error, msg func(*pluginState) any, out any) (*callState, time.Duration, error) {
+	for attempt := 0; ; attempt++ {
+		st, took, err := m.invokeOnce(ctx, kind, id, check, msg, out)
+		if err != nil && attempt == 0 && errors.Is(err, ErrReloaded) {
+			continue
+		}
+		return st, took, err
+	}
+}
+
+func (m *Manager) invokeOnce(ctx context.Context, kind, id string, check func(*loaded) error, msg func(*pluginState) any, out any) (*callState, time.Duration, error) {
+	st := &callState{conns: map[int32]net.Conn{}}
+	l, ps, err := m.find(ctx, kind, id)
+	if err != nil {
+		return st, 0, err
+	}
+	if check != nil {
+		if err := check(l); err != nil {
+			return st, 0, err
+		}
+	}
+	st.caps, st.plugin = l.man.Capabilities, l.man.Name
+	ctx, cancel := withTimeout(ctx)
+	defer cancel()
+	start := time.Now()
+	err = l.pool.call(ctx, st, msg(ps), out)
+	return st, time.Since(start), err
 }
 
 func cfgOf(ps *pluginState) map[string]string {

@@ -186,6 +186,8 @@ awaits nothing that needs real I/O (there is none besides `dial`).
   UTF-8`, `plugin.js is larger than 4 MB`). Install runs `load` and then `describe`, so a
   script with a syntax error, or one that throws while loading, fails to install with the
   JavaScript error and its position (`plugin.js:3:1 SyntaxError: Unexpected token }`).
+  `load` and `describe` together get 30 seconds (compiling the runtime doesn't count), so a
+  script that never finishes loading fails to install with `plugin timed out`.
 - **Errors:** an exception thrown by a handler becomes the call's error, with the position
   where it was thrown (`plugin.js:2:9 Error: boom`); the instance stays usable.
 - **Startup:** the runtime is compiled once per memory limit used by JS plugins: about 7 s
@@ -250,7 +252,9 @@ pyro plugin pack .        # <name>-<version>.pyro-plugin and its sha256
 - `pyro serve`, `serve --team` and `pyro agent` watch the plugins folder (every second) and
   reload the manager when another process changes it; the UI hears of it on the `plugins`
   event topic. `state.json` writes are locked and re-read, so the CLI and a running server
-  don't lose each other's changes.
+  don't lose each other's changes. A call already running when its plugin is replaced
+  finishes on the old version; one that looked the plugin up just before the swap is retried
+  once on the new version (`plugin.ErrReloaded` in Go if it still loses the race).
 
 ## Installing and managing
 ```sh

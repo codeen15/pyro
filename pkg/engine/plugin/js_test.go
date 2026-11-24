@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/codeen15/pyro/pkg/engine/model"
 	"github.com/codeen15/pyro/pkg/engine/protocol"
+	"github.com/tetratelabs/wazero"
 )
 
 func jsDir(name string) string { return filepath.Join("testdata", "js", name) }
@@ -157,6 +159,57 @@ func TestJSThrowAtLoadFailsInstall(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "plugin.js:2:") || !strings.Contains(err.Error(), "TypeError: bad start") {
 		t.Fatalf("err = %v, want the JS error with its line", err)
 	}
+}
+
+// TestJSLoopAtLoadFailsInstall: a script that never finishes loading fails
+// the install once verify's own budget runs out, not the long one kept for
+// compiling the runtime.
+func TestJSLoopAtLoadFailsInstall(t *testing.T) {
+	m := manager(t)
+	installJS(t, m, "echo") // compile the runtime first; that doesn't count
+	old := verifyTimeout
+	verifyTimeout = 3 * time.Second
+	t.Cleanup(func() { verifyTimeout = old })
+	dir := copyJS(t, "throws", "")
+	if err := os.WriteFile(filepath.Join(dir, "plugin.js"), []byte("while (true) {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now()
+	_, err := m.InstallDir(dir, true)
+	if err == nil || err.Error() != "plugin timed out" {
+		t.Fatalf("err = %v, want plugin timed out", err)
+	}
+	if d := time.Since(start); d > 20*time.Second {
+		t.Fatalf("install took %v", d)
+	}
+}
+
+// TestJSFailedCompileIsRetried: a failed compile of the runtime isn't
+// cached; the next call compiles again.
+func TestJSFailedCompileIsRetried(t *testing.T) {
+	m := manager(t)
+	h, err := m.host(context.Background(), DefaultMemoryMBJS)
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	h.compileJSRT = func(rt wazero.Runtime) (wazero.CompiledModule, error) {
+		calls++
+		if calls == 1 {
+			return nil, errors.New("compile failed")
+		}
+		return compileJSRT(rt)
+	}
+	if _, err := h.jsrt(context.Background()); err == nil || err.Error() != "compile failed" {
+		t.Fatalf("first compile: err = %v", err)
+	}
+	if _, err := h.jsrt(context.Background()); err != nil {
+		t.Fatalf("second compile: %v", err)
+	}
+	if calls != 2 {
+		t.Fatalf("compiled %d times, want 2", calls)
+	}
+	installJS(t, m, "echo")
 }
 
 func TestJSScriptChecks(t *testing.T) {
