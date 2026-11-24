@@ -154,4 +154,6 @@ func TestWaitAckNeedsAnAckMessage(t *testing.T) {
 	}
 }
 
-func protocolAck(id int) protocol.Message { return protocol.Message{Direction: "received", Kind: "ack", AckID: &id} }
+func protocolAck(id int) protocol.Message {
+	return protocol.Message{Direction: "received", Kind: "ack", AckID: &id}
+}
