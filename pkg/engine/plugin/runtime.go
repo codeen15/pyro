@@ -17,7 +17,8 @@ import (
 	"github.com/tetratelabs/wazero/imports/wasi_snapshot_preview1"
 )
 
-// host owns the wazero runtime shared by all plugins.
+// host owns one wazero runtime, shared by every plugin with the same memory
+// limit (the runtime enforces the limit on each instance's memory).
 type host struct {
 	rt    wazero.Runtime
 	cache wazero.CompilationCache
@@ -215,17 +216,72 @@ type instance struct {
 	invoke api.Function
 }
 
-// pool keeps idle instances of one compiled module.
+// pool keeps idle instances of one compiled module and caps how many are
+// live at once.
 type pool struct {
 	h    *host
 	cm   wazero.CompiledModule
-	mu   sync.Mutex
-	idle []*instance
+	name string // plugin name, for errors
+	// max is the most live instances (limits.maxInstances); 0 is unbounded.
+	// slots holds one token per live instance; nil when max is 0.
+	max   int
+	slots chan struct{}
+	mu    sync.Mutex
+	idle  []*instance
 }
 
 const maxIdle = 4096
 
+func newPool(h *host, cm wazero.CompiledModule, name string, max int) *pool {
+	p := &pool{h: h, cm: cm, name: name, max: max}
+	if max > 0 {
+		p.slots = make(chan struct{}, max)
+	}
+	return p
+}
+
+// acquire takes a slot for one live instance, waiting until one is free or
+// ctx ends (then the plugin is busy).
+func (p *pool) acquire(ctx context.Context) error {
+	if p.slots == nil {
+		return nil
+	}
+	select {
+	case p.slots <- struct{}{}:
+		return nil
+	default:
+	}
+	select {
+	case p.slots <- struct{}{}:
+		return nil
+	case <-ctx.Done():
+		return &busyError{name: p.name, max: p.max}
+	}
+}
+
+// busyError is ErrBusy with the plugin's name and instance cap.
+type busyError struct {
+	name string
+	max  int
+}
+
+func (e *busyError) Error() string {
+	return fmt.Sprintf("plugin %s is busy: all %d instances in use", e.name, e.max)
+}
+
+func (e *busyError) Unwrap() error { return ErrBusy }
+
+func (p *pool) release() {
+	if p.slots != nil {
+		<-p.slots
+	}
+}
+
+// get returns an instance holding a slot; put or discard releases it.
 func (p *pool) get(ctx context.Context) (*instance, error) {
+	if err := p.acquire(ctx); err != nil {
+		return nil, err
+	}
 	p.mu.Lock()
 	if n := len(p.idle); n > 0 {
 		in := p.idle[n-1]
@@ -235,27 +291,43 @@ func (p *pool) get(ctx context.Context) (*instance, error) {
 	}
 	p.mu.Unlock()
 	// Instantiation must outlive the caller's request context, or wazero
-	// would close the module when that context ends.
+	// would close the module when that context ends. Real clocks let
+	// plugins sleep and measure time.
 	mod, err := p.h.rt.InstantiateModule(context.WithoutCancel(ctx), p.cm,
-		wazero.NewModuleConfig().WithName("").WithStartFunctions("_initialize").WithStderr(os.Stderr))
+		wazero.NewModuleConfig().WithName("").WithStartFunctions("_initialize").WithStderr(os.Stderr).
+			WithSysNanotime().WithSysNanosleep())
 	if err != nil {
+		p.release()
 		return nil, fmt.Errorf("starting plugin: %w", err)
 	}
 	in := &instance{mod: mod, alloc: mod.ExportedFunction("pyro_alloc"), free: mod.ExportedFunction("pyro_free"), invoke: mod.ExportedFunction("pyro_invoke")}
 	if in.alloc == nil || in.free == nil || in.invoke == nil {
 		mod.Close(ctx)
+		p.release()
 		return nil, errors.New("not a Pyro plugin: missing pyro_alloc, pyro_free or pyro_invoke exports")
 	}
 	return in, nil
 }
 
+// put returns a healthy instance to the idle list and releases its slot.
 func (p *pool) put(in *instance) {
+	defer p.release()
+	limit := maxIdle
+	if p.max > 0 {
+		limit = min(p.max, maxIdle)
+	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if len(p.idle) < maxIdle {
+	if len(p.idle) < limit {
 		p.idle = append(p.idle, in)
 		return
 	}
+	in.mod.Close(context.Background())
+}
+
+// discard closes an instance that may be broken and releases its slot.
+func (p *pool) discard(in *instance) {
+	defer p.release()
 	in.mod.Close(context.Background())
 }
 
@@ -283,7 +355,7 @@ func (p *pool) call(ctx context.Context, st *callState, msg any, out any) error 
 		if ok {
 			p.put(in)
 		} else {
-			in.mod.Close(context.Background())
+			p.discard(in)
 		}
 	}()
 	payload, err := json.Marshal(msg)

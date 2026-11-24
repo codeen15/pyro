@@ -35,8 +35,13 @@ func TestMain(m *testing.M) {
 	}
 	code := 0
 	defer func() { os.RemoveAll(tmp); os.Exit(code) }()
-	for _, name := range []string{"tcp", "hmac"} {
-		src, _ := filepath.Abs(filepath.Join("..", "..", "..", "plugins", "examples", name))
+	srcs := map[string]string{
+		"tcp":   filepath.Join("..", "..", "..", "plugins", "examples", "tcp"),
+		"hmac":  filepath.Join("..", "..", "..", "plugins", "examples", "hmac"),
+		"alloc": filepath.Join("testdata", "alloc"),
+	}
+	for name, rel := range srcs {
+		src, _ := filepath.Abs(rel)
 		dst := filepath.Join(tmp, name)
 		os.MkdirAll(dst, 0o755)
 		cmd := exec.Command("go", "build", "-buildmode=c-shared", "-ldflags=-s -w", "-o", filepath.Join(dst, name+".wasm"), ".")

@@ -1,10 +1,16 @@
 package plugin
 
 import (
+	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+	"time"
+
+	"github.com/codeen15/pyro/pkg/engine/model"
 )
 
 const baseManifest = "name: p\nversion: 1.0.0\nabi: 1\nprovides: [{kind: protocol, id: p}]\ncapabilities: {}\n"
@@ -169,5 +175,99 @@ func TestBrokenPluginPlaceholderKeepsDefaultMemory(t *testing.T) {
 	t.Cleanup(m.Close)
 	if info, _ := m.Get("bad"); info.Error == "" || info.Limits.MemoryMB != DefaultMemoryMBWasm {
 		t.Fatalf("broken placeholder = %+v", info)
+	}
+}
+
+// installAlloc installs the alloc test plugin with extra manifest limits.
+func installAlloc(t *testing.T, m *Manager, limits string) {
+	t.Helper()
+	dir := t.TempDir()
+	manifest, _ := os.ReadFile(filepath.Join(built["alloc"], ManifestFile))
+	module, _ := os.ReadFile(filepath.Join(built["alloc"], "alloc.wasm"))
+	if err := os.WriteFile(filepath.Join(dir, ManifestFile), append(manifest, []byte("\nlimits: "+limits+"\n")...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "alloc.wasm"), module, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if info, err := m.InstallDir(dir, true); err != nil || !info.Ready {
+		t.Fatalf("install alloc = %+v, %v", info, err)
+	}
+}
+
+func allocReq(opts map[string]string) *model.Request {
+	return &model.Request{Kind: "plugin:alloc", Name: "a", URL: "alloc://", Options: opts}
+}
+
+func TestMemoryLimitEnforced(t *testing.T) {
+	small := manager(t)
+	installAlloc(t, small, "{memoryMB: 64}")
+	_, _, err := small.Execute(context.Background(), "alloc", allocReq(map[string]string{"mb": "100"}))
+	if err == nil || !strings.Contains(err.Error(), "plugin crashed") {
+		t.Fatalf("allocating 100 MB under a 64 MB limit: want a crash, got %v", err)
+	}
+	// The plugin still works after the trap (the broken instance is discarded).
+	if _, _, err := small.Execute(context.Background(), "alloc", allocReq(map[string]string{"mb": "1"})); err != nil {
+		t.Fatalf("small allocation after a trap: %v", err)
+	}
+
+	big := manager(t)
+	installAlloc(t, big, "{memoryMB: 256}")
+	if _, _, err := big.Execute(context.Background(), "alloc", allocReq(map[string]string{"mb": "100"})); err != nil {
+		t.Fatalf("allocating 100 MB under a 256 MB limit: %v", err)
+	}
+}
+
+func TestMaxInstancesQueues(t *testing.T) {
+	m := manager(t)
+	installAlloc(t, m, "{maxInstances: 2}")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	start := time.Now()
+	var wg sync.WaitGroup
+	errs := make([]error, 3)
+	for i := range errs {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, _, errs[i] = m.Execute(ctx, "alloc", allocReq(map[string]string{"sleepMs": "300"}))
+		}()
+	}
+	wg.Wait()
+	for i, err := range errs {
+		if err != nil {
+			t.Errorf("call %d: %v", i, err)
+		}
+	}
+	if d := time.Since(start); d < 600*time.Millisecond {
+		t.Fatalf("3 calls of 300 ms on 2 instances took %v, want >= 600ms", d)
+	}
+}
+
+func TestMaxInstancesBusy(t *testing.T) {
+	m := manager(t)
+	installAlloc(t, m, "{maxInstances: 1}")
+	// Compile before timing anything.
+	if err := m.Check(context.Background(), KindProtocol, "alloc"); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, _, err := m.Execute(context.Background(), "alloc", allocReq(map[string]string{"sleepMs": "1000"}))
+		done <- err
+	}()
+	time.Sleep(100 * time.Millisecond) // let call A take the only slot
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	_, _, err := m.Execute(ctx, "alloc", allocReq(nil))
+	if !errors.Is(err, ErrBusy) || err.Error() != "plugin alloc is busy: all 1 instances in use" {
+		t.Fatalf("second call = %v, want the busy error", err)
+	}
+	if err := <-done; err != nil {
+		t.Fatalf("call A: %v", err)
+	}
+	// The slot is free again.
+	if _, _, err := m.Execute(context.Background(), "alloc", allocReq(nil)); err != nil {
+		t.Fatalf("after A finished: %v", err)
 	}
 }

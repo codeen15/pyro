@@ -50,9 +50,16 @@ limits: { memoryMB: 128 } # optional; see Limits below
 
 ### Limits
 - `limits.memoryMB`: the most memory one plugin instance may use. Default 128 for `wasm`,
-  256 for `js`; at most 1024.
+  256 for `js`; at most 1024. It is enforced per plugin: an instance that tries to grow its
+  memory past the limit traps, the call fails with `plugin crashed: …`, and the instance is
+  discarded (the next call starts a fresh one). Plugins with the same limit share one
+  runtime; all runtimes share the compilation cache in `<plugins dir>/cache`.
 - `limits.maxInstances`: the most live instances of the plugin at once. Default 32 for `js`;
-  0 (the default for `wasm`) means unbounded. It can't be negative.
+  0 (the default for `wasm`) means unbounded. It can't be negative. When every instance is
+  in use, further calls queue until one is free. A call whose deadline (or cancellation)
+  comes while it is still queued fails with `plugin <name> is busy: all <n> instances in use`
+  (`plugin.ErrBusy` in Go). At most `maxInstances` idle instances are kept for reuse.
+- Plugins see real monotonic time, so `time.Sleep` (and timers built on it) work.
 - The memory limit is part of what you approve: a plugin whose new version asks for a
   different `memoryMB` needs approval again. Approvals saved before limits existed count as
   128 MB.

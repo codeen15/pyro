@@ -39,7 +39,11 @@ plugins there.
 
 The permissions include the plugin's **memory limit** (128 MB unless its manifest says
 otherwise; JavaScript plugins default to 256 MB). A new version that asks for a different
-limit needs approval again, like one that asks for new network access.
+limit needs approval again, like one that asks for new network access. A plugin that uses
+more memory than its limit fails that call with `plugin crashed`; the next call starts
+fresh. A plugin can also cap how many copies of it run at once (`maxInstances`): extra
+calls wait their turn, and one that runs out of time while waiting fails with
+`plugin <name> is busy: all <n> instances in use`.
 
 Installed plugins live in `~/.pyro/plugins` (or `$PYRO_PLUGINS_DIR`), outside your
 workspace. A workspace that uses a plugin type keeps working without it: requests are kept

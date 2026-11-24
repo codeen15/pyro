@@ -1,0 +1,10 @@
+name: alloc
+version: 0.1.0
+abi: 1
+title: Alloc (test)
+description: Test plugin for the host's memory and instance limits.
+module: alloc.wasm
+provides:
+  - kind: protocol
+    id: alloc
+capabilities: {}

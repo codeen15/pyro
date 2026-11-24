@@ -27,6 +27,8 @@ var (
 	ErrNotFound    = errors.New("plugin not found")
 	ErrNotApproved = errors.New("plugin needs approval")
 	ErrDisabled    = errors.New("plugin is disabled")
+	// ErrBusy: every instance a plugin may run (limits.maxInstances) is in use.
+	ErrBusy = errors.New("plugin busy")
 )
 
 // DefaultTimeout bounds one plugin call.
@@ -78,11 +80,13 @@ type loaded struct {
 // Manager owns installed plugins under one directory (~/.pyro/plugins).
 // Safe for concurrent use.
 type Manager struct {
-	dir  string
-	mu   sync.Mutex
-	h    *host
-	st   state
-	byNm map[string]*loaded
+	dir string
+	mu  sync.Mutex
+	// hosts holds one runtime per distinct memory limit (MB); all share
+	// the compilation cache in <dir>/cache.
+	hosts map[int]*host
+	st    state
+	byNm  map[string]*loaded
 }
 
 // Open loads installed plugins from dir; modules compile on first use.
@@ -293,7 +297,7 @@ func (m *Manager) install(man *Manifest, manifest, module []byte, approve bool) 
 func (m *Manager) verify(man *Manifest, module []byte) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
-	h, err := m.host(ctx)
+	h, err := m.host(ctx, man.Limits.MemoryMB)
 	if err != nil {
 		return err
 	}
@@ -301,7 +305,7 @@ func (m *Manager) verify(man *Manifest, module []byte) error {
 	if err != nil {
 		return fmt.Errorf("compiling %s: %w", man.Module, err)
 	}
-	p := &pool{h: h, cm: cm}
+	p := newPool(h, cm, man.Name, 0)
 	defer p.close(ctx)
 	var r struct {
 		ABI      int `json:"abi"`
@@ -332,17 +336,22 @@ func (m *Manager) verify(man *Manifest, module []byte) error {
 	return nil
 }
 
-func (m *Manager) host(ctx context.Context) (*host, error) {
+// host returns the runtime for a memory limit in MB, creating it on first use.
+func (m *Manager) host(ctx context.Context, memoryMB int) (*host, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.h == nil {
-		h, err := newHost(ctx, filepath.Join(m.dir, "cache"), 512)
-		if err != nil {
-			return nil, err
-		}
-		m.h = h
+	if h := m.hosts[memoryMB]; h != nil {
+		return h, nil
 	}
-	return m.h, nil
+	h, err := newHost(ctx, filepath.Join(m.dir, "cache"), memoryMB)
+	if err != nil {
+		return nil, err
+	}
+	if m.hosts == nil {
+		m.hosts = map[int]*host{}
+	}
+	m.hosts[memoryMB] = h
+	return h, nil
 }
 
 // Remove uninstalls a plugin.
@@ -437,7 +446,7 @@ func (m *Manager) Check(ctx context.Context, kind, id string) error {
 }
 
 func (m *Manager) compile(ctx context.Context, l *loaded) error {
-	h, err := m.host(ctx)
+	h, err := m.host(ctx, l.man.Limits.MemoryMB)
 	if err != nil {
 		return err
 	}
@@ -454,7 +463,7 @@ func (m *Manager) compile(ctx context.Context, l *loaded) error {
 	if err != nil {
 		return fmt.Errorf("compiling plugin %s: %w", l.man.Name, err)
 	}
-	l.pool = &pool{h: h, cm: cm}
+	l.pool = newPool(h, cm, l.man.Name, l.man.Limits.MaxInstances)
 	return nil
 }
 
@@ -659,7 +668,7 @@ func (m *Manager) Provider(kind, id string) (Provide, bool) {
 	return Provide{}, false
 }
 
-// Close releases every instance and the runtime.
+// Close releases every instance and the runtimes.
 func (m *Manager) Close() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -669,8 +678,8 @@ func (m *Manager) Close() {
 			l.pool.close(ctx)
 		}
 	}
-	if m.h != nil {
-		m.h.close(ctx)
-		m.h = nil
+	for _, h := range m.hosts {
+		h.close(ctx)
 	}
+	m.hosts = nil
 }
