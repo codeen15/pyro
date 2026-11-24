@@ -3,6 +3,7 @@ package pyro
 import (
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -50,6 +51,11 @@ func TestHandleOp(t *testing.T) {
 		return map[string]string{"ok": "1"}
 	})
 	HandleOp("boom", func(raw json.RawMessage) any { panic("kaboom") })
+	t.Cleanup(func() {
+		delete(ops, "load")
+		delete(ops, "boom")
+		delete(ops, "collide")
+	})
 	out := dispatch([]byte(`{"op":"load","x":1}`))
 	if string(out) != `{"ok":"1"}` {
 		t.Fatalf("load reply = %s", out)
@@ -57,6 +63,31 @@ func TestHandleOp(t *testing.T) {
 	if seen != `{"op":"load","x":1}` {
 		t.Fatalf("handler saw %s", seen)
 	}
+
+	// A handler's message may reuse typed field names with another shape.
+	HandleOp("collide", func(raw json.RawMessage) any {
+		seen = string(raw)
+		return map[string]string{"ok": "2"}
+	})
+	in := `{"op":"collide","config":{"n":1},"params":{"a":[1]}}`
+	if out := dispatch([]byte(in)); string(out) != `{"ok":"2"}` {
+		t.Fatalf("collide reply = %s", out)
+	}
+	if seen != in {
+		t.Fatalf("handler saw %s, want %s", seen, in)
+	}
+	if out := dispatch([]byte("{bad")); !strings.HasPrefix(string(out), `{"error":"invalid message: `) {
+		t.Fatalf("invalid json reply = %s", out)
+	}
+
+	func() {
+		defer func() {
+			if recover() == nil {
+				t.Fatal("HandleOp(describe) must panic")
+			}
+		}()
+		HandleOp("describe", func(raw json.RawMessage) any { return nil })
+	}()
 	var r reply
 	json.Unmarshal(dispatch([]byte(`{"op":"boom"}`)), &r)
 	if r.Error == "" {

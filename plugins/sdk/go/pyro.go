@@ -339,18 +339,27 @@ func dispatch(in []byte) (out []byte) {
 			out, _ = json.Marshal(reply{Error: "plugin panicked: " + toString(r)})
 		}
 	}()
-	var msg message
-	if err := json.Unmarshal(in, &msg); err != nil {
+	// Only the op is decoded here, so a handler's message can carry fields
+	// of any shape; only built-in ops are decoded into the typed message.
+	var head struct {
+		Op string `json:"op"`
+	}
+	if err := json.Unmarshal(in, &head); err != nil {
 		out, _ = json.Marshal(reply{Error: "invalid message: " + err.Error()})
 		return out
 	}
-	if f, ok := ops[msg.Op]; ok {
+	if f, ok := ops[head.Op]; ok {
 		raw := append(json.RawMessage(nil), in...)
 		b, err := json.Marshal(f(raw))
 		if err != nil {
 			b, _ = json.Marshal(reply{Error: "handler reply: " + err.Error()})
 		}
 		return b
+	}
+	var msg message
+	if err := json.Unmarshal(in, &msg); err != nil {
+		out, _ = json.Marshal(reply{Error: "invalid message: " + err.Error()})
+		return out
 	}
 	out, _ = json.Marshal(handle(&msg))
 	return out
