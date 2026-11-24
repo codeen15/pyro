@@ -159,6 +159,9 @@ func TestAgentUpdate(t *testing.T) {
 	if _, err := st.UpdateAgent(ctx, c.ID, nil, &addr, nil, nil); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("address on connect = %v", err)
 	}
+	if _, err := st.UpdateAgent(ctx, c.ID, nil, nil, nil, &yes); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("insecureTLS on connect = %v", err)
+	}
 }
 
 func TestAgentRotate(t *testing.T) {

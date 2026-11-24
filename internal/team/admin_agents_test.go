@@ -2,6 +2,7 @@ package team
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -185,7 +186,7 @@ func TestAdminAgentsConnectLifecycle(t *testing.T) {
 	if tok == "" || out["base"] != "https://pyro.example.com" {
 		t.Fatalf("token/base: %v", out)
 	}
-	if !strings.Contains(cmd, "--connect https://pyro.example.com --token "+tok) || !strings.HasPrefix(cmd, "docker run -d --name pyro-agent --restart unless-stopped ghcr.io/codeen15/pyro:") || !strings.Contains(cmd, " agent --connect ") {
+	if !strings.Contains(cmd, "--connect 'https://pyro.example.com' --token '"+tok+"'") || !strings.HasPrefix(cmd, "docker run -d --name pyro-agent --restart unless-stopped ghcr.io/codeen15/pyro:") || !strings.Contains(cmd, " agent --connect ") || out["warning"] != nil {
 		t.Fatalf("command: %q", cmd)
 	}
 	if a, _ := st.Agents(ctx); len(a) != 1 || a[0].Mode != AgentConnect {
@@ -202,7 +203,15 @@ func TestAdminAgentsConnectLifecycle(t *testing.T) {
 	dialIn(t, ts.URL, tok, "office-1")
 	waitStatus(t, srv.agents, id, "available", 5*time.Second)
 
+	// The list never shows the token or its hash.
+	if _, list := admin.doList("GET", "/api/v1/admin/agents"); strings.Contains(toJSON(list), tok) || strings.Contains(toJSON(list), hashAgentToken(tok)) || strings.Contains(strings.ToLower(toJSON(list)), "hash") {
+		t.Fatalf("list leaks the token: %v", list)
+	}
+
 	// Connect agents have no address or stored token to change; rename works.
+	if code, _ := admin.do("PATCH", "/api/v1/admin/agents/"+id, `{"insecureTLS":true}`); code != 400 {
+		t.Fatalf("patch insecureTLS on connect: %d", code)
+	}
 	if code, _ := admin.do("PATCH", "/api/v1/admin/agents/"+id, `{"address":"1.2.3.4:5"}`); code != 400 {
 		t.Fatalf("patch address on connect: %d", code)
 	}
@@ -257,7 +266,7 @@ func TestAdminAgentsCommandBase(t *testing.T) {
 	signup(t, admin, "admin@example.com")
 	_, out := admin.do("POST", "/api/v1/admin/agents", `{"name":"a","mode":"connect"}`)
 	host := strings.TrimPrefix(ts.URL, "http://")
-	if out["base"] != "http://"+host || !strings.Contains(out["command"].(string), "--connect http://"+host+" --token ") {
+	if out["base"] != "http://"+host || !strings.Contains(out["command"].(string), "--connect 'http://"+host+"' --token '") {
 		t.Fatalf("base: %v", out)
 	}
 }
@@ -312,8 +321,100 @@ func TestAdminAgentsFlagAgentsReadOnly(t *testing.T) {
 			t.Fatalf("%s %s: %d %v", rt[0], rt[1], code, out)
 		}
 	}
+	// An unknown flag id is a 404 like any other unknown id.
+	if code, _ := admin.do("POST", "/api/v1/admin/agents/"+flagAgentPrefix+"9.9.9.9:1/test", ""); code != 404 {
+		t.Fatalf("test unknown flag id: %d", code)
+	}
 	// Testing is fine.
 	if code, out := admin.do("POST", "/api/v1/admin/agents/"+id+"/test", ""); code != 200 || out["status"] != "available" {
 		t.Fatalf("test: %d %v", code, out)
+	}
+}
+
+// hostile creates a connecting agent with a chosen Host header.
+func hostile(t *testing.T, c *client, host string) map[string]any {
+	t.Helper()
+	req, _ := http.NewRequest("POST", c.ts.URL+"/api/v1/admin/agents", strings.NewReader(`{"name":"agent-for-test","mode":"connect"}`))
+	req.Host = host
+	// The jar doesn't attach cookies once req.Host differs from the URL's.
+	for _, ck := range c.c.Jar.Cookies(req.URL) {
+		req.AddCookie(ck)
+	}
+	req.Header.Set(CSRFHeader, "1")
+	res, err := c.c.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	var out map[string]any
+	_ = json.NewDecoder(res.Body).Decode(&out)
+	if res.StatusCode != 201 {
+		t.Fatalf("host %q: %d %v", host, res.StatusCode, out)
+	}
+	return out
+}
+
+func TestAdminAgentsCommandIsShellSafe(t *testing.T) {
+	// A crafted Host header must not reach a shell: the command falls back to
+	// a placeholder and a warning says why.
+	for _, host := range []string{"x;id", "x$(id)", "x'y", "x&y", "x!y"} {
+		ts, _ := newTeam(t, Config{})
+		admin := newClient(t, ts)
+		signup(t, admin, "admin@example.com")
+		out := hostile(t, admin, host)
+		cmd := out["command"].(string)
+		beforeToken := strings.SplitN(cmd, " --token", 2)[0]
+		if !strings.HasSuffix(beforeToken, "--connect '<server-url>'") || strings.ContainsAny(cmd, ";$&!") || strings.Contains(cmd, "id)") {
+			t.Fatalf("host %q: command %q", host, cmd)
+		}
+		if w, _ := out["warning"].(string); w == "" || !strings.Contains(w, "PYRO_PUBLIC_URL") {
+			t.Fatalf("host %q: warning %v", host, out["warning"])
+		}
+		if out["base"] != "http://"+host {
+			t.Fatalf("host %q: base %v", host, out["base"])
+		}
+	}
+
+	// A public URL that isn't a plain address is refused the same way.
+	for _, pub := range []string{"https://pyro.example.com; rm -rf /", "https://a b", "https://x/$(id)", "ftp://x", "https://x'y", "pyro.example.com"} {
+		ts, _ := newTeam(t, Config{PublicURL: pub})
+		admin := newClient(t, ts)
+		signup(t, admin, "admin@example.com")
+		_, out := admin.do("POST", "/api/v1/admin/agents", `{"name":"a","mode":"connect"}`)
+		cmd, _ := out["command"].(string)
+		if !strings.Contains(cmd, "--connect '<server-url>' --token '") || out["warning"] == nil || strings.ContainsAny(cmd, ";$&") {
+			t.Fatalf("public URL %q: %q %v", pub, cmd, out["warning"])
+		}
+	}
+
+	// Ordinary addresses are single-quoted, with no warning.
+	for _, pub := range []string{"https://pyro.example.com", "http://10.0.0.5:7878", "https://[::1]:8443", "https://pyro.example.com/base/path"} {
+		ts, _ := newTeam(t, Config{PublicURL: pub})
+		admin := newClient(t, ts)
+		signup(t, admin, "admin@example.com")
+		_, out := admin.do("POST", "/api/v1/admin/agents", `{"name":"a","mode":"connect"}`)
+		cmd, _ := out["command"].(string)
+		if !strings.Contains(cmd, "--connect '"+pub+"' --token '") || out["warning"] != nil {
+			t.Fatalf("public URL %q: %q %v", pub, cmd, out["warning"])
+		}
+	}
+
+	// Rotating goes through the same check.
+	ts, _ := newTeam(t, Config{PublicURL: "https://x;y"})
+	admin := newClient(t, ts)
+	signup(t, admin, "admin@example.com")
+	_, out := admin.do("POST", "/api/v1/admin/agents", `{"name":"a","mode":"connect"}`)
+	id := out["agent"].(map[string]any)["id"].(string)
+	_, out = admin.do("POST", "/api/v1/admin/agents/"+id+"/token", "")
+	if cmd, _ := out["command"].(string); !strings.Contains(cmd, "--connect '<server-url>'") || out["warning"] == nil {
+		t.Fatalf("rotate: %v", out)
+	}
+}
+
+func TestShellQuote(t *testing.T) {
+	for in, want := range map[string]string{"abc": `'abc'`, "": `''`, "a b": `'a b'`, "it's": `'it'\''s'`, "$(x);": `'$(x);'`} {
+		if got := shellQuote(in); got != want {
+			t.Errorf("shellQuote(%q) = %s, want %s", in, got, want)
+		}
 	}
 }

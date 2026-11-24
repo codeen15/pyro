@@ -230,8 +230,8 @@ func (s *Store) UpdateAgent(ctx context.Context, id string, name, address, token
 		if err != nil {
 			return err
 		}
-		if (address != nil || token != nil) && row.Mode != AgentDirect {
-			return invalid("only direct agents have an address and a stored token")
+		if (address != nil || token != nil || insecure != nil) && row.Mode != AgentDirect {
+			return invalid("only direct agents have an address, a stored token and a certificate setting")
 		}
 		if name != nil {
 			n, err := checkAgentName(*name)

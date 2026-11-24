@@ -70,12 +70,38 @@ func (s *Server) adminAgents(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
+// safeBase matches the server addresses a command may carry: http(s), a
+// plain host name, IPv4 or bracketed IPv6 address, an optional port and a
+// simple path. Anything else (the Host header is client-controlled) is data
+// for the page to show, never text for a shell.
+var safeBase = regexp.MustCompile(`^https?://(?:\[[0-9A-Fa-f:.]+\]|[A-Za-z0-9.-]+)(?::[0-9]{1,5})?(?:/[A-Za-z0-9._~/-]*)?$`)
+
+// shellQuote wraps s in single quotes for a POSIX shell.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
 // agentCommand is how to start a connecting agent: the Docker command, and
 // the base address it dials (the public URL, else the one the admin used).
-func (s *Server) agentCommand(r *http.Request, token string) (base, command string) {
+// When that address isn't a plain one, the command carries a placeholder
+// and warning says to set PYRO_PUBLIC_URL.
+func (s *Server) agentCommand(r *http.Request, token string) (base, command, warning string) {
 	base = strings.TrimRight(s.baseURL(r), "/")
+	arg := base
+	if !safeBase.MatchString(base) {
+		arg = "<server-url>"
+		warning = "The server's address couldn't be used in the command. Set PYRO_PUBLIC_URL to the address agents should use, or replace <server-url> yourself."
+	}
 	return base, fmt.Sprintf("docker run -d --name pyro-agent --restart unless-stopped ghcr.io/codeen15/pyro:%s agent --connect %s --token %s",
-		agentImageTag(version.Version), base, token)
+		agentImageTag(version.Version), shellQuote(arg), shellQuote(token)), warning
+}
+
+// setCommand adds the generated command (and its warning) to a response.
+func setCommand(out map[string]any, base, command, warning string) {
+	out["base"], out["command"] = base, command
+	if warning != "" {
+		out["warning"] = warning
+	}
 }
 
 var releaseVersion = regexp.MustCompile(`^v?(\d+\.\d+\.\d+(?:-rc\.\d+)?)$`)
@@ -116,7 +142,8 @@ func (s *Server) adminAddAgent(w http.ResponseWriter, r *http.Request) {
 		var token string
 		if a, token, err = s.st.AddConnectAgent(ctx, body.Name, by); err == nil {
 			out["token"] = token
-			out["base"], out["command"] = s.agentCommand(r, token)
+			base, command, warning := s.agentCommand(r, token)
+			setCommand(out, base, command, warning)
 			w.Header().Set("Cache-Control", "no-store")
 		}
 	default:
@@ -190,11 +217,17 @@ func (s *Server) adminDeleteAgent(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) adminTestAgent(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	if !strings.HasPrefix(id, flagAgentPrefix) {
-		if _, err := s.st.loadAgent(r.Context(), s.st.db, id); err != nil {
-			s.fail(w, err)
-			return
-		}
+	if _, isFlag := s.agents.isFlag(id); isFlag {
+		writeJSON(w, http.StatusOK, s.agents.Probe(r.Context(), id))
+		return
+	}
+	if strings.HasPrefix(id, flagAgentPrefix) {
+		writeError(w, http.StatusNotFound, "no such agent")
+		return
+	}
+	if _, err := s.st.loadAgent(r.Context(), s.st.db, id); err != nil {
+		s.fail(w, err)
+		return
 	}
 	writeJSON(w, http.StatusOK, s.agents.Probe(r.Context(), id))
 }
@@ -211,7 +244,9 @@ func (s *Server) adminRotateAgent(w http.ResponseWriter, r *http.Request) {
 	}
 	s.agents.Forget(a.ID)
 	s.record(r, "", "", "agent.rotate", a.Name)
-	base, command := s.agentCommand(r, token)
+	base, command, warning := s.agentCommand(r, token)
+	out := map[string]any{"token": token}
+	setCommand(out, base, command, warning)
 	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, http.StatusOK, map[string]any{"token": token, "base": base, "command": command})
+	writeJSON(w, http.StatusOK, out)
 }
