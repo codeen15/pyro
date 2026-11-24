@@ -118,6 +118,8 @@ test("team server: invite a viewer, promote them, copy a collection and resolve 
   const headers = { "X-Pyro-CSRF": "1" };
   expect((await page.request.post(`${api}/collections`, { headers, data: { slug: "orders", name: "Orders" } })).status()).toBe(201);
   expect((await page.request.put(`${api}/requests/orders/list`, { headers, data: { kind: "http", name: "List orders", method: "GET", url: "http://127.0.0.1:7891/orders" } })).status()).toBe(200);
+  const orderPlan = "name: Orders smoke\nscenarios:\n  s: { executor: per-vu-iterations, vus: 1, iterations: 1, flow: [ { request: orders/list } ] }\n";
+  expect((await page.request.put(`${api}/loadtests/orders-smoke`, { headers, data: { yaml: orderPlan } })).status()).toBe(200);
   await page.reload();
   await expect(page.locator(".tree")).toContainText("Orders");
 
@@ -149,6 +151,19 @@ test("team server: invite a viewer, promote them, copy a collection and resolve 
   await expect(bob.getByRole("button", { name: "Import", exact: true })).toHaveCount(0);
   await bob.getByRole("button", { name: "GET List orders", exact: true }).click();
   await expect(bob.getByRole("button", { name: "Read only" })).toBeVisible();
+
+  // A viewer's load test page doesn't ask for the agents (an editor-only list).
+  const agentCalls: string[] = [];
+  bob.on("request", (r) => {
+    if (new URL(r.url()).pathname.endsWith("/agents")) agentCalls.push(r.url());
+  });
+  await bob.getByRole("tab", { name: "Load" }).click();
+  await bob.locator(".rail .row", { hasText: "Orders smoke" }).first().click();
+  await expect(bob.getByRole("tab", { name: "YAML" })).toBeVisible();
+  await expect(bob.getByRole("radio", { name: /^Agents/ })).toHaveCount(0);
+  await bob.waitForLoadState("networkidle");
+  expect(agentCalls).toEqual([]);
+  await bob.getByRole("tab", { name: "Collections" }).click();
 
   // Alice sees Bob, and makes him an editor.
   await page.reload();

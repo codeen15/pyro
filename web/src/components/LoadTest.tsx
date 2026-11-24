@@ -39,6 +39,7 @@ import { DataEditor, StreamStepEditor } from "./LoadData";
 import { AgentChecklist, RunOnControl, useAgentSelection, type RunOn } from "./LoadAgents";
 import { SaveButton } from "./RequestEditor";
 import { LoadTestMenu } from "./LoadActions";
+import { useCanEdit } from "../team";
 
 const EXECUTORS = [
   { id: "constant-vus", label: "Constant VUs" },
@@ -101,10 +102,13 @@ export function LoadTestPage({ name }: { name: string }) {
   const [tab, setTab] = useState<Tab>("designer");
   const [confirm, setConfirm] = useState<string[] | null>(null);
   const [startError, setStartError] = useState<string | null>(null);
+  // Listing agents needs the editor role, like starting a test: viewers get neither.
+  const canEdit = useCanEdit();
   const agents = useQuery({
     queryKey: ["agents"],
     queryFn: api.agents,
     staleTime: 10_000,
+    enabled: canEdit,
   });
   const [where, setWhere] = useState<RunOn>("local");
   const agentCount = agents.data?.length ?? 0;

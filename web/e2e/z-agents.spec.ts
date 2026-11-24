@@ -41,11 +41,19 @@ test("admin adds a connecting agent, sees it connect, and removing it disconnect
   await expect(docker).toContainText(`docker run -d --name pyro-agent --restart unless-stopped ghcr.io/codeen15/pyro:`);
   await expect(docker).toContainText(`agent --connect '${TEAM}' --token '${token}'`);
   await expect(dialog.getByText("Waiting for the agent to connect")).toBeVisible();
+  // The token is shown once: Esc doesn't close the dialog by accident.
+  await page.keyboard.press("Escape");
+  await expect(dialog.getByLabel("Agent token", { exact: true })).toBeVisible();
 
   // Editing the address rebuilds the commands with the same shell quoting as the server.
   const address = dialog.getByLabel("Server address");
   await address.fill("http://10.0.0.1:7878");
   await expect(docker).toContainText(`agent --connect 'http://10.0.0.1:7878' --token '${token}'`);
+  // A plain-HTTP server address is marked as not encrypted; https:// isn't.
+  await expect(dialog.getByText(/^Not encrypted: over http:\/\//)).toBeVisible();
+  await address.fill("https://pyro.example.com");
+  await expect(dialog.getByText(/^Not encrypted/)).toHaveCount(0);
+  await address.fill("http://10.0.0.1:7878");
   await expect(dialog.getByLabel("Plain command", { exact: true })).toHaveText(`pyro agent --connect 'http://10.0.0.1:7878' --token '${token}'`);
   await address.fill("http://h/it's");
   await expect(docker).toContainText(`--connect 'http://h/it'\\''s' --token`);

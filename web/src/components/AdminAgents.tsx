@@ -167,7 +167,8 @@ function DirectModal({ agent, onClose, onSaved }: { agent?: AdminAgent; onClose:
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [saved, setSaved] = useState<AdminAgent | null>(null);
-  const plain = /^http:\/\//i.test(address.trim());
+  // http:// and a bare host:port are plain HTTP; only https:// is encrypted.
+  const plain = address.trim() !== "" && !/^https:\/\//i.test(address.trim());
   const ready = name.trim() && address.trim() && (agent || token);
 
   const save = async () => {
@@ -238,7 +239,11 @@ function DirectModal({ agent, onClose, onSaved }: { agent?: AdminAgent; onClose:
           <label className="modal-field">
             <span>Address</span>
             <Input aria-label="Address" placeholder="10.0.0.5:7979 or https://agent1.example.com" value={address} onChange={(e) => setAddress(e.target.value)} />
-            {plain && <span className="muted small">http:// is not encrypted: the token and test data cross the network in clear text. Fine on a private network.</span>}
+            {plain && (
+              <span className="muted small">
+                Not encrypted: without https:// the token and test data cross the network in clear text. Fine on a private network.
+              </span>
+            )}
           </label>
           <label className="modal-field">
             <span>Token</span>
@@ -309,6 +314,9 @@ function ConnectModal({
       width={720}
       title={info ? `Start “${name}”` : "Add an agent that connects in"}
       onCancel={onClose}
+      // The token is shown only once: a stray click outside or Esc must not close it.
+      maskClosable={!info}
+      keyboard={!info}
       footer={
         info ? (
           <Button type="primary" onClick={onClose}>
@@ -356,6 +364,7 @@ function ConnectCommands({ info, base, setBase, connected }: { info: AgentConnec
   const docker = edited ? dockerCommand(imageTag(info.command), address, info.token) : info.command;
   const plain = plainCommand(edited ? address : info.warning ? "<server-url>" : info.base, info.token);
   const shaky = address !== "" && !/^https?:\/\/[^\s']+$/.test(address);
+  const plainHTTP = /^http:\/\//i.test(address);
 
   return (
     <div className="invite-result agent-connect">
@@ -374,6 +383,9 @@ function ConnectCommands({ info, base, setBase, connected }: { info: AgentConnec
           Where the agent reaches this server: the address you use for this page, with the same port, or a public address if the agent is outside your network.
           {shaky && " It should look like http://host:port or https://host."}
         </span>
+        {plainHTTP && (
+          <span className="muted small">Not encrypted: over http:// the token and test data cross the network in clear text. Fine on a private network.</span>
+        )}
       </label>
       <label className="modal-field">
         <span>Agent token</span>
