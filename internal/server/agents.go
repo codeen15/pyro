@@ -50,18 +50,22 @@ type AgentSource interface {
 }
 
 // UnavailableError says which agents can't take a test, and why (by id).
-type UnavailableError struct{ Agents map[string]string }
+// Names, when set, gives the display names the message uses instead of ids.
+type UnavailableError struct {
+	Agents map[string]string
+	Names  map[string]string
+}
 
 func (e *UnavailableError) Error() string {
-	ids := make([]string, 0, len(e.Agents))
-	for id := range e.Agents {
-		ids = append(ids, id)
+	parts := make([]string, 0, len(e.Agents))
+	for id, why := range e.Agents {
+		name := id
+		if n := e.Names[id]; n != "" {
+			name = n
+		}
+		parts = append(parts, name+" ("+why+")")
 	}
-	sort.Strings(ids)
-	parts := make([]string, len(ids))
-	for i, id := range ids {
-		parts[i] = id + " (" + e.Agents[id] + ")"
-	}
+	sort.Strings(parts)
 	return "agents not available: " + strings.Join(parts, ", ")
 }
 
@@ -134,30 +138,44 @@ func (l *localAgents) client(addr string) *agent.Client {
 	return agent.NewClient(addr, l.token, l.insecure)
 }
 
-// probe asks a direct agent for its status (5 s at most).
-func (l *localAgents) probe(ctx context.Context, addr string) AgentStatus {
-	st := AgentStatus{
-		ID: flagPrefix + addr, Name: addr, Mode: "direct", Address: addr, FromFlags: true,
-		Encrypted: strings.HasPrefix(addr, "https://") || strings.HasPrefix(addr, "wss://"),
-	}
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+// EncryptedAddress reports whether a direct agent's address uses TLS.
+func EncryptedAddress(addr string) bool {
+	return strings.HasPrefix(addr, "https://") || strings.HasPrefix(addr, "wss://")
+}
+
+// ProbeTimeout is how long a direct agent has to answer a status check.
+const ProbeTimeout = 5 * time.Second
+
+// ProbeAgent asks a direct agent for its status (ProbeTimeout at most) and
+// fills st's status, detail, version, CPUs, max VUs and last seen. It also
+// returns the name the agent reports ("" when unreachable).
+func ProbeAgent(ctx context.Context, c *agent.Client, st AgentStatus) (AgentStatus, string) {
+	ctx, cancel := context.WithTimeout(ctx, ProbeTimeout)
 	defer cancel()
-	in, err := l.client(addr).Info(ctx)
+	in, err := c.Info(ctx)
 	if err != nil {
 		st.Status, st.Detail = "error", err.Error()
 		if _, transport := errors.AsType[*url.Error](err); transport {
 			st.Status = "offline"
 		}
-		return st
+		return st, ""
 	}
-	st.Status = "available"
+	st.Status, st.Detail = "available", ""
 	if in.Busy {
 		st.Status = "busy"
 	}
-	if in.Name != "" {
-		st.Name = in.Name
-	}
 	st.Version, st.CPUs, st.MaxVUs, st.LastSeen = in.Version, in.CPUs, in.MaxVUs, time.Now().Unix()
+	return st, in.Name
+}
+
+// probe asks a direct agent for its status (5 s at most).
+func (l *localAgents) probe(ctx context.Context, addr string) AgentStatus {
+	st, name := ProbeAgent(ctx, l.client(addr), AgentStatus{
+		ID: flagPrefix + addr, Name: addr, Mode: "direct", Address: addr, FromFlags: true, Encrypted: EncryptedAddress(addr),
+	})
+	if name != "" {
+		st.Name = name
+	}
 	return st
 }
 

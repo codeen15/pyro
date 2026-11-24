@@ -257,12 +257,13 @@ func serveTeam(f *teamFlags, host string, port int, agents []string, agentToken 
 		DataDir: dir, Store: st, PublicURL: c.PublicURL, Signup: c.Signup, SignupDomains: c.SignupDomains,
 		MaxLoads: c.MaxLoads, UI: web.Dist(), Mailer: team.NewMailer(c.SMTP), JWTSecret: secret,
 		Directory: directory, LDAPURL: c.LDAP.URL, OIDC: c.OIDC, DatabaseKind: td.kind,
+		FlagAgents: agents, FlagAgentToken: agentToken, AgentInsecure: agentInsecure,
 		Project: func(ws *store.Workspace, id string) server.Config {
 			eng := engine.New(httpdriver.New(httpdriver.Options{FileRoot: ws.Root}))
 			eng.Plugins = plugins
 			return server.Config{
 				Engine: eng, History: hist, PluginIndex: os.Getenv("PYRO_PLUGIN_INDEX"),
-				Agents: agents, AgentToken: agentToken, AgentInsecure: agentInsecure, Outputs: outs,
+				Outputs: outs,
 			}
 		},
 	})

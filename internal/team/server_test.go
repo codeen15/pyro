@@ -19,6 +19,12 @@ import (
 
 func newTeam(t *testing.T, cfg Config) (*httptest.Server, *Store) {
 	t.Helper()
+	ts, _, st := newTeamServer(t, cfg)
+	return ts, st
+}
+
+func newTeamServer(t *testing.T, cfg Config) (*httptest.Server, *Server, *Store) {
+	t.Helper()
 	dir := t.TempDir()
 	d := dbtest.Open(t)
 	st, err := NewStore(t.Context(), d)
@@ -39,7 +45,7 @@ func newTeam(t *testing.T, cfg Config) (*httptest.Server, *Store) {
 	srv := New(cfg)
 	ts := httptest.NewServer(srv.Handler())
 	t.Cleanup(func() { ts.Close(); srv.Close() })
-	return ts, st
+	return ts, srv, st
 }
 
 // client is a browser: a cookie jar plus the CSRF header on writes.

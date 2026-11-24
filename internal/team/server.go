@@ -69,8 +69,14 @@ type Config struct {
 	JWTSecret []byte
 	// AccessTTL is how long an access token lasts (0 = 15 minutes).
 	AccessTTL time.Duration
-	UI        fs.FS
-	Logger    *slog.Logger
+	// FlagAgents are load agents given on the command line (--agent): listed
+	// read-only beside the registered ones, reached with FlagAgentToken.
+	FlagAgents     []string
+	FlagAgentToken string
+	// AgentInsecure skips TLS verification for FlagAgents.
+	AgentInsecure bool
+	UI            fs.FS
+	Logger        *slog.Logger
 }
 
 // Server is the team server's HTTP front: sign-in, workspaces, projects, and
@@ -84,6 +90,7 @@ type Server struct {
 	byIP      *limiter
 	tokens    *issuer
 	oidc      oidcClients
+	agents    *agentRegistry
 
 	mu       sync.Mutex
 	projects map[string]*openProject
@@ -128,19 +135,23 @@ func New(cfg Config) *Server {
 		projects:  map[string]*openProject{},
 		stop:      make(chan struct{}),
 	}
+	s.agents = newAgentRegistry(cfg.Store, cfg.FlagAgents, cfg.FlagAgentToken, cfg.AgentInsecure, cfg.Logger)
+	s.agents.publicHTTPS = strings.HasPrefix(cfg.PublicURL, "https://")
+	s.agents.Start(context.Background())
 	go s.closeIdle()
 	return s
 }
 
-// Close shuts every open project down.
+// Close shuts every open project down, then the agent registry.
 func (s *Server) Close() {
 	close(s.stop)
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	for id, p := range s.projects {
 		p.srv.Close()
 		delete(s.projects, id)
 	}
+	s.mu.Unlock()
+	s.agents.Close()
 }
 
 func (s *Server) closeIdle() {
@@ -192,6 +203,7 @@ func (s *Server) project(p *ProjectInfo) (*openProject, error) {
 	}
 	cfg.Workspace, cfg.Key, cfg.Team, cfg.AnyHost, cfg.Token, cfg.UI = ws, "project:"+p.ID, true, true, "", nil
 	cfg.LoadSlots = s.loadSlots
+	cfg.AgentSource = s.agents
 	if cfg.Logger == nil {
 		cfg.Logger = s.log
 	}
@@ -241,6 +253,9 @@ func (s *Server) Handler() http.Handler {
 	r.Get("/auth/oidc/{id}/start", s.oidcStart)
 	r.Get("/auth/oidc/{id}/callback", s.oidcCallback)
 	r.Get("/api/v1/invites/{token}", s.previewInvite)
+	// Load agents that connect out to this server: no session or CSRF
+	// (a GET and WebSocket upgrade with the agent's own bearer token).
+	r.Get("/agent/v1/connect", s.agents.serveConnect)
 
 	r.Group(func(r chi.Router) {
 		r.Use(s.requireUser)

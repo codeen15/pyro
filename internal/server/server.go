@@ -580,11 +580,11 @@ func (s *Server) putFolder(w http.ResponseWriter, r *http.Request) {
 }
 
 // Busy reports whether the project has live work (an open WebSocket or
-// Socket.IO session, a collection run or a load test), so the team server
-// keeps it open.
+// Socket.IO session, a collection run or a load test, running or starting),
+// so the team server keeps it open.
 func (s *Server) Busy() bool {
 	s.loads.mu.Lock()
-	loading := s.loads.current != nil
+	loading := s.loads.current != nil || s.loads.starting
 	s.loads.mu.Unlock()
 	if loading {
 		return true

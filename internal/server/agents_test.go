@@ -281,3 +281,24 @@ func TestConfigAgentSource(t *testing.T) {
 		t.Fatal("Close didn't cancel the agents subscription")
 	}
 }
+
+func TestBusyWhileStarting(t *testing.T) {
+	env := newAgentEnv(t, nil, false)
+	if env.srv.Busy() {
+		t.Fatal("idle server is busy")
+	}
+	// A start that is claiming agents keeps the project open.
+	env.srv.loads.mu.Lock()
+	env.srv.loads.starting = true
+	env.srv.loads.mu.Unlock()
+	if !env.srv.Busy() {
+		t.Fatal("a start in progress should count as busy")
+	}
+}
+
+func TestUnavailableErrorUsesNames(t *testing.T) {
+	err := &UnavailableError{Agents: map[string]string{"x1": "offline", "y2": "busy"}, Names: map[string]string{"x1": "vps-sg"}}
+	if got := err.Error(); got != "agents not available: vps-sg (offline), y2 (busy)" {
+		t.Fatalf("%q", got)
+	}
+}
