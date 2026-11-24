@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Deploying the team server anywhere: a Docker image (`ghcr.io/codeen15/pyro`, amd64 and
+  arm64, non-root, data on `/data`), a Compose file that pulls it or builds it from source, a
+  systemd unit for machines without Docker, and the same for load agents (`pyro agent`) in
+  `deploy/`. All settings come from `PYRO_*` environment variables, including an existing
+  PostgreSQL through `PYRO_DATABASE_URL`. See "Deploying the team server" in the guide.
 - Plugin building: `pyro plugin new --lang go|js` creates a plugin from a template;
   `pyro plugin dev <dir>` rebuilds (Go) or reinstalls (JavaScript) on every save, approves the
   manifest's permissions for you and prints them; `pyro plugin test <dir|name>` runs one call

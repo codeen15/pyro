@@ -1,0 +1,28 @@
+# Pyro load agent: the same image as the server, run as `pyro agent`. It has no
+# web UI; the team server sends it a share of each load test on port 7979.
+# Copy agent.env.example to .env (next to this file) and set PYRO_AGENT_TOKEN.
+#
+#   docker compose -f docker-compose.agent.yml up -d            # pull
+#   docker compose -f docker-compose.agent.yml up -d --build    # build from this checkout
+#
+# Open port 7979 only to the team server. On Dokploy you can instead give the
+# agent a domain (container port 7979, HTTPS on), drop `ports`, and list it on the
+# server as https://agent1.example.com.
+services:
+  pyro-agent:
+    image: ghcr.io/codeen15/pyro:${PYRO_IMAGE_TAG:-latest}
+    build:
+      context: ..
+      args:
+        VERSION: ${PYRO_VERSION:-dev}
+    command: ["agent"]
+    restart: unless-stopped
+    ports:
+      - "${PYRO_AGENT_BIND:-0.0.0.0}:${PYRO_AGENT_PORT:-7979}:7979"
+    volumes:
+      - pyro-agent-data:/data # plugins installed on this agent
+    environment:
+      PYRO_AGENT_TOKEN: ${PYRO_AGENT_TOKEN:?set PYRO_AGENT_TOKEN (openssl rand -hex 32)}
+
+volumes:
+  pyro-agent-data:

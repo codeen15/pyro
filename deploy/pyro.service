@@ -1,0 +1,38 @@
+# Pyro team server on a machine without Docker.
+#
+#   sudo useradd --system --home /var/lib/pyro --shell /usr/sbin/nologin pyro
+#   tar xzf pyro_<version>_linux_amd64.tar.gz          # from the GitHub release
+#   sudo install -m 755 pyro_<version>_linux_amd64/pyro /usr/local/bin/pyro
+#   sudo install -d -m 750 /etc/pyro
+#   sudo install -m 640 -g pyro deploy/.env.example /etc/pyro/pyro.env   # then edit it
+#   sudo install -m 644 deploy/pyro.service /etc/systemd/system/pyro.service
+#   sudo systemctl daemon-reload && sudo systemctl enable --now pyro
+#
+# It listens on 127.0.0.1:7878 for a reverse proxy on this host. To serve HTTPS
+# itself, set PYRO_HOST=0.0.0.0, PYRO_TLS_CERT and PYRO_TLS_KEY in pyro.env.
+# Admin commands: sudo -u pyro env $(grep -v '^#' /etc/pyro/pyro.env | xargs) \
+#   PYRO_DATA_DIR=/var/lib/pyro pyro admin …
+[Unit]
+Description=Pyro team server
+Documentation=https://github.com/codeen15/pyro/blob/main/docs/guide/team-server.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=pyro
+Group=pyro
+Environment=PYRO_DATA_DIR=/var/lib/pyro PYRO_PLUGINS_DIR=/var/lib/pyro/plugins PYRO_HOST=127.0.0.1 PYRO_PORT=7878
+EnvironmentFile=-/etc/pyro/pyro.env
+ExecStart=/usr/local/bin/pyro serve --team
+StateDirectory=pyro
+StateDirectoryMode=0750
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/var/lib/pyro
+
+[Install]
+WantedBy=multi-user.target

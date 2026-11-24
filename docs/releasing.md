@@ -12,6 +12,11 @@
    become pre-releases.
 5. Download one archive, check it against `SHA256SUMS`, run `pyro version`, then publish the
    draft.
+6. The **Docker** workflow builds the image for amd64 and arm64, smoke-tests it
+   (`scripts/docker-smoke.sh`) and pushes `ghcr.io/codeen15/pyro:<X.Y.Z>`, `:<X.Y>` and
+   `:latest`. Pushes to `main` publish `:edge`; pull requests only build. The first push
+   creates a private package: make it public under the package's settings on GitHub. Locally,
+   `make docker-smoke` runs the same build and checks.
 
 Locally, `make dist VERSION=v0.1.0` builds the same files into `dist/`:
 

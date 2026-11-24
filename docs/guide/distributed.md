@@ -43,6 +43,14 @@ pyro agent --connect controller.example.com:7980 --token s3cret
 Connected agents wait for tests and reconnect by themselves. The agent listener is separate
 from the UI, which stays on your machine.
 
+## Running agents with Docker or systemd
+
+Agents use the same Docker image as the team server, with `agent` as the command, and
+`deploy/` has a Compose file and a systemd unit for them. See
+[Load agents on other machines](team-server.md#load-agents-on-other-machines). A team
+server connects to its agents (`--agent`); agents that dial out (`--agent-listen`) work with
+`pyro serve` and `pyro load`, not with `pyro serve --team`.
+
 ## What to know
 
 - **Splitting:** each agent gets a share of every scenario. VU counts are split as evenly as

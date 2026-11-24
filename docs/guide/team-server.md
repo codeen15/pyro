@@ -214,6 +214,178 @@ Passwords and session cookies must not travel over plain HTTP on a network. Eith
 
 Pyro warns at start-up when it serves plain HTTP on a non-local address.
 
+## Deploying the team server
+
+Pyro is one program: the web UI and the engine are in the same binary, so a deployment is a
+single container or service. Every setting comes from `PYRO_*` environment variables. The
+`deploy/` folder of the repository has a ready-made kit:
+
+| File | Use |
+|---|---|
+| `deploy/docker-compose.yml` | The team server with Docker Compose: pulls the image or builds it |
+| `deploy/.env.example` | Every server setting, with comments |
+| `deploy/pyro.service` | The team server as a systemd service, without Docker |
+| `deploy/docker-compose.agent.yml`, `deploy/agent.env.example`, `deploy/pyro-agent.service` | [Load agents](#load-agents-on-other-machines) |
+
+Whichever way you run it, the server keeps everything it writes (the SQLite database, the
+sign-in key, project files and installed plugins) in one data directory: `/data` in the
+image, `/var/lib/pyro` with systemd. Back that up. If you point it at PostgreSQL, back up
+the database too.
+
+### 1. Pull the image
+
+The image is published to `ghcr.io/codeen15/pyro` for amd64 and arm64:
+
+| Tag | What |
+|---|---|
+| `latest` | The newest release |
+| `0.2.0`, `0.2` | A release, or the newest patch of a minor release |
+| `edge` | The `main` branch, for trying changes before a release |
+
+```sh
+docker run -d --name pyro --restart unless-stopped \
+  -v pyro-data:/data -p 127.0.0.1:7878:7878 \
+  -e PYRO_PUBLIC_URL=https://pyro.example.com \
+  ghcr.io/codeen15/pyro:latest
+```
+
+Or with Compose, from a checkout (or just the `deploy/` folder):
+
+```sh
+cp deploy/.env.example deploy/.env      # then edit it
+docker compose -f deploy/docker-compose.yml up -d
+```
+
+The image runs as an unprivileged user and has no shell. Its port is bound to 127.0.0.1, so
+only a reverse proxy on the same machine reaches it (see [HTTPS](#https)). Set
+`PYRO_BIND=0.0.0.0` in `.env` to publish it on the network.
+
+### 2. Build the image yourself
+
+From a checkout, with Docker:
+
+```sh
+make docker                                         # builds pyro:dev; IMAGE=name:tag to change
+docker compose -f deploy/docker-compose.yml up -d --build   # or build and start with Compose
+```
+
+`make docker-smoke` builds the image and checks it: it starts in team mode, runs as the
+unprivileged user on a fresh volume, keeps its data across a restart and runs admin commands.
+
+### 3. Dokploy (and similar platforms)
+
+Dokploy runs the Compose file and puts its Traefik proxy in front of it, with HTTPS:
+
+1. Create a **Compose** service from the repository, with `deploy/docker-compose.yml` as the
+   compose path. (Or create an **Application** from the image `ghcr.io/codeen15/pyro:latest`.)
+2. In **Environment**, paste the settings you need from `deploy/.env.example`. Set
+   `PYRO_PUBLIC_URL` to the address people will open, starting with `https://`.
+3. In **Domains**, add the host name, container port **7878**, and turn HTTPS on.
+4. **Deploy**, open the address and create the first account.
+
+Dokploy routes to the container port itself, so the host port mapping isn't needed there.
+Portainer, Coolify and other Compose-based platforms work the same way.
+
+### 4. A machine without Docker
+
+Download the archive for your platform from the GitHub release, then:
+
+```sh
+sudo useradd --system --home /var/lib/pyro --shell /usr/sbin/nologin pyro
+tar xzf pyro_<version>_linux_amd64.tar.gz
+sudo install -m 755 pyro_<version>_linux_amd64/pyro /usr/local/bin/pyro
+sudo install -d -m 750 /etc/pyro
+sudo install -m 640 -g pyro deploy/.env.example /etc/pyro/pyro.env   # then edit it
+sudo install -m 644 deploy/pyro.service /etc/systemd/system/pyro.service
+sudo systemctl daemon-reload && sudo systemctl enable --now pyro
+```
+
+The service listens on 127.0.0.1:7878 for a reverse proxy on the same machine and keeps its
+data in `/var/lib/pyro`.
+
+### The database
+
+Leave `PYRO_DATABASE_URL` empty to use SQLite in the data directory. To use a PostgreSQL you
+already run, set it, for example
+`PYRO_DATABASE_URL=postgres://pyro:secret@db.example.com:5432/pyro?sslmode=require`. The
+database must be reachable from the container or machine Pyro runs on (inside Docker,
+`localhost` is the container itself). See [Database](#database).
+
+### HTTPS in front
+
+Put a reverse proxy in front and set `PYRO_PUBLIC_URL=https://…`:
+
+- Dokploy, Coolify and similar platforms: their proxy does it (above).
+- Caddy: `pyro.example.com { reverse_proxy 127.0.0.1:7878 }` gets a certificate by itself.
+- nginx or Traefik: proxy to `127.0.0.1:7878`, and pass WebSocket upgrades (live updates use
+  `/api/v1/events`).
+
+Or let Pyro serve HTTPS itself: set `PYRO_TLS_CERT` and `PYRO_TLS_KEY` (paths inside the
+container or machine) and publish the port (`PYRO_BIND=0.0.0.0`).
+
+### Admin commands
+
+`pyro admin` must reach the same data directory and database as the server:
+
+```sh
+docker exec pyro /pyro admin users                              # Docker
+docker compose -f deploy/docker-compose.yml exec pyro /pyro admin users
+sudo -u pyro env $(grep -v '^#' /etc/pyro/pyro.env | xargs) \
+  PYRO_DATA_DIR=/var/lib/pyro pyro admin users                  # systemd
+```
+
+### Updating
+
+- Docker: `docker compose -f deploy/docker-compose.yml pull && docker compose -f deploy/docker-compose.yml up -d`,
+  or change `PYRO_IMAGE_TAG` to a release. In Dokploy, redeploy.
+- Without Docker: replace `/usr/local/bin/pyro` and `sudo systemctl restart pyro`.
+
+Updates keep the data directory, so accounts, projects and plugins stay.
+
+### If pulling the image fails
+
+A new GitHub package is **private** until its owner makes it public (on GitHub: the
+package's **Package settings → Change visibility**). Until then, log in first:
+`docker login ghcr.io` with a GitHub token that can read packages, or add the registry
+credentials in Dokploy.
+
+### Load agents on other machines
+
+[Load agents](distributed.md) use the **same image** (or binary), started as `pyro agent`. An
+agent has no web UI: the team server sends it a share of each load test on port 7979.
+
+| | Team server | Agent |
+|---|---|---|
+| Command | the default, `serve --team` | `agent` |
+| Port | 7878: web UI and API | 7979: agent endpoints only |
+| Settings | `PYRO_PUBLIC_URL`, `PYRO_DATABASE_URL`, … | `PYRO_AGENT_TOKEN` |
+| Data | needed: database, projects, plugins | optional: installed plugins only |
+
+On each load machine, with a long random token (`openssl rand -hex 32`):
+
+```sh
+docker run -d --name pyro-agent --restart unless-stopped \
+  -p 7979:7979 -e PYRO_AGENT_TOKEN=<token> ghcr.io/codeen15/pyro:latest agent
+```
+
+Or `deploy/docker-compose.agent.yml` with `deploy/agent.env.example`, or
+`deploy/pyro-agent.service` without Docker. In Dokploy, deploy the agent Compose file (or an
+Application from the image with the command `agent`); give it its own domain on container
+port **7979** with HTTPS, and the server reaches it as `https://agent1.example.com`.
+
+Then start the team server with the agents (add these to its command or Compose `command:`):
+
+```sh
+pyro serve --team --agent 10.0.0.5:7979,https://agent1.example.com --agent-token <token>
+```
+
+and choose **Run on: N agents** next to **Start** on a load test.
+
+- Use the same image tag (or release) on the server and its agents.
+- Open port 7979 only to the team server (firewall or private network): anyone with the
+  token can make an agent generate load.
+- Plugins a test uses must be installed on every agent too.
+
 ## Company sign-in
 
 Besides email and password, people can sign in with your company's accounts. Accounts are

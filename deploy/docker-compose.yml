@@ -1,0 +1,45 @@
+# Pyro team server. Every setting comes from the environment: copy .env.example
+# to .env (next to this file) and edit it.
+#
+#   docker compose up -d            # pull ghcr.io/codeen15/pyro:$PYRO_IMAGE_TAG
+#   docker compose up -d --build    # or build the image from this checkout
+#
+# The port is bound to 127.0.0.1 so a reverse proxy on the host serves HTTPS
+# (set PYRO_BIND=0.0.0.0 to expose it directly). Platforms such as Dokploy route
+# their own proxy to container port 7878; there you can drop `ports`.
+#
+# Guide: docs/guide/team-server.md, "Deploying the team server".
+services:
+  pyro:
+    image: ghcr.io/codeen15/pyro:${PYRO_IMAGE_TAG:-latest}
+    build:
+      context: ..
+      args:
+        VERSION: ${PYRO_VERSION:-dev}
+    restart: unless-stopped
+    ports:
+      - "${PYRO_BIND:-127.0.0.1}:${PYRO_HOST_PORT:-7878}:7878"
+    volumes:
+      - pyro-data:/data
+    environment:
+      PYRO_PUBLIC_URL: ${PYRO_PUBLIC_URL:-}
+      PYRO_DATABASE_URL: ${PYRO_DATABASE_URL:-}
+      PYRO_JWT_SECRET: ${PYRO_JWT_SECRET:-}
+      PYRO_SIGNUP: ${PYRO_SIGNUP:-}
+      PYRO_SIGNUP_DOMAINS: ${PYRO_SIGNUP_DOMAINS:-}
+      PYRO_MAX_LOADS: ${PYRO_MAX_LOADS:-}
+      PYRO_SMTP_HOST: ${PYRO_SMTP_HOST:-}
+      PYRO_SMTP_PORT: ${PYRO_SMTP_PORT:-}
+      PYRO_SMTP_USERNAME: ${PYRO_SMTP_USERNAME:-}
+      PYRO_SMTP_PASSWORD: ${PYRO_SMTP_PASSWORD:-}
+      PYRO_SMTP_FROM: ${PYRO_SMTP_FROM:-}
+      PYRO_LDAP_URL: ${PYRO_LDAP_URL:-}
+      PYRO_LDAP_BIND_DN: ${PYRO_LDAP_BIND_DN:-}
+      PYRO_LDAP_BIND_PASSWORD: ${PYRO_LDAP_BIND_PASSWORD:-}
+      PYRO_LDAP_BASE_DN: ${PYRO_LDAP_BASE_DN:-}
+      PYRO_LDAP_USER_FILTER: ${PYRO_LDAP_USER_FILTER:-}
+      PYRO_LDAP_ADMIN_GROUP: ${PYRO_LDAP_ADMIN_GROUP:-}
+      PYRO_PLUGIN_INDEX: ${PYRO_PLUGIN_INDEX:-}
+
+volumes:
+  pyro-data:

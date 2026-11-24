@@ -32,7 +32,9 @@ engine and serves a React web UI on localhost. **Current phase: 17 (plugin build
 - `plugins/sdk/go`: Go plugin SDK (separate module); `plugins/examples/{tcp,hmac}`: example Go plugins (separate modules); `plugins/examples/redis-js`: a JavaScript example (no build);
   `plugins/runtime/js`: the JS plugin runtime (goja on wasip1, separate module; `make jsrt` builds the committed `pkg/engine/plugin/jsrt.wasm.gz`, CI checks it is current; its go.mod pins the Go version for a deterministic build, so bump it with the root go.mod)
 - `docs/`: design docs (index below)
-- `scripts/dist`: release builder (`make dist`); `.github/workflows`: CI and tag-triggered draft releases
+- `scripts/dist`: release builder (`make dist`); `.github/workflows`: CI, tag-triggered draft releases and the Docker image (`docker.yml`, GHCR)
+- `Dockerfile`: team server image (distroless nonroot, data on `/data`; `agent` as the command runs a load agent); `scripts/docker-smoke.sh` checks it
+- `deploy/`: deployment kit (Compose that pulls or builds, `.env.example`, systemd units; server and agent)
 - `web/e2e`: Playwright tests against the real binary (`e2e/server.mjs` starts a mock API and `pyro serve`)
 
 ## Commands
@@ -45,6 +47,7 @@ make dev-ui       # Vite on :5173, proxies /api
 ./bin/pyro init <dir> --sample
 make jsrt         # rebuild pkg/engine/plugin/jsrt.wasm.gz after changing plugins/runtime/js (commit the result)
 make dist         # release archives + SHA256SUMS in dist/
+make docker-smoke # build the Docker image (IMAGE=pyro:dev) and smoke-test it
 cd web && npm run e2e   # browser tests (needs bin/pyro and npx playwright install chromium)
 ```
 `go test ./...` works without building the UI (`web/dist/.gitkeep` keeps the embed valid).
