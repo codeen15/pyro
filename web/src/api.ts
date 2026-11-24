@@ -505,11 +505,11 @@ export interface LoadTick {
   /** This load generator's CPU use (0..1 of its cores; -1 if unknown) and memory. */
   cpu: number;
   memMB: number;
-  agents?: AgentStatus[];
+  agents?: AgentRunStatus[];
 }
 
 /** One agent's part of a distributed load test. */
-export interface AgentStatus {
+export interface AgentRunStatus {
   name: string;
   segment: number;
   vus: number;
@@ -522,22 +522,25 @@ export interface AgentStatus {
   memMB: number;
 }
 
-export interface AgentInfo {
+/** A load agent the project can run distributed tests on (GET /agents). */
+export interface AgentStatus {
+  /** `flag:<address>` or `hub:<name>@<remote>` locally; the registry id on a team server. */
+  id: string;
   name: string;
-  version: string;
-  protocol: number;
-  cpus: number;
-  os: string;
-  arch: string;
-  busy: boolean;
-  maxVUs: number;
-  plugins?: string[];
-}
-
-export interface AgentView {
+  mode: "direct" | "connect";
   address: string;
-  info?: AgentInfo;
-  error?: string;
+  status: "available" | "busy" | "offline" | "error";
+  /** Why it is offline or in error. */
+  detail: string;
+  version: string;
+  cpus: number;
+  maxVUs: number;
+  /** False for plain http:// and ws:// addresses. */
+  encrypted: boolean;
+  /** Given on the command line (read-only). */
+  fromFlags: boolean;
+  /** Unix seconds; 0 = never. */
+  lastSeen: number;
 }
 
 export interface Stat {
@@ -582,7 +585,7 @@ export interface LoadResult {
   errors: ErrorCount[] | null;
   maxVUs: number;
   maxRPS?: number;
-  agents?: AgentStatus[];
+  agents?: AgentRunStatus[];
   warnings?: string[];
 }
 
@@ -909,8 +912,8 @@ export const api = {
   dataFiles: () => call<{ path: string; size: number }[]>("GET", "/data"),
   uploadData: (name: string, text: string) => call<{ path: string; size: number }>("PUT", `/data/${enc(name)}`, text, true),
   previewData: (body: { file: string; limit?: number } & DataFormat) => call<DataPreview>("POST", "/data/preview", body),
-  agents: () => call<AgentView[]>("GET", "/agents"),
-  startLoadTest: (name: string, body: { environment?: string; confirmHosts?: boolean; distributed?: boolean }) =>
+  agents: () => call<AgentStatus[]>("GET", "/agents"),
+  startLoadTest: (name: string, body: { environment?: string; confirmHosts?: boolean; distributed?: boolean; agents?: string[] }) =>
     call<{ id: string; test: string }>("POST", `/loadtests/${encodeURIComponent(name)}/start`, body),
   plugins: () => call<PluginList>("GET", "/plugins"),
   installPlugin: (archive: Blob) => call<PluginInfo>("POST", "/plugins", archive),

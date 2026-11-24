@@ -44,6 +44,9 @@ type Config struct {
 	AgentInsecure bool
 	// AgentHub holds agents that connected out to this controller.
 	AgentHub *agent.Hub
+	// AgentSource supplies the agents for distributed load tests; when nil
+	// they come from Agents and AgentHub.
+	AgentSource AgentSource
 	// Outputs stream every load test's live metrics (output.Open specs).
 	Outputs []string
 	// AnyHost accepts requests for any Host header. Leave it false when
@@ -95,6 +98,10 @@ type Server struct {
 	cookieSave  func()
 
 	unsubPlugins func()
+
+	agents      AgentSource
+	localAgents *localAgents // agents is this when built from the flags
+	unsubAgents func()
 }
 
 func New(cfg Config) *Server {
@@ -116,6 +123,13 @@ func New(cfg Config) *Server {
 	if cfg.Engine != nil && cfg.Engine.Plugins != nil {
 		s.unsubPlugins = cfg.Engine.Plugins.Subscribe(func() { s.hub.publish("plugins", "changed", nil) })
 	}
+	s.agents = cfg.AgentSource
+	if s.agents == nil {
+		s.localAgents = newLocalAgents(cfg.Agents, cfg.AgentToken, cfg.AgentInsecure)
+		s.localAgents.setHub(cfg.AgentHub)
+		s.agents = s.localAgents
+	}
+	s.unsubAgents = s.agents.Subscribe(func() { s.hub.publish("agents", "changed", nil) })
 	return s
 }
 
@@ -124,6 +138,7 @@ func (s *Server) Close() {
 	if s.unsubPlugins != nil {
 		s.unsubPlugins()
 	}
+	s.unsubAgents()
 	s.flushCookies()
 	s.closeMocks()
 	s.closeAllSessions()
@@ -503,9 +518,15 @@ func SPA(ui fs.FS) http.Handler {
 	})
 }
 
-// SetAgentHub attaches agents that connect out (set after New, once the
-// agent listener is up).
-func (s *Server) SetAgentHub(h *agent.Hub) { s.cfg.AgentHub = h }
+// SetAgentHub attaches agents that connect out (set after New, before the
+// hub serves: it sets the hub's OnChange). It does nothing when
+// Config.AgentSource is set.
+func (s *Server) SetAgentHub(h *agent.Hub) {
+	s.cfg.AgentHub = h
+	if s.localAgents != nil {
+		s.localAgents.setHub(h)
+	}
+}
 
 func (s *Server) getFolder(w http.ResponseWriter, r *http.Request) {
 	f, err := s.ws.ReadFolder(reqPath(r))

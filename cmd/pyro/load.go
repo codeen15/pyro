@@ -93,7 +93,7 @@ func loadCmd() *cobra.Command {
 				return err
 			}
 			if agentListen != "" {
-				hub, stopHub, err := startAgentListener(agentListen, agentToken)
+				hub, stopHub, err := startAgentListener(agentListen, agentToken, nil)
 				if err != nil {
 					return err
 				}

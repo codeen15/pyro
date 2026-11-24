@@ -202,12 +202,11 @@ func serveCmd() *cobra.Command {
 				fmt.Printf("  agents     %s\n", strings.Join(agents, ", "))
 			}
 			if agentListen != "" {
-				hub, stopHub, err := startAgentListener(agentListen, agentToken)
+				_, stopHub, err := startAgentListener(agentListen, agentToken, api.SetAgentHub)
 				if err != nil {
 					return err
 				}
 				defer stopHub()
-				api.SetAgentHub(hub)
 			}
 			fmt.Println("\nPress Ctrl+C to stop.")
 			if open {

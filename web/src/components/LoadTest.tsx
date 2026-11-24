@@ -223,15 +223,15 @@ export function LoadTestPage({ name }: { name: string }) {
         {distributed && agents.data && (
           <ul className="agent-list small" aria-label="Agents">
             {agents.data.map((a) => (
-              <li key={a.address}>
-                <span className="mono">{a.info?.name ?? a.address}</span>
-                {a.info ? (
+              <li key={a.id}>
+                <span className="mono">{a.name || a.address}</span>
+                {a.status === "available" || a.status === "busy" ? (
                   <span className="muted">
-                    {a.address} · {a.info.cpus} CPUs ·{" "}
-                    {a.info.busy ? "busy with another test" : "ready"}
+                    {a.address} · {a.cpus} CPUs ·{" "}
+                    {a.status === "busy" ? "busy with another test" : "ready"}
                   </span>
                 ) : (
-                  <span className="fail-text">{a.error}</span>
+                  <span className="fail-text">{a.detail}</span>
                 )}
               </li>
             ))}

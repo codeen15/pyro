@@ -13,7 +13,6 @@ import (
 
 	"github.com/codeen15/pyro/internal/history"
 	"github.com/codeen15/pyro/internal/store"
-	"github.com/codeen15/pyro/pkg/engine/agent"
 	"github.com/codeen15/pyro/pkg/engine/load"
 	"github.com/codeen15/pyro/pkg/engine/metrics"
 	"github.com/codeen15/pyro/pkg/engine/output"
@@ -27,9 +26,10 @@ type liveLoad struct {
 }
 
 type loadRegistry struct {
-	mu      sync.Mutex
-	current *liveLoad // one load test at a time per server
-	byID    map[string]*liveLoad
+	mu       sync.Mutex
+	current  *liveLoad // one load test at a time per server
+	starting bool      // a start is claiming agents or starting the test
+	byID     map[string]*liveLoad
 }
 
 type loadTestView struct {
@@ -123,8 +123,10 @@ func (s *Server) startLoadTest(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Environment  string `json:"environment,omitempty"`
 		ConfirmHosts bool   `json:"confirmHosts,omitempty"`
-		// Distributed runs the test on the configured agents.
-		Distributed bool `json:"distributed,omitempty"`
+		// Distributed runs the test on agents: those in Agents (ids), or
+		// every available one.
+		Distributed bool     `json:"distributed,omitempty"`
+		Agents      []string `json:"agents,omitempty"`
 	}
 	if !decode(w, r, &body) {
 		return
@@ -145,18 +147,6 @@ func (s *Server) startLoadTest(w http.ResponseWriter, r *http.Request) {
 	opts := load.Options{Resolve: s.ws.Target, LoadData: s.ws.LoadData, FileRoot: s.ws.Root, AllowFilesOutsideRoot: s.ws.Meta.AllowFilesOutsideWorkspace && !s.cfg.Team, Globals: s.ws.GlobalVars(), MaxRPS: s.ws.Meta.LoadMaxRPS, AllowHosts: s.ws.Meta.LoadAllowHosts}
 	if s.cfg.Engine != nil {
 		opts.Plugins = s.cfg.Engine.Plugins
-	}
-	if body.Distributed {
-		for _, a := range s.cfg.Agents {
-			opts.Workers = append(opts.Workers, agent.NewClient(a, s.cfg.AgentToken, s.cfg.AgentInsecure))
-		}
-		if s.cfg.AgentHub != nil {
-			opts.Workers = append(opts.Workers, s.cfg.AgentHub.Claim(0)...)
-		}
-		if len(opts.Workers) == 0 {
-			writeError(w, http.StatusBadRequest, "no agents: start pyro serve with --agent, or --agent-listen and connect agents to it")
-			return
-		}
 	}
 	if envName != "" {
 		env, err := s.ws.ReadEnvironment(envName)
@@ -180,6 +170,11 @@ func (s *Server) startLoadTest(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusConflict, map[string]any{"error": "a load test is already running", "running": cur.id})
 		return
 	}
+	if s.loads.starting {
+		s.loads.mu.Unlock()
+		writeError(w, http.StatusConflict, "a load test is already starting")
+		return
+	}
 	p := principal(r)
 	who := history.Who{ID: p.ID, Name: p.Name}
 	release := func() {}
@@ -193,12 +188,32 @@ func (s *Server) startLoadTest(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// Hold the server's one load test while claiming agents (which may
+	// probe them) without holding the lock.
+	s.loads.starting = true
+	s.loads.mu.Unlock()
+	fail := func() {
+		release()
+		s.loads.mu.Lock()
+		s.loads.starting = false
+		s.loads.mu.Unlock()
+	}
+	// Agents are claimed last, and every failure from here until the test
+	// starts hands them back.
+	if body.Distributed {
+		workers, ok := s.claimAgents(w, r.Context(), body.Agents)
+		if !ok {
+			fail()
+			return
+		}
+		opts.Workers = workers
+	}
 	id := newID()
 	topic := "load:" + id
 	sinks, err := output.OpenAll(s.cfg.Outputs, plan.Name, id)
 	if err != nil {
-		release()
-		s.loads.mu.Unlock()
+		s.agents.Release(opts.Workers)
+		fail()
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -214,14 +229,16 @@ func (s *Server) startLoadTest(w http.ResponseWriter, r *http.Request) {
 	}
 	test, err := load.Start(plan, opts)
 	if err != nil {
-		release()
+		s.agents.Release(opts.Workers)
 		sinks.Close()
-		s.loads.mu.Unlock()
+		fail()
 		writeError(w, http.StatusUnprocessableEntity, err.Error())
 		return
 	}
 	started.Store(test)
 	ll := &liveLoad{id: id, name: name, test: test}
+	s.loads.mu.Lock()
+	s.loads.starting = false
 	s.loads.current = ll
 	s.loads.byID[id] = ll
 	s.loads.mu.Unlock()
@@ -385,41 +402,4 @@ func (s *Server) loadRunReport(w http.ResponseWriter, r *http.Request) {
 func isValidation(err error) bool {
 	var ve *store.ValidationError
 	return errors.As(err, &ve)
-}
-
-type agentView struct {
-	// Mode is "dial" (pyro serve --agent) or "connected" (the agent
-	// connected to --agent-listen).
-	Mode    string      `json:"mode"`
-	Address string      `json:"address"`
-	Info    *agent.Info `json:"info,omitempty"`
-	Error   string      `json:"error,omitempty"`
-}
-
-// listAgents reports each configured agent's status.
-func (s *Server) listAgents(w http.ResponseWriter, r *http.Request) {
-	out := make([]agentView, len(s.cfg.Agents))
-	var wg sync.WaitGroup
-	for i, a := range s.cfg.Agents {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-			defer cancel()
-			out[i].Address, out[i].Mode = a, "dial"
-			in, err := agent.NewClient(a, s.cfg.AgentToken, s.cfg.AgentInsecure).Info(ctx)
-			if err != nil {
-				out[i].Error = err.Error()
-				return
-			}
-			out[i].Info = in
-		}()
-	}
-	wg.Wait()
-	if s.cfg.AgentHub != nil {
-		for _, in := range s.cfg.AgentHub.Connected() {
-			out = append(out, agentView{Mode: "connected", Address: in.Name, Info: &in})
-		}
-	}
-	writeJSON(w, http.StatusOK, out)
 }

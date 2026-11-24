@@ -162,8 +162,9 @@ func connectAgents(addrs []string, token string, insecure bool) ([]load.Worker, 
 }
 
 // startAgentListener serves an agent hub on addr (for agents that connect
-// out), separate from the UI so the UI can stay on loopback.
-func startAgentListener(addr, token string) (*agent.Hub, func(), error) {
+// out), separate from the UI so the UI can stay on loopback. attach, when
+// set, gets the hub before it serves.
+func startAgentListener(addr, token string, attach func(*agent.Hub)) (*agent.Hub, func(), error) {
 	if token == "" {
 		token = os.Getenv("PYRO_AGENT_TOKEN")
 	}
@@ -175,6 +176,9 @@ func startAgentListener(addr, token string) (*agent.Hub, func(), error) {
 		return nil, nil, err
 	}
 	hub := agent.NewHub(token)
+	if attach != nil {
+		attach(hub)
+	}
 	hs := &http.Server{Handler: hub.Handler(), ReadHeaderTimeout: 10 * time.Second}
 	go hs.Serve(ln)
 	fmt.Printf("  agents     connect with: pyro agent --connect <this-host>:%d --token <agent token>\n", ln.Addr().(*net.TCPAddr).Port)

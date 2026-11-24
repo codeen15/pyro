@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Alert, App as AntApp, Button, Dropdown, Table, Tag, type TableColumnsType } from "antd";
 import { Check, Download, ExternalLink, Minus, Network, Play, Square, Table2, TriangleAlert, X } from "../icons";
-import { api, type AgentStatus, type ErrorCount, type LiveSnapshot, type LoadRunView, type LoadTick, type RequestStat, type ThresholdResult, type ExportFormat } from "../api";
+import { api, type AgentRunStatus, type ErrorCount, type LiveSnapshot, type LoadRunView, type LoadTick, type RequestStat, type ThresholdResult, type ExportFormat } from "../api";
 import { subscribe } from "../events";
 import { formatMs, heatOf } from "../heat";
 import { useApp } from "../store";
@@ -27,7 +27,7 @@ interface State {
   totals?: Record<string, { value: number; perSecond?: number; p95?: number }>;
   maxVUs?: number;
   maxRPS?: number;
-  agents?: AgentStatus[];
+  agents?: AgentRunStatus[];
   warnings?: string[];
   runBy?: string;
   environment?: string;
@@ -371,21 +371,21 @@ export function LoadRunPage({ id }: { id: string }) {
   );
 }
 
-const AGENT_STATE: Record<AgentStatus["state"], { label: string; icon: typeof Check }> = {
+const AGENT_STATE: Record<AgentRunStatus["state"], { label: string; icon: typeof Check }> = {
   running: { label: "Running", icon: Play },
   done: { label: "Done", icon: Check },
   failed: { label: "Failed", icon: X },
 };
 
 /** Each agent's share of a distributed test. */
-function AgentTable({ agents, running }: { agents: AgentStatus[]; running: boolean }) {
-  const cpu = (a: AgentStatus) => (running ? a.cpu : a.peakCPU);
-  const columns: TableColumnsType<AgentStatus> = [
+function AgentTable({ agents, running }: { agents: AgentRunStatus[]; running: boolean }) {
+  const cpu = (a: AgentRunStatus) => (running ? a.cpu : a.peakCPU);
+  const columns: TableColumnsType<AgentRunStatus> = [
     { title: "Agent", dataIndex: "name", className: "mono agent-name" },
     { title: "Segment", key: "segment", align: "right", render: (_, a) => `${a.segment + 1} of ${agents.length}` },
     { title: running ? "VUs" : "Max VUs", key: "vus", align: "right", render: (_, a) => a.vus.toLocaleString() },
     { title: "Requests", key: "requests", align: "right", render: (_, a) => a.requests.toLocaleString() },
-    ...(running ? [{ title: "req/s", key: "rps", align: "right" as const, render: (_: unknown, a: AgentStatus) => (a.rps ?? 0).toFixed(1) }] : []),
+    ...(running ? [{ title: "req/s", key: "rps", align: "right" as const, render: (_: unknown, a: AgentRunStatus) => (a.rps ?? 0).toFixed(1) }] : []),
     { title: running ? "CPU" : "Peak CPU", key: "cpu", align: "right", render: (_, a) => (cpu(a) >= 0 ? `${Math.round(cpu(a) * 100)}%` : "–") },
     {
       title: "State",
@@ -406,7 +406,7 @@ function AgentTable({ agents, running }: { agents: AgentStatus[]; running: boole
       <h2 className="dash-title">
         <Network size={14} /> Agents
       </h2>
-      <Table<AgentStatus> className="agent-table" size="small" pagination={false} scroll={{ x: "max-content" }} rowKey="segment" dataSource={agents} columns={columns} />
+      <Table<AgentRunStatus> className="agent-table" size="small" pagination={false} scroll={{ x: "max-content" }} rowKey="segment" dataSource={agents} columns={columns} />
     </section>
   );
 }
