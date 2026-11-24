@@ -22,7 +22,16 @@ import (
 type host struct {
 	rt    wazero.Runtime
 	cache wazero.CompilationCache
+
+	// js is the compile of the JS runtime, started on first use (js.go).
+	jsMu   sync.Mutex
+	js     *jsrtCompile
+	closed bool
 }
+
+// testCacheDir, when set (by tests), replaces <dir>/cache so every test
+// manager shares one compilation cache.
+var testCacheDir string
 
 func newHost(ctx context.Context, cacheDir string, memoryMB int) (*host, error) {
 	cfg := wazero.NewRuntimeConfig().
@@ -47,7 +56,16 @@ func newHost(ctx context.Context, cacheDir string, memoryMB int) (*host, error) 
 	return &host{rt: rt, cache: cache}, nil
 }
 
+// close closes the runtime, after a compile of the JS runtime in progress
+// (which cannot be interrupted) finishes.
 func (h *host) close(ctx context.Context) {
+	h.jsMu.Lock()
+	h.closed = true
+	c := h.js
+	h.jsMu.Unlock()
+	if c != nil {
+		<-c.done
+	}
 	h.rt.Close(ctx)
 	if h.cache != nil {
 		h.cache.Close(ctx)
@@ -234,6 +252,12 @@ type pool struct {
 	// closed, and the compiled module once the last one is back.
 	retired  bool
 	cmClosed bool
+	// init, if set, is sent to each new instance before anything else (the
+	// JS runtime's load); an instance whose init fails is closed.
+	init *loadMsg
+	// sharedCM: cm belongs to the host (the JS runtime), not this pool, so
+	// retiring the pool leaves it open.
+	sharedCM bool
 }
 
 const maxIdle = 4096
@@ -284,6 +308,7 @@ func (p *pool) release() {
 }
 
 // get returns an instance holding a slot; put or discard releases it.
+// A new instance is sent p.init first; ctx carries the call's state.
 func (p *pool) get(ctx context.Context) (*instance, error) {
 	if err := p.acquire(ctx); err != nil {
 		return nil, err
@@ -321,6 +346,19 @@ func (p *pool) get(ctx context.Context) (*instance, error) {
 		mod.Close(ctx)
 		p.done(nil)
 		return nil, errors.New("not a Pyro plugin: missing pyro_alloc, pyro_free or pyro_invoke exports")
+	}
+	if p.init != nil {
+		// A failed load may leave part of the script registered, so the
+		// instance is never used again.
+		var r loadReply
+		if err := in.send(ctx, p.init, &r); err != nil {
+			p.discard(in)
+			return nil, err
+		}
+		if err := r.err(p.name); err != nil {
+			p.discard(in)
+			return nil, err
+		}
 	}
 	return in, nil
 }
@@ -379,33 +417,40 @@ func (p *pool) retire() {
 func (p *pool) closeModuleIfDrained() {
 	if p.retired && p.live == 0 && !p.cmClosed {
 		p.cmClosed = true
-		p.cm.Close(context.Background())
+		if !p.sharedCM {
+			p.cm.Close(context.Background())
+		}
 	}
 }
 
 // call sends one JSON message and decodes the reply into out. A trap or
 // timeout discards the instance (its memory may be inconsistent).
 func (p *pool) call(ctx context.Context, st *callState, msg any, out any) error {
-	in, err := p.get(ctx)
-	if err != nil {
-		return err
-	}
-	ok := false
+	ctx = context.WithValue(ctx, ctxKey{}, st)
 	defer func() {
 		for _, c := range st.conns {
 			c.Close()
 		}
-		if ok {
-			p.put(in)
-		} else {
-			p.discard(in)
-		}
 	}()
+	in, err := p.get(ctx)
+	if err != nil {
+		return err
+	}
+	if err := in.send(ctx, msg, out); err != nil {
+		p.discard(in)
+		return err
+	}
+	p.put(in)
+	return nil
+}
+
+// send writes one JSON message to the instance and decodes the reply into
+// out. After an error the instance must be discarded.
+func (in *instance) send(ctx context.Context, msg any, out any) error {
 	payload, err := json.Marshal(msg)
 	if err != nil {
 		return err
 	}
-	ctx = context.WithValue(ctx, ctxKey{}, st)
 	res, err := in.alloc.Call(ctx, uint64(len(payload)))
 	if err != nil {
 		return trap(err)
@@ -428,7 +473,6 @@ func (p *pool) call(ctx context.Context, st *callState, msg any, out any) error 
 	if err != nil {
 		return fmt.Errorf("plugin reply is not valid JSON: %w", err)
 	}
-	ok = true
 	return nil
 }
 

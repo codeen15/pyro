@@ -161,12 +161,15 @@ func (m *Manager) reload() (bool, error) {
 			changed = true
 		}
 	}
+	added := map[string]*loaded{}
 	for name, nl := range found {
 		if m.byNm[name] == nil {
 			m.byNm[name] = nl
+			added[name] = nl
 			changed = true
 		}
 	}
+	m.precompileFound(added)
 	if !sameState(m.st, st) {
 		changed = true
 	}

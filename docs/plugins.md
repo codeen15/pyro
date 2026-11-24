@@ -46,7 +46,7 @@ limits: { memoryMB: 128 } # optional; see Limits below
 ```
 
 `runtime` (optional) is `wasm` (the default) or `js`; it decides what `module` must be: a
-`.wasm` file for `wasm`, a `.js` file for `js`.
+`.wasm` file for `wasm`, a `.js` file for `js` (see [JavaScript plugins](#javascript-plugins)).
 
 ### Limits
 - `limits.memoryMB`: the most memory one plugin instance may use. Default 128 for `wasm`,
@@ -109,6 +109,15 @@ Messages crossing the boundary are **JSON**, passed through the module's linear 
  "vars": {…}, "params": {…}, "config": {…}}
                                                     // → {"vars": {…to set}, "request": {…} (pre only), "tests": [{"name", "passed", "error"}]} | {"error": "…"}
 ```
+The JavaScript runtime answers one more op, which the host sends to each new instance before
+any other (a JS plugin's instances run only that plugin's script):
+```jsonc
+{"op": "load", "entry": "plugin.js", "files": {"plugin.js": "…source…"}}
+                                                    // → {} | {"error": "plugin.js:3:1 SyntaxError: …"}
+```
+An instance whose `load` fails is closed, never pooled or sent anything else, and the call
+fails with `plugin <name> failed to load: <the JS error>`.
+
 For `process`, `request` is unresolved before the request (pre) and as sent after it (post);
 `response` (post only) is `{status, statusText, headers, body (base64), timeMs}`; `vars`
 holds every variable in scope; `params` are the processor's fields with variables resolved.
@@ -127,6 +136,38 @@ everything their manifest declares.
 | `net_read(handle, ptr, cap, timeoutMs) -> i32` | Bytes read, 0 at EOF, −2 on timeout, −1 on error |
 | `net_close(handle)` | |
 | `last_error(ptr, cap) -> u32` | Copies the last error message |
+
+## JavaScript plugins
+A plugin with `runtime: js` is a script (`module: plugin.js`) instead of a WebAssembly
+module. Pyro runs it on its built-in JavaScript runtime (goja compiled to WebAssembly,
+embedded in the binary), so it needs no build step and gets the same sandbox, capability
+checks, approval, timeouts and limits as a Go plugin. The script registers its handlers on
+the global `pyro` object:
+```js
+pyro.registerProtocol("echo", (ctx, req) => {
+  const conn = pyro.dial("localhost:7000", { timeoutMs: 5000 })
+  try {
+    conn.write(req.body + "\n")
+    return { status: 0, statusText: "OK", body: conn.read({ timeoutMs: 2000 }) }
+  } finally { conn.close() }
+})
+```
+Also `pyro.registerAuth`, `pyro.registerProcessor`, `pyro.log.*`, `pyro.encoding.*` and
+`pyro.crypto.*`; the full API is in `plugins/runtime/js/api.go` until its reference lands here.
+- **Install rules:** the script must be valid UTF-8 and at most 4 MB (`plugin.js is not valid
+  UTF-8`, `plugin.js is larger than 4 MB`). Install runs `load` and then `describe`, so a
+  script with a syntax error, or one that throws while loading, fails to install with the
+  JavaScript error and its position (`plugin.js:3:1 SyntaxError: Unexpected token }`).
+- **Errors:** an exception thrown by a handler becomes the call's error, with the position
+  where it was thrown (`plugin.js:2:9 Error: boom`); the instance stays usable.
+- **Startup:** the runtime is compiled once per memory limit used by JS plugins: about 7 s
+  the first time, about 0.25 s from the compilation cache after that. Pyro starts the
+  compile in the background when it finds a JS plugin at start or reload (and an install
+  compiles it before verifying), so requests don't wait for it; one that arrives during the
+  compile waits for that same compile.
+- **Limits:** defaults are 256 MB of memory and 32 live instances (calls at once); the
+  runtime itself takes roughly 30–50 MB of that. Use a Go plugin for heavy load.
+- `pyro plugin pack` and archives take the `.js` module like a `.wasm` one.
 
 ## Go SDK
 Plugins build with the **standard Go toolchain** (1.24+); no TinyGo needed:

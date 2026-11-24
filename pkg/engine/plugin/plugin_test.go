@@ -35,6 +35,9 @@ func TestMain(m *testing.M) {
 	}
 	code := 0
 	defer func() { os.RemoveAll(tmp); os.Exit(code) }()
+	// One compilation cache for every test manager, so the JS runtime
+	// (~7 s cold) compiles once per run rather than once per test.
+	testCacheDir = filepath.Join(tmp, "cache")
 	srcs := map[string]string{
 		"tcp":   filepath.Join("..", "..", "..", "plugins", "examples", "tcp"),
 		"hmac":  filepath.Join("..", "..", "..", "plugins", "examples", "hmac"),

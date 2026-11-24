@@ -347,7 +347,12 @@ func packCmd() *cobra.Command {
 				return err
 			}
 			module, err := os.ReadFile(filepath.Join(dir, man.Module))
-			if err != nil {
+			switch {
+			case err != nil && man.IsJS() && errors.Is(err, os.ErrNotExist):
+				return fmt.Errorf("missing %s", man.Module)
+			case err != nil && man.IsJS():
+				return err
+			case err != nil:
 				return fmt.Errorf("%w (build it first: GOOS=wasip1 GOARCH=wasm go build -buildmode=c-shared -o %s .)", err, man.Module)
 			}
 			var buf bytes.Buffer

@@ -81,5 +81,14 @@ func process(ctx *pyro.Context, p *pyro.Process) error {
 }
 ```
 
-The manifest (`pyro-plugin.yaml`), the SDK API, the ABI and the security model are described
-in [plugins.md](../plugins.md).
+You can also write a plugin in **JavaScript**, with no build step: set `runtime: js` and
+`module: plugin.js` in the manifest, and register handlers from the script
+(`pyro.registerProtocol("redis", (ctx, req) => { … })`). Install it the same way
+(`pyro plugin install .`). If the script has a syntax error or throws while loading, the
+install fails and shows the JavaScript error with its line and column. JavaScript plugins
+run under the same permissions and limits as Go ones, but are slower and run at most 32
+calls at once by default; prefer Go for heavy load tests. The first JavaScript plugin
+makes Pyro compile its JavaScript engine once (several seconds, in the background).
+
+The manifest (`pyro-plugin.yaml`), the SDK API, the ABI, JavaScript plugins and the security
+model are described in [plugins.md](../plugins.md).

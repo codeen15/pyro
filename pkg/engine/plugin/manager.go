@@ -63,6 +63,8 @@ type Manager struct {
 	hosts map[int]*host
 	st    state
 	byNm  map[string]*loaded
+	// closed: Close ran; no new runtimes are made.
+	closed bool
 
 	subMu   sync.Mutex
 	subs    map[int]func()
@@ -85,6 +87,9 @@ func Open(dir string) (*Manager, error) {
 	}
 	m.st, m.byNm = st, found
 	m.saveMigration(migrateApprovals(&m.st, memIn(found)))
+	m.mu.Lock()
+	m.precompileFound(found)
+	m.mu.Unlock()
 	return m, nil
 }
 
@@ -157,7 +162,7 @@ func (m *Manager) InstallArchive(archive []byte, approve bool) (Info, error) {
 	files := map[string][]byte{}
 	for _, f := range zr.File {
 		name := filepath.Base(f.Name) // archives may wrap files in a folder
-		if f.FileInfo().IsDir() || (name != ManifestFile && !strings.HasSuffix(name, ".wasm")) {
+		if f.FileInfo().IsDir() || (name != ManifestFile && !strings.HasSuffix(name, ".wasm") && !strings.HasSuffix(name, ".js")) {
 			continue
 		}
 		if f.UncompressedSize64 > 256<<20 {
@@ -190,7 +195,11 @@ func (m *Manager) InstallArchive(archive []byte, approve bool) (Info, error) {
 }
 
 func (m *Manager) install(man *Manifest, manifest, module []byte, approve bool) (Info, error) {
-	if !bytes.HasPrefix(module, []byte("\x00asm")) {
+	if man.IsJS() {
+		if err := checkScript(man.Module, module); err != nil {
+			return Info{}, err
+		}
+	} else if !bytes.HasPrefix(module, []byte("\x00asm")) {
 		return Info{}, fmt.Errorf("%s is not a WebAssembly module", man.Module)
 	}
 	// Check the module actually provides what the manifest declares.
@@ -256,19 +265,36 @@ func (m *Manager) replace(man *Manifest, tmp, dest string, approve bool) (Info, 
 	return m.info(l), err
 }
 
-// verify instantiates the module once and checks describe() against the manifest.
+// verify instantiates the module once and checks describe() against the
+// manifest. A JS plugin's script is loaded first, so a script that doesn't
+// parse or throws fails here with the JS error.
 func (m *Manager) verify(man *Manifest, module []byte) error {
+	var js *pool
+	if man.IsJS() {
+		// The runtime's one-time compile (a minute or more on a slow
+		// machine or under -race) doesn't count against verify's deadline.
+		cctx, ccancel := context.WithTimeout(context.Background(), 10*time.Minute)
+		h, cm, err := m.compileJS(cctx, man.Limits.MemoryMB)
+		ccancel()
+		if err != nil {
+			return err
+		}
+		js = jsPool(h, cm, man, module, 0)
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
-	h, err := m.host(ctx, man.Limits.MemoryMB)
-	if err != nil {
-		return err
+	p := js
+	if p == nil {
+		h, err := m.host(ctx, man.Limits.MemoryMB)
+		if err != nil {
+			return err
+		}
+		cm, err := h.rt.CompileModule(ctx, module)
+		if err != nil {
+			return fmt.Errorf("compiling %s: %w", man.Module, err)
+		}
+		p = newPool(h, cm, man.Name, 0)
 	}
-	cm, err := h.rt.CompileModule(ctx, module)
-	if err != nil {
-		return fmt.Errorf("compiling %s: %w", man.Module, err)
-	}
-	p := newPool(h, cm, man.Name, 0)
 	defer p.retire()
 	var r struct {
 		ABI      int `json:"abi"`
@@ -306,7 +332,14 @@ func (m *Manager) host(ctx context.Context, memoryMB int) (*host, error) {
 	if h := m.hosts[memoryMB]; h != nil {
 		return h, nil
 	}
-	h, err := newHost(ctx, filepath.Join(m.dir, "cache"), memoryMB)
+	if m.closed {
+		return nil, errors.New("plugins are shut down")
+	}
+	cacheDir := filepath.Join(m.dir, "cache")
+	if testCacheDir != "" {
+		cacheDir = testCacheDir
+	}
+	h, err := newHost(ctx, cacheDir, memoryMB)
 	if err != nil {
 		return nil, err
 	}
@@ -440,19 +473,17 @@ func (m *Manager) Check(ctx context.Context, kind, id string) error {
 }
 
 func (m *Manager) compile(ctx context.Context, l *loaded) error {
+	if l.man.IsJS() {
+		return m.compileJSPlugin(ctx, l)
+	}
 	h, err := m.host(ctx, l.man.Limits.MemoryMB)
 	if err != nil {
 		return err
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if l.pool != nil {
-		return nil
-	}
-	if m.byNm[l.man.Name] != l {
-		// Removed or replaced since find looked it up; a pool made now
-		// would never be retired.
-		return fmt.Errorf("plugin %s was reloaded; try again", l.man.Name)
+	if err := m.needsPool(l); err != nil || l.pool != nil {
+		return err
 	}
 	module, err := os.ReadFile(filepath.Join(l.dir, l.man.Module))
 	if err != nil {
@@ -463,6 +494,35 @@ func (m *Manager) compile(ctx context.Context, l *loaded) error {
 		return fmt.Errorf("compiling plugin %s: %w", l.man.Name, err)
 	}
 	l.pool = newPool(h, cm, l.man.Name, l.man.Limits.MaxInstances)
+	return nil
+}
+
+// compileJSPlugin gives a JS plugin its pool on the shared runtime,
+// waiting (outside m.mu) for the runtime's compile if it is still running.
+func (m *Manager) compileJSPlugin(ctx context.Context, l *loaded) error {
+	h, cm, err := m.compileJS(ctx, l.man.Limits.MemoryMB)
+	if err != nil {
+		return err
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if err := m.needsPool(l); err != nil || l.pool != nil {
+		return err
+	}
+	src, err := readScript(l)
+	if err != nil {
+		return err
+	}
+	l.pool = jsPool(h, cm, l.man, src, l.man.Limits.MaxInstances)
+	return nil
+}
+
+// needsPool reports an error when l was removed or replaced since find
+// looked it up: a pool made now would never be retired. The caller holds m.mu.
+func (m *Manager) needsPool(l *loaded) error {
+	if l.pool == nil && m.byNm[l.man.Name] != l {
+		return fmt.Errorf("plugin %s was reloaded; try again", l.man.Name)
+	}
 	return nil
 }
 
@@ -667,18 +727,21 @@ func (m *Manager) Provider(kind, id string) (Provide, bool) {
 	return Provide{}, false
 }
 
-// Close releases every instance and the runtimes.
+// Close releases every instance and the runtimes. A runtime still
+// compiling the JS runtime is closed once that compile finishes.
 func (m *Manager) Close() {
 	m.mu.Lock()
-	defer m.mu.Unlock()
-	ctx := context.Background()
+	m.closed = true
 	for _, l := range m.byNm {
 		if l.pool != nil {
 			l.pool.retire()
 		}
 	}
-	for _, h := range m.hosts {
+	hosts := m.hosts
+	m.hosts = nil
+	m.mu.Unlock()
+	ctx := context.Background()
+	for _, h := range hosts {
 		h.close(ctx)
 	}
-	m.hosts = nil
 }

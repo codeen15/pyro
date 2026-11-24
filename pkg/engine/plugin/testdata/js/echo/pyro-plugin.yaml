@@ -1,0 +1,17 @@
+name: js-echo
+version: 0.1.0
+abi: 1
+runtime: js
+module: plugin.js
+title: JS echo (test)
+description: Test JavaScript plugin with a line-echo protocol, an HMAC auth and a processor.
+provides:
+  - kind: protocol
+    id: js-echo
+    urlPlaceholder: tcp://127.0.0.1:7000
+  - kind: auth
+    id: js-sign
+  - kind: processor
+    id: js-check
+capabilities:
+  network: ["127.0.0.1:*"]

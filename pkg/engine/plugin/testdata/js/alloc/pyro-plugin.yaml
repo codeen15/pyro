@@ -1,0 +1,9 @@
+name: js-alloc
+version: 0.1.0
+abi: 1
+runtime: js
+module: plugin.js
+provides:
+  - kind: protocol
+    id: js-alloc
+capabilities: {}
