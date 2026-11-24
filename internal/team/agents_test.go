@@ -467,3 +467,37 @@ func TestRegistryAfterRestart(t *testing.T) {
 	// The connecting agent dials back in by itself.
 	waitStatus(t, srv2.agents, conn.ID, "available", 15*time.Second)
 }
+
+// Registry agents that get no share of the load are handed back when the
+// test starts: connected agents return to the idle pool and direct ones
+// are re-probed, instead of staying busy.
+func TestRegistryUnusedAgentsReleased(t *testing.T) {
+	ctx := context.Background()
+	ts, srv, st := newTeamServer(t, Config{})
+	direct, _ := st.AddDirectAgent(ctx, "vps-sg", testAgent(t, "host-a").URL, "tok", false, "")
+	c1, tok1, _ := st.AddConnectAgent(ctx, "office-1", "")
+	c2, tok2, _ := st.AddConnectAgent(ctx, "office-2", "")
+	dialIn(t, ts.URL, tok1, "host-b")
+	dialIn(t, ts.URL, tok2, "host-c")
+	waitStatus(t, srv.agents, c1.ID, "available", 2*time.Second)
+	waitStatus(t, srv.agents, c2.ID, "available", 2*time.Second)
+
+	alice, base := agentProject(t, ts, okTarget(t).URL, map[string]string{
+		"one": "name: One\nscenarios:\n  s: { executor: per-vu-iterations, vus: 1, iterations: 1, flow: [ { request: demo/ping } ] }\n",
+	})
+	code, out := alice.do("POST", base+"/loadtests/one/start", `{"distributed":true,"confirmHosts":true}`)
+	if code != 202 {
+		t.Fatalf("start: %d %v", code, out)
+	}
+	if run := waitRun(t, alice, base, out["id"].(string), 20*time.Second); run["status"] != "passed" {
+		t.Fatalf("run: %v", run)
+	}
+	for _, id := range []string{direct.ID, c1.ID, c2.ID} {
+		waitStatus(t, srv.agents, id, "available", 2*time.Second)
+	}
+	workers, err := srv.agents.Claim(ctx, []string{direct.ID, c1.ID, c2.ID})
+	if err != nil || len(workers) != 3 {
+		t.Fatalf("claim again: %d %v", len(workers), err)
+	}
+	srv.agents.Release(workers)
+}

@@ -28,9 +28,10 @@ func agentServer(t *testing.T, name string) *httptest.Server {
 }
 
 type agentEnv struct {
-	ts  *httptest.Server
-	srv *Server
-	hub *agent.Hub
+	ts     *httptest.Server
+	srv    *Server
+	hub    *agent.Hub
+	hubURL string
 }
 
 // newAgentEnv serves a project with these flag agents and, when withHub, a
@@ -49,6 +50,7 @@ func newAgentEnv(t *testing.T, flags []string, withHub bool) agentEnv {
 		srv.SetAgentHub(env.hub)
 		hs := httptest.NewServer(env.hub.Handler())
 		t.Cleanup(hs.Close)
+		env.hubURL = hs.URL
 		ctx, cancel := context.WithCancel(context.Background())
 		t.Cleanup(cancel)
 		go (&agent.Server{Token: "tok", Name: "nat", TickInterval: 100 * time.Millisecond}).Connect(ctx, hs.URL, false)
@@ -226,6 +228,61 @@ func TestRejectedStartReleasesAgents(t *testing.T) {
 	assertHubIdle(t, env.hub)
 }
 
+// connectAgent connects another agent to the env's hub and waits for it.
+func (env agentEnv) connectAgent(t *testing.T, name string, total int) {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	go (&agent.Server{Token: "tok", Name: name, TickInterval: 100 * time.Millisecond}).Connect(ctx, env.hubURL, false)
+	wctx, wcancel := context.WithTimeout(ctx, 5*time.Second)
+	defer wcancel()
+	if err := env.hub.Wait(wctx, total); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// waitHubIdle waits up to 2 s for n connected agents, none of them claimed.
+func waitHubIdle(t *testing.T, hub *agent.Hub, n int) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		conns := hub.ConnectedIDs()
+		idle := 0
+		for _, in := range conns {
+			if !in.Busy {
+				idle++
+			}
+		}
+		if idle == n {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("want %d idle agents: %+v", n, conns)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// Agents that get no share of the load are handed back when the test
+// starts, not left claimed.
+func TestUnusedAgentsReleased(t *testing.T) {
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok")) }))
+	defer target.Close()
+	env := newAgentEnv(t, nil, true)
+	env.connectAgent(t, "nat2", 2)
+	do(t, env.ts, "PUT", "/api/v1/requests/demo/ping", `{"name":"Ping","url":"`+target.URL+`"}`, true)
+	do(t, env.ts, "PUT", "/api/v1/loadtests/one", loadPlanJSON("scenarios:\n  s: { executor: per-vu-iterations, vus: 1, iterations: 1, flow: [ { request: demo/ping } ] }\n"), true)
+	if st := runLoad(t, env.ts, "one", `{"distributed":true}`); st["status"] != "passed" {
+		t.Fatalf("run: %+v", st)
+	}
+	waitHubIdle(t, env.hub, 2)
+	workers := env.hub.Claim(0)
+	if len(workers) != 2 {
+		t.Fatalf("claimable again: %d", len(workers))
+	}
+	env.hub.Release(workers)
+}
+
 func TestNoAgentsMessage(t *testing.T) {
 	env := newAgentEnv(t, nil, false)
 	do(t, env.ts, "PUT", "/api/v1/requests/demo/ping", `{"name":"Ping","url":"http://127.0.0.1:1/"}`, true)
@@ -279,6 +336,43 @@ func TestConfigAgentSource(t *testing.T) {
 	srv.Close()
 	if src.cancels != 1 {
 		t.Fatal("Close didn't cancel the agents subscription")
+	}
+}
+
+// panicSource panics in Claim.
+type panicSource struct {
+	fakeSource
+	released int
+}
+
+func (p *panicSource) Claim(context.Context, []string) ([]load.Worker, error) {
+	panic("claim exploded")
+}
+func (p *panicSource) Release(ws []load.Worker) { p.released += len(ws) }
+
+// A panic while a start holds the server's load test slot clears it, so
+// later starts aren't refused as "already starting".
+func TestPanicWhileStartingClearsStarting(t *testing.T) {
+	ws, _ := store.Init(t.TempDir(), "test")
+	ws.CreateCollection("demo", model.Collection{Name: "Demo"})
+	slots := make(chan struct{}, 1)
+	srv := New(Config{Workspace: ws, Token: testToken, AgentSource: &panicSource{}, LoadSlots: slots})
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+	do(t, ts, "PUT", "/api/v1/requests/demo/ping", `{"name":"Ping","url":"http://127.0.0.1:1/"}`, true)
+	do(t, ts, "PUT", "/api/v1/loadtests/p", loadPlanJSON(pingPlan), true)
+	if res, body := do(t, ts, "POST", "/api/v1/loadtests/p/start", `{"distributed":true,"confirmHosts":true}`, true); res.StatusCode != 500 {
+		t.Fatalf("panicking claim: %d %s", res.StatusCode, body)
+	}
+	if srv.Busy() {
+		t.Fatal("the server is still starting a load test after a panic")
+	}
+	if len(slots) != 0 {
+		t.Fatal("the load slot wasn't freed after a panic")
+	}
+	res, body := do(t, ts, "POST", "/api/v1/loadtests/p/start", `{"distributed":true,"confirmHosts":true}`, true)
+	if strings.Contains(body, "already starting") || res.StatusCode == 429 {
+		t.Fatalf("second start: %d %s", res.StatusCode, body)
 	}
 }
 

@@ -198,6 +198,23 @@ func (s *Server) startLoadTest(w http.ResponseWriter, r *http.Request) {
 		s.loads.starting = false
 		s.loads.mu.Unlock()
 	}
+	// A panic before the test is registered (recovered by the router) must
+	// not leave agents claimed or the server stuck "starting".
+	var test *load.Test
+	registered := false
+	defer func() {
+		if registered {
+			return
+		}
+		if p := recover(); p != nil {
+			if test != nil {
+				test.Abort()
+			}
+			s.agents.Release(opts.Workers)
+			fail()
+			panic(p)
+		}
+	}()
 	// Agents are claimed last, and every failure from here until the test
 	// starts hands them back.
 	if body.Distributed {
@@ -227,7 +244,7 @@ func (s *Server) startLoadTest(w http.ResponseWriter, r *http.Request) {
 			sinks.Tick(t, reqs)
 		}
 	}
-	test, err := load.Start(plan, opts)
+	test, err = load.Start(plan, opts)
 	if err != nil {
 		s.agents.Release(opts.Workers)
 		sinks.Close()
@@ -236,12 +253,17 @@ func (s *Server) startLoadTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	started.Store(test)
+	// Agents with no share of the load are free for other tests.
+	if unused := test.Unused(); len(unused) > 0 {
+		s.agents.Release(unused)
+	}
 	ll := &liveLoad{id: id, name: name, test: test}
 	s.loads.mu.Lock()
 	s.loads.starting = false
 	s.loads.current = ll
 	s.loads.byID[id] = ll
 	s.loads.mu.Unlock()
+	registered = true
 
 	go func() {
 		res := test.Wait()

@@ -211,6 +211,39 @@ func (*badWorker) Name() string                            { return "bad" }
 func (*badWorker) Prepare(context.Context, Job) error      { return errors.New("busy") }
 func (*badWorker) Run(context.Context, func(Report)) error { return nil }
 
+// A worker with no share of the load is never prepared; Unused hands it
+// back to the caller.
+func TestDistributedUnusedWorkers(t *testing.T) {
+	tg := newTarget(t, 0)
+	p, _ := ParsePlan([]byte(`
+name: x
+scenarios:
+  s: { executor: per-vu-iterations, vus: 1, iterations: 1, flow: [ { request: c/ok } ] }
+`), nil)
+	a, b := &memWorker{name: "a"}, &memWorker{name: "b"}
+	test, err := Start(p, Options{Resolve: resolver(tg.URL), Workers: []Worker{a, b}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	res := test.Wait()
+	if res.Status != StatusPassed {
+		t.Fatalf("status %s (%s)", res.Status, res.Reason)
+	}
+	unused := test.Unused()
+	if len(unused) != 1 {
+		t.Fatalf("unused: %v", unused)
+	}
+	idle, busy := a, b
+	if unused[0] == b {
+		idle, busy = b, a
+	} else if unused[0] != a {
+		t.Fatalf("unused: %v", unused)
+	}
+	if idle.test != nil || busy.test == nil {
+		t.Fatalf("the unused worker was prepared, or the used one wasn't")
+	}
+}
+
 func TestMaxRPSCap(t *testing.T) {
 	tg := newTarget(t, 0)
 	plan := `

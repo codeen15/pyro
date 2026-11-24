@@ -180,6 +180,23 @@ func (t *Test) prepareWorkers(rows map[string][]map[string]string) error {
 	return nil
 }
 
+// Unused returns the workers in Options.Workers that got no share of the
+// load (a plan too small to split between them all). The test never
+// prepares, runs or closes them, so whoever supplied them hands them back.
+func (t *Test) Unused() []Worker {
+	used := make([]bool, len(t.opts.Workers))
+	for _, ws := range t.workers {
+		used[ws.segment] = true
+	}
+	var out []Worker
+	for i, w := range t.opts.Workers {
+		if !used[i] {
+			out = append(out, w)
+		}
+	}
+	return out
+}
+
 // runWorkers runs every prepared worker and merges their reports. A worker
 // that fails stops the whole test: its share of the load is missing.
 func (t *Test) runWorkers() {
