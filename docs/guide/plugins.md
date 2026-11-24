@@ -181,8 +181,8 @@ fresh. `maxInstances` is how many copies may run at once (default 32 for JavaScr
 for Go): further calls wait for a free one, and a call that times out while waiting fails with
 `plugin <name> is busy: all <n> instances in use`. A load test warns before it starts when a
 plugin's `maxInstances` is below the test's peak number of virtual users, since the extra
-users would queue. Plugins can read a real clock, but cannot sleep: to wait, read from a
-connection with a timeout.
+users would queue. Plugins get the real clock and real random numbers (`Date.now()` and
+`Math.random()` work), but cannot sleep: to wait, read from a connection with a timeout.
 
 The manifest (`pyro-plugin.yaml`), the SDK API, the JavaScript API, the ABI and the security
 model are described in [plugins.md](../plugins.md).

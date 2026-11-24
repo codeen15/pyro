@@ -59,9 +59,10 @@ limits: { memoryMB: 128 } # optional; see Limits below
   in use, further calls queue until one is free. A call whose deadline (or cancellation)
   comes while it is still queued fails with `plugin <name> is busy: all <n> instances in use`
   (`plugin.ErrBusy` in Go). At most `maxInstances` idle instances are kept for reuse.
-- Plugins see a real monotonic clock (so they can measure durations), but the host never
-  really sleeps for them: a sleep request returns at once, so a plugin can't block past its
-  call's timeout. Don't rely on `time.Sleep`; a plugin that needs to wait should read from
+- Plugins get the real wall clock, a real monotonic clock (so they can measure durations)
+  and cryptographic random numbers (`Date.now()`, `Math.random()`, Go's `time.Now` and
+  `crypto/rand` all work), but no real sleep: the host never sleeps for them, and a sleep
+  request returns at once, so a plugin can't block past its call's timeout. Don't rely on `time.Sleep`; a plugin that needs to wait should read from
   its connection with a timeout instead.
 - The memory limit is part of what you approve: a plugin whose new version asks for a
   different `memoryMB` needs approval again. Approvals saved before limits existed count as
@@ -75,9 +76,9 @@ before the plugin sees the request.
 - `network` lists `host:port` patterns the plugin may connect to. `*` matches any host or
   any port, and host globs work (`*.example.com:443`). Hosts match **literally**: list both
   `localhost:*` and `127.0.0.1:*` if you use both.
-- Plugins have no filesystem, environment or clock access beyond what WASI gives a
-  sandboxed module, and they can't open connections except through `net_dial`, which checks
-  the capabilities on every call.
+- Plugins have no filesystem or environment access. They get the real wall clock, a real
+  monotonic clock and cryptographic random numbers, but no real sleep. They can't open
+  connections except through `net_dial`, which checks the capabilities on every call.
 - A newly installed plugin is **not usable until approved**. Approval records the exact
   capability set and the memory limit. Upgrading to a version that asks for anything different needs approval
   again; reinstalling with the same capabilities keeps it.

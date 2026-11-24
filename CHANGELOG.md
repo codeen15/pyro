@@ -19,9 +19,9 @@
 - Plugin limits are enforced: `limits.memoryMB` (default 128 MB, 256 MB for JavaScript, at most
   1024; a changed limit needs approval again) and `limits.maxInstances` (calls beyond it wait,
   then fail with `plugin <name> is busy`). Load tests warn when a plugin's cap is below the
-  test's peak VUs. Plugins read a real clock but cannot sleep. Writes to `state.json` are
-  locked, so the CLI and a running server no longer overwrite each other's changes. The Go
-  plugin SDK gains `HandleOp`.
+  test's peak VUs. Plugins get the real wall clock, a real monotonic clock and cryptographic
+  random numbers, but no real sleep. Writes to `state.json` are locked, so the CLI and a
+  running server no longer overwrite each other's changes. The Go plugin SDK gains `HandleOp`.
 
 - WebSocket and Socket.IO requests have an action, chosen when created: **Connect** (the
   console, now with a connection name), **Send & receive** (send messages, then wait for a

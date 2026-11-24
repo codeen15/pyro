@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/tls"
 	"encoding/json"
 	"errors"
@@ -331,12 +332,14 @@ func (p *pool) get(ctx context.Context) (*instance, error) {
 	p.live++
 	p.mu.Unlock()
 	// Instantiation must outlive the caller's request context, or wazero
-	// would close the module when that context ends. Plugins see a real
-	// monotonic clock, but sleeping stays a no-op: a real sleep would run
-	// past the call's deadline, which only cuts in when wasm code runs.
+	// would close the module when that context ends. Plugins see the real
+	// wall and monotonic clocks and cryptographic random numbers (WASI's
+	// defaults are a fixed 2022 clock and the same random sequence in every
+	// instance), but sleeping stays a no-op: a real sleep would run past
+	// the call's deadline, which only cuts in when wasm code runs.
 	mod, err := p.h.rt.InstantiateModule(context.WithoutCancel(ctx), p.cm,
 		wazero.NewModuleConfig().WithName("").WithStartFunctions("_initialize").WithStderr(os.Stderr).
-			WithSysNanotime())
+			WithSysWalltime().WithSysNanotime().WithRandSource(rand.Reader))
 	if err != nil {
 		p.done(nil)
 		return nil, fmt.Errorf("starting plugin: %w", err)

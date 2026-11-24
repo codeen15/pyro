@@ -7,6 +7,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -295,5 +296,35 @@ func TestJSFoundAtOpen(t *testing.T) {
 	}()
 	if res, _, err := m2.Execute(context.Background(), "js-echo", echoReq(echoServer(t), "open")); err != nil || string(res.Body) != "echo:open" {
 		t.Fatalf("execute = %v, %v", res, err)
+	}
+}
+
+// TestJSRealClockAndRandom: plugins see the real wall clock, and each
+// instance gets its own random numbers (WASI's defaults are a fixed 2022
+// clock and the same random sequence in every instance).
+func TestJSRealClockAndRandom(t *testing.T) {
+	call := func() (int64, float64) {
+		m := manager(t) // a new manager, so a fresh instance
+		installJS(t, m, "clock")
+		res, _, err := m.Execute(context.Background(), "js-clock", &model.Request{Kind: "plugin:js-clock", Name: "c"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out struct {
+			Now    int64   `json:"now"`
+			Random float64 `json:"random"`
+		}
+		if err := json.Unmarshal(res.Body, &out); err != nil {
+			t.Fatalf("body %q: %v", res.Body, err)
+		}
+		return out.Now, out.Random
+	}
+	now1, r1 := call()
+	if d := time.Since(time.UnixMilli(now1)); d < -time.Minute || d > time.Minute {
+		t.Fatalf("Date.now() = %v, host time %v", time.UnixMilli(now1), time.Now())
+	}
+	_, r2 := call()
+	if r1 == r2 {
+		t.Fatalf("Math.random() gave %v in both fresh instances", r1)
 	}
 }
