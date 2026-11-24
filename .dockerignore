@@ -1,0 +1,11 @@
+.git
+**/node_modules
+bin
+dist
+web/dist
+plugins/dist
+web/test-results
+web/playwright-report
+.claude
+.superpowers
+**/*.test

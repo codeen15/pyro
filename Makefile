@@ -2,7 +2,10 @@ VERSION ?= $(shell git describe --tags --match 'v[0-9]*' --always --dirty 2>/dev
 COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
 LDFLAGS := -s -w -X github.com/codeen15/pyro/internal/version.Version=$(VERSION) -X github.com/codeen15/pyro/internal/version.Commit=$(COMMIT)
 
-.PHONY: all build ui ui-deps test vet dev-api dev-ui plugins jsrt dist clean
+.PHONY: all build ui ui-deps test vet dev-api dev-ui plugins jsrt dist docker docker-smoke clean
+
+# Docker image (see Dockerfile); IMAGE=name:tag to change the tag.
+IMAGE ?= pyro:dev
 
 all: build
 
@@ -52,6 +55,13 @@ jsrt:
 	(cd plugins/runtime/js && GOTOOLCHAIN=$$gover CGO_ENABLED=0 GOOS=wasip1 GOARCH=wasm \
 		go build -trimpath -buildvcs=false -buildmode=c-shared -ldflags="-s -w -buildid=" -o "$$tmp" .); \
 	gzip -n -9 -c "$$tmp" > pkg/engine/plugin/jsrt.wasm.gz
+
+docker:
+	docker build --build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) -t $(IMAGE) .
+
+# Builds the image, then checks it starts, runs as nonroot and keeps its data.
+docker-smoke: docker
+	bash scripts/docker-smoke.sh $(IMAGE)
 
 clean:
 	rm -rf bin dist
