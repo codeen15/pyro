@@ -52,7 +52,7 @@
 | Load engine | `pkg/engine/load` | ✅ Phase 3 | Plans, executors, VUs, flow steps, data feeders, thresholds. See [load-engine.md](load-engine.md). |
 | Metrics | `pkg/engine/metrics` | ✅ Phase 3 | Per-VU buffers → HDR histograms (cumulative per series, per-interval per metric); deltas for merging across agents. |
 | Distributed agents | `pkg/engine/agent` | ✅ Phase 5 | `pyro agent` server and the controller's client (`load.Worker`); see [load-engine.md](load-engine.md#distributed-tests) and [ADR 0006](adr/0006-agents-over-websocket.md). |
-| Plugin host | `pkg/engine/plugin` | ✅ Phase 4 | wazero runtime, ABI v1 (JSON), capabilities, install/approve, index. See [plugins.md](plugins.md). |
+| Plugin host | `pkg/engine/plugin` | ✅ Phase 4, 17 | wazero runtime, ABI v1 (JSON), capabilities, install/approve, index, per-plugin memory and instance limits, and a watcher that reloads when the plugins folder changes. JavaScript plugins run on `plugins/runtime/js` (goja compiled to wasip1, built by `make jsrt` into the committed `jsrt.wasm.gz` that the binary embeds) behind the same ABI, so they share the sandbox and limits. See [plugins.md](plugins.md). |
 | Importers | `pkg/engine/importer/{postman,openapi,har,curl,auto}` | ✅ Phase 1, 5 | Postman (Phase 1); OpenAPI/Swagger, HAR, cURL and format detection (Phase 5). See [postman-import.md](postman-import.md), [import-export.md](import-export.md). |
 | Exporters | `pkg/engine/exporter/postman` | ✅ Phase 5 | Postman v2.1 collections and environments. See [import-export.md](import-export.md). |
 | Live outputs | `pkg/engine/output` | ✅ Phase 5 | InfluxDB line protocol, Prometheus remote write, per-tick NDJSON/CSV (`--out`). |
@@ -105,7 +105,7 @@ type Session interface {
 | **Local server + browser UI** | Works on every OS with no per-OS GUI code. The same binary runs headless on servers and in CI. |
 | **React + Vite + TanStack Query + Ant Design** | Mature ecosystem. antd (MIT) supplies the components, themed with the brand red; charts are hand-drawn SVG (`LineChart.tsx`) under the dataviz rules. |
 | **goja** | Pure-Go JS engine. One runtime per VU keeps scripts isolated. |
-| **wazero** | Pure-Go WASM runtime: sandboxed, cross-platform plugins with no CGO. See [ADR 0002](adr/0002-wasm-plugins.md) and [ADR 0005](adr/0005-json-abi-and-go-sdk.md). |
+| **wazero** | Pure-Go WASM runtime: sandboxed, cross-platform plugins with no CGO (JavaScript plugins run on goja inside it). See [ADR 0002](adr/0002-wasm-plugins.md) and [ADR 0005](adr/0005-json-abi-and-go-sdk.md). |
 | **In-house Socket.IO client** | Go's third-party clients are weak, and owning the protocol keeps load mode efficient. See [ADR 0003](adr/0003-socketio-in-house.md). |
 | **One YAML file per request** | Small diffs and easy merges, and it works with any editor. See [ADR 0004](adr/0004-yaml-file-per-request.md). |
 | **HDR histograms** | Accurate percentiles that can be merged across VUs and agents. |

@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+- **Plugin building.** `pyro plugin new --lang go|js` creates a plugin from a template;
+  `pyro plugin dev <dir>` rebuilds (Go) or reinstalls (JavaScript) on every save, approves the
+  manifest's permissions for you and prints them; `pyro plugin test <dir|name>` runs one call
+  from the terminal and prints the response, the call time and the plugin's log lines.
+  `pyro serve`, `serve --team` and `pyro agent` watch the plugins folder, so a plugin installed
+  from the terminal shows up in the open app (the request Type menu, the Plugins tab) within
+  about a second.
+- **JavaScript plugins.** Set `runtime: js` and `module: plugin.js` in the manifest and write the
+  plugin as one script with the `pyro` object (`registerProtocol`, `registerAuth`,
+  `registerProcessor`, `dial`, `log`, `encoding`, `crypto`); there is no build step. They run on
+  an embedded JavaScript engine under the same sandbox, permissions and approval as Go
+  plugins, but about 17 times slower, so prefer Go for heavy load tests. The first one makes
+  Pyro compile the engine once (several seconds). Release archives include an example,
+  `plugin-redis-js`.
+- Plugin limits are enforced: `limits.memoryMB` (default 128 MB, 256 MB for JavaScript, at most
+  1024; a changed limit needs approval again) and `limits.maxInstances` (calls beyond it wait,
+  then fail with `plugin <name> is busy`). Load tests warn when a plugin's cap is below the
+  test's peak VUs. Plugins read a real clock but cannot sleep. Writes to `state.json` are
+  locked, so the CLI and a running server no longer overwrite each other's changes. The Go
+  plugin SDK gains `HandleOp`.
+
 - WebSocket and Socket.IO requests have an action, chosen when created: **Connect** (the
   console, now with a connection name), **Send & receive** (send messages, then wait for a
   matching message, an ack or a set time), **Ping** and **Close**. Steps reach a connection by

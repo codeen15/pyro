@@ -152,8 +152,32 @@ pyro.registerProtocol("echo", (ctx, req) => {
   } finally { conn.close() }
 })
 ```
-Also `pyro.registerAuth`, `pyro.registerProcessor`, `pyro.log.*`, `pyro.encoding.*` and
-`pyro.crypto.*`; the full API is in `plugins/runtime/js/api.go` until its reference lands here.
+The script is plain ECMAScript run by goja: no modules (`require`/`import`), no `console`
+(use `pyro.log`), no timers, no `fetch`; the network is `pyro.dial` only. If you write
+TypeScript, compile it to a single `plugin.js`.
+
+### JavaScript API
+`pyro plugin new --lang js` writes `pyro.d.ts` next to the script; it is the authoritative,
+typed description of this API (and gives editors completion).
+
+| API | Notes |
+|---|---|
+| `pyro.registerProtocol(id, (ctx, req) => …)` | A request type `plugin:<id>`. Return `{status, statusText, headers, body, remoteAddr}` (`headers` is `[{key, value}]` or `{name: value \| [values]}`; `body` is a string or bytes), or nothing for an empty response. Throw to fail the request. |
+| `pyro.registerAuth(id, (ctx, req) => …)` | An auth type. Change `req` (usually `req.setHeader`) to sign the request. |
+| `pyro.registerProcessor(id, (ctx, p) => …)` | A pre/post processor. `p.phase`, `p.request` (change it in the pre phase), `p.response` (`status`, `statusText`, `headers`, `body`, `bodyBytes`, `timeMs`; `null` in the pre phase), `p.vars` (a snapshot), `p.setVar(name, value)`, `p.test(name, passed, message?)`. |
+| `ctx.config`, `ctx.params` | The plugin's settings, and the fields of this request type, auth type or processor; strings with variables already resolved. |
+| `req` | `kind`, `name`, `method`, `url`, `headers`, `query` (`[{key, value}]`), `body` (text), `options` (the manifest's `fields`), and `req.option(key, default)`, `req.header(name)`, `req.setHeader(name, value)`. |
+| `pyro.dial(addr, {tls, timeoutMs})` | Opens a connection to `host:port`; an address the manifest's `network` capability doesn't list throws. A connection has `write(data)`, `read({timeoutMs, max})` (bytes, or `null` at end of stream; throws on timeout) and `close()`. Data is a string (UTF-8), `Uint8Array` or `ArrayBuffer`. Connections left open are closed when the call ends. |
+| `pyro.log.debug/info/warn/error(...)` | Shown in the response's console. |
+| `pyro.encoding.utf8/base64/hex` | `encode` and `decode` between bytes and text. |
+| `pyro.crypto.sha256(data)`, `pyro.crypto.hmacSHA256(key, data)` | Return bytes. |
+
+Two things to know. Setting `p.vars.x = …` or replacing the request (`p.request = {…}`) does
+not flow back to Pyro: call `p.setVar(...)` and change the request object you were given.
+And `pyro.dial` belongs inside handlers: a call at the top level of the script runs at
+install time, before the plugin is approved, and fails. A handler may be `async` as long as it
+awaits nothing that needs real I/O (there is none besides `dial`).
+
 - **Install rules:** the script must be valid UTF-8 and at most 4 MB (`plugin.js is not valid
   UTF-8`, `plugin.js is larger than 4 MB`). Install runs `load` and then `describe`, so a
   script with a syntax error, or one that throws while loading, fails to install with the
@@ -202,6 +226,25 @@ points at a local copy instead (a `replace` directive), for working on the SDK i
 
 **Rust SDK: not written yet.** The ABI is language-neutral, so any language that targets
 WASI and can export functions works.
+
+## Developing: new, dev, test, pack
+```sh
+pyro plugin new ./redis --lang js --kind protocol --id redis    # or --lang go (the default)
+cd redis                  # Go only: go mod tidy, once
+pyro plugin dev .         # install now, and again on every save; Go plugins are rebuilt first
+pyro plugin test redis --protocol redis --url redis://localhost:6379 --body PING
+pyro plugin pack .        # <name>-<version>.pyro-plugin and its sha256
+```
+- `pyro plugin dev <dir> [--interval 500ms] [--once]` watches the folder, builds (Go) and
+  installs, approves the capabilities in the manifest and prints them when they are new. A
+  failed build or install is printed and the previous version keeps working. A running
+  `pyro serve` reloads within about a second.
+- `pyro plugin test <dir | name>` runs one call without a collection, reusing the plugins
+  folder's compile cache so repeat runs are fast. See [Command line](guide/cli.md#pyro-plugin-test).
+- `pyro serve`, `serve --team` and `pyro agent` watch the plugins folder (every second) and
+  reload the manager when another process changes it; the UI hears of it on the `plugins`
+  event topic. `state.json` writes are locked and re-read, so the CLI and a running server
+  don't lose each other's changes.
 
 ## Installing and managing
 ```sh

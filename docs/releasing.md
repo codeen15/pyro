@@ -18,7 +18,7 @@ Locally, `make dist VERSION=v0.1.0` builds the same files into `dist/`:
 | File | Contents |
 |---|---|
 | `pyro_<version>_<os>_<arch>.tar.gz` / `.zip` (Windows) | `pyro`, `LICENSE`, `NOTICE`, `README.md`, `THIRD_PARTY_LICENSES.txt` |
-| `plugin-tcp_<version>.pyro-plugin`, `plugin-hmac_<version>.pyro-plugin` | Example plugins for `pyro plugin install` |
+| `plugin-tcp_<version>.pyro-plugin`, `plugin-hmac_<version>.pyro-plugin`, `plugin-redis-js_<version>.pyro-plugin` | Example plugins for `pyro plugin install` (`redis-js` is a JavaScript plugin, packed without a build step) |
 | `SHA256SUMS` | Checksums of everything above |
 
 Targets: Linux, macOS and Windows on amd64 and arm64, all built with `CGO_ENABLED=0` and

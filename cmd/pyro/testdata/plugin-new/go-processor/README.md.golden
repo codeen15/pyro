@@ -1,11 +1,20 @@
 # foo (Pyro plugin)
 
-Build:
+Fetch the SDK once:
+
+    go mod tidy
+
+Then build, install and rebuild on every save (a running `pyro serve` picks changes up):
+
+    pyro plugin dev .
+
+Try one call of the installed plugin:
+
+    pyro plugin test foo --phase post --status 200
+
+Or build and install by hand:
 
     GOOS=wasip1 GOARCH=wasm go build -buildmode=c-shared -o foo.wasm .
-
-Install and approve:
-
     pyro plugin install .
 
 Package for sharing (prints the sha256 for an index entry):

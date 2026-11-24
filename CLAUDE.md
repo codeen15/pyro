@@ -2,7 +2,7 @@
 
 Pyro is an API client (REST, WebSocket, Socket.IO, Postman import) and load-testing
 tool (stress, spike, soak, concurrency) with WASM plugins. A single Go binary runs the
-engine and serves a React web UI on localhost. **Current phase: all 16 phases done; v0.1.0 tagged and released. No next phase planned yet**
+engine and serves a React web UI on localhost. **Current phase: 17 (plugin building) done; next: 18 (plugin sharing: public index, signed entries)**
 (see `docs/roadmap.md`). Product context: `PRODUCT.md`; visual system: `DESIGN.md`.
 
 ## Layout
@@ -29,7 +29,8 @@ engine and serves a React web UI on localhost. **Current phase: all 16 phases do
   project folders live in `<data>/projects/<id>/`.
 - `internal/version`: build metadata (set via ldflags)
 - `web/`: React + TS + Vite UI; `web/embed.go` embeds `web/dist`
-- `plugins/sdk/go`: Go plugin SDK (separate module); `plugins/examples/{tcp,hmac}`: example plugins (separate modules)
+- `plugins/sdk/go`: Go plugin SDK (separate module); `plugins/examples/{tcp,hmac}`: example Go plugins (separate modules); `plugins/examples/redis-js`: a JavaScript example (no build);
+  `plugins/runtime/js`: the JS plugin runtime (goja on wasip1, separate module; `make jsrt` builds the committed `pkg/engine/plugin/jsrt.wasm.gz`, CI checks it is current; its go.mod pins the Go version for a deterministic build, so bump it with the root go.mod)
 - `docs/`: design docs (index below)
 - `scripts/dist`: release builder (`make dist`); `.github/workflows`: CI and tag-triggered draft releases
 - `web/e2e`: Playwright tests against the real binary (`e2e/server.mjs` starts a mock API and `pyro serve`)
@@ -42,6 +43,7 @@ make dev-api      # engine on :7878, no token
 make dev-ui       # Vite on :5173, proxies /api
 ./bin/pyro serve --open
 ./bin/pyro init <dir> --sample
+make jsrt         # rebuild pkg/engine/plugin/jsrt.wasm.gz after changing plugins/runtime/js (commit the result)
 make dist         # release archives + SHA256SUMS in dist/
 cd web && npm run e2e   # browser tests (needs bin/pyro and npx playwright install chromium)
 ```

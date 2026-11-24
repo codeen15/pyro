@@ -122,15 +122,23 @@ func run(version, out, only string) error {
 		host += ".exe"
 	}
 	if _, err := os.Stat(host); err == nil {
-		for _, p := range []string{"tcp", "hmac"} {
+		// tcp and hmac are Go plugins that are built first; redis-js is a script
+		// and packs as it is.
+		for _, ex := range []struct {
+			name  string
+			build bool
+		}{{"tcp", true}, {"hmac", true}, {"redis-js", false}} {
+			p := ex.name
 			dir := filepath.Join("plugins", "examples", p)
 			fmt.Printf("packing plugin %s\n", p)
-			wasm := exec.Command("go", "build", "-trimpath", "-buildmode=c-shared", "-ldflags=-s -w", "-o", p+".wasm", ".")
-			wasm.Dir = dir
-			wasm.Env = append(os.Environ(), "GOOS=wasip1", "GOARCH=wasm")
-			wasm.Stdout, wasm.Stderr = os.Stdout, os.Stderr
-			if err := wasm.Run(); err != nil {
-				return fmt.Errorf("plugin %s: %w", p, err)
+			if ex.build {
+				wasm := exec.Command("go", "build", "-trimpath", "-buildmode=c-shared", "-ldflags=-s -w", "-o", p+".wasm", ".")
+				wasm.Dir = dir
+				wasm.Env = append(os.Environ(), "GOOS=wasip1", "GOARCH=wasm")
+				wasm.Stdout, wasm.Stderr = os.Stdout, os.Stderr
+				if err := wasm.Run(); err != nil {
+					return fmt.Errorf("plugin %s: %w", p, err)
+				}
 			}
 			archive := filepath.Join(out, fmt.Sprintf("plugin-%s_%s.pyro-plugin", p, ver))
 			pack := exec.Command(host, "plugin", "pack", dir, "-o", archive)

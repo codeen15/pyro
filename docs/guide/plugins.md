@@ -1,11 +1,11 @@
 # Plugins
 
-Plugins add features to Pyro without changing Pyro itself. They are WebAssembly modules that
-run in a sandbox. A plugin can provide:
+Plugins add features to Pyro without changing Pyro itself. They are written in Go (built to
+WebAssembly) or JavaScript, and run in a sandbox. A plugin can provide:
 
 | Kind | Adds | Example |
 |---|---|---|
-| **Request type** | A new kind of request, chosen when you create one | Raw TCP |
+| **Request type** | A new kind of request, chosen when you create one | Raw TCP, Redis |
 | **Auth type** | A way to sign requests, on the **Auth** tab | HMAC signatures |
 | **Processor** | A pre- or post-processor step | Sign a value into a variable; verify a response signature |
 
@@ -29,8 +29,9 @@ pyro plugin list
 A running `pyro serve` picks up plugin changes made by the CLI within about a second, and the
 Plugins tab refreshes on its own.
 
-Release archives include two example plugins: `plugin-tcp` (raw TCP requests) and
-`plugin-hmac` (HMAC auth plus the `hmac-var` processor).
+Release archives include three example plugins: `plugin-tcp` (raw TCP requests),
+`plugin-hmac` (HMAC auth plus the `hmac-var` processor) and `plugin-redis-js` (Redis commands,
+written in JavaScript).
 
 ## Approving
 
@@ -56,22 +57,68 @@ For distributed load tests, install and approve the same plugins on every agent.
 
 ## Writing a plugin
 
-Plugins are written in Go with Pyro's SDK and built with the standard Go toolchain:
+You can write a plugin in **Go** or **JavaScript**. The steps are the same for both: create it
+from a template, run `pyro plugin dev` while you edit, try single calls with `pyro plugin test`,
+then pack it.
+
+### 1. Create it
 
 ```sh
-pyro plugin new ./my-plugin --kind protocol --id redis      # or --kind auth, --kind processor
-cd my-plugin
-go mod tidy               # fetches the SDK, github.com/codeen15/pyro/plugins/sdk/go
-GOOS=wasip1 GOARCH=wasm go build -buildmode=c-shared -o redis.wasm .
-pyro plugin install .
+pyro plugin new ./redis --lang js --kind protocol --id redis    # JavaScript
+pyro plugin new ./redis --lang go --kind protocol --id redis    # Go (the default language)
+```
+
+`--kind` is `protocol` (a request type), `auth` or `processor`. The template is a working
+plugin to edit.
+
+- **JavaScript** writes `plugin.js` (the whole plugin; nothing to build), `pyro-plugin.yaml`
+  with `runtime: js`, `pyro.d.ts` (types for the `pyro` object, so your editor completes it) and
+  a README.
+- **Go** writes `main.go`, `pyro-plugin.yaml`, `go.mod` and a README. Run `go mod tidy` once to
+  fetch the SDK, `github.com/codeen15/pyro/plugins/sdk/go`.
+
+### 2. Run it while you edit
+
+```sh
+cd redis
+pyro plugin dev .
+```
+
+`dev` installs the plugin, **approves its permissions for you** and prints them, then watches
+the folder. On every save it rebuilds (Go) and reinstalls; a running `pyro serve` (or the team
+server) picks the new version up within about a second, and the Plugins tab and the request
+**Type** menu refresh on their own, so you can try the plugin in the app without a restart.
+
+```
+✓ redis 0.1.0 installed (built in 1.4s)
+  approved network: localhost:6379
+```
+
+A build or install error is printed and the previous version keeps working. A JavaScript syntax
+error, or an exception while the script loads, shows the JavaScript error with its line and
+column. Press Ctrl-C to stop. Use `--once` to do a single build and install (for scripts).
+
+### 3. Try one call
+
+```sh
+pyro plugin test redis --protocol redis --url redis://localhost:6379 --body 'PING'
+```
+
+This runs one call and prints the response (or the signed request for an auth plugin, or the
+tests for a processor), the call time and the plugin's log lines, without a collection. Repeat
+runs are quick because compiled code is cached; see [Command line](cli.md#pyro-plugin-test).
+
+### 4. Pack and share it
+
+```sh
 pyro plugin pack .        # writes redis-0.1.0.pyro-plugin and prints its sha256
 ```
 
-Try a plugin without installing it or writing a collection: `pyro plugin test . --protocol redis
---url redis://localhost:6379 --body PING` runs one call and prints the response and the plugin's
-log lines (see [Command line](cli.md#pyro-plugin-test)).
+Share the `.pyro-plugin` file; others install it with `pyro plugin install` or the Plugins tab
+and approve its permissions. Before you share it, narrow the manifest's `network` list to the
+addresses the plugin really needs.
 
-The template is a working plugin to edit. A processor, for example:
+A Go processor, for example:
 
 ```go
 func process(ctx *pyro.Context, p *pyro.Process) error {
@@ -85,16 +132,57 @@ func process(ctx *pyro.Context, p *pyro.Process) error {
 }
 ```
 
-You can also write a plugin in **JavaScript**, with no build step: set `runtime: js` and
-`module: plugin.js` in the manifest, and register handlers from the script
-(`pyro.registerProtocol("redis", (ctx, req) => { … })`). Install it the same way
-(`pyro plugin install .`). If the script has a syntax error or throws while loading, the
-install fails and shows the JavaScript error with its line and column. JavaScript plugins
-run under the same permissions and limits as Go ones, but are slower and run at most 32
-calls at once by default; prefer Go for heavy load tests. The first JavaScript plugin
-makes Pyro compile its JavaScript engine once (several seconds, in the background).
-`plugins/examples/redis-js` in the Pyro repository is a complete example: a Redis protocol
-plugin in one `plugin.js`.
+and the same in JavaScript:
 
-The manifest (`pyro-plugin.yaml`), the SDK API, the ABI, JavaScript plugins and the security
+```js
+pyro.registerProcessor("request-id", (ctx, p) => {
+  if (p.phase === "pre") {
+    const id = "req-" + Date.now()
+    p.setVar("requestId", id)
+    p.request.setHeader("X-Request-Id", id)
+    return
+  }
+  p.test("status below 500", p.response.status < 500)
+})
+```
+
+JavaScript notes:
+- There is no `console`; log with `pyro.log.info(...)` (the lines show in the response's console
+  and in `pyro plugin test`).
+- Assigning `p.vars.x = …` or replacing `p.request = {…}` does not reach Pyro. Call
+  `p.setVar(name, value)` and change the request object you were given (`setHeader` and so on).
+- Open connections with `pyro.dial` inside your handlers. A `pyro.dial` at the top level of the
+  script runs when the plugin is installed, before it is approved, and fails.
+- If the script has a syntax error or throws while loading, the install fails with the JavaScript
+  error and its position.
+- `plugins/examples/redis-js` in the Pyro repository is a complete example: a Redis protocol
+  plugin in one `plugin.js`.
+
+### JavaScript or Go?
+
+| | JavaScript | Go |
+|---|---|---|
+| Build step | none | `go build` for `wasip1` (done by `pyro plugin dev`) |
+| Speed | about 17 times slower than Go on compute-heavy code | native speed |
+| First use | Pyro compiles its JavaScript engine once, about 7 s (then about 0.25 s from the cache); instances take about 17 to 26 ms to start | an instance starts in a few ms |
+| Default limits | 256 MB memory, 32 calls at once | 128 MB memory, no cap on calls |
+| Best for | quick request types, signing and processors; anything run by hand or in small runs | heavy load tests, parsing or compression work |
+
+Both run in the same sandbox, with the same permissions and approval. For a plugin used
+at thousands of calls a second, use Go. The JavaScript engine adds about 4.6 MB (compressed)
+to Pyro itself.
+
+### Limits
+
+A manifest's `limits` section sets two caps. Both are shown when you approve the plugin.
+`memoryMB` is the most memory one copy of the plugin may use (default 128 for Go, 256 for
+JavaScript, at most 1024); past it a call fails with `plugin crashed` and the next call starts
+fresh. `maxInstances` is how many copies may run at once (default 32 for JavaScript, unlimited
+for Go): further calls wait for a free one, and a call that times out while waiting fails with
+`plugin <name> is busy: all <n> instances in use`. A load test warns before it starts when a
+plugin's `maxInstances` is below the test's peak number of virtual users, since the extra
+users would queue. Plugins can read a real clock, but cannot sleep: to wait, read from a
+connection with a timeout.
+
+The manifest (`pyro-plugin.yaml`), the SDK API, the JavaScript API, the ABI and the security
 model are described in [plugins.md](../plugins.md).

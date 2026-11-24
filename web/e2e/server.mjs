@@ -3,7 +3,7 @@
 // HOME, so history and plugins are isolated), and a team server on :7892
 // with an empty data directory. Playwright runs this as its webServer.
 import { spawn } from "node:child_process";
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
@@ -151,13 +151,18 @@ write(
   "name: Smoke\nscenarios:\n  s:\n    executor: constant-vus\n    vus: 3\n    duration: 3s\n    flow: [ { request: shop/list-items }, { think: 50ms } ]\nthresholds:\n  http_req_failed: [\"rate<0.01\"]\n",
 );
 
+// The plugins folder has a fixed path so specs can run `pyro plugin install`
+// against the same folder the servers watch (see plugins-dev.spec.ts).
+const plugins = join(tmpdir(), "pyro-e2e-plugins");
+rmSync(plugins, { recursive: true, force: true });
+
 const bin = resolve(process.env.PYRO_BIN ?? "../bin/pyro");
 const pyro = spawn(bin, ["serve", "--port", String(PYRO), "--no-token", "-w", ws], {
-  env: { ...process.env, HOME: join(root, "home"), PYRO_PLUGINS_DIR: join(root, "plugins") },
+  env: { ...process.env, HOME: join(root, "home"), PYRO_PLUGINS_DIR: plugins },
   stdio: "inherit",
 });
 const teamServer = spawn(bin, ["serve", "--team", "--port", String(TEAM), "--data", join(root, "team"), "--signup", "open"], {
-  env: { ...process.env, HOME: join(root, "home"), PYRO_PLUGINS_DIR: join(root, "plugins") },
+  env: { ...process.env, HOME: join(root, "home"), PYRO_PLUGINS_DIR: plugins },
   stdio: "inherit",
 });
 pyro.on("exit", (code) => process.exit(code ?? 1));

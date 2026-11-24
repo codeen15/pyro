@@ -30,7 +30,6 @@ It is extensible through installable plugins, as JMeter is.
 
 ## Non-goals (for now)
 - Hosted team sync, cloud accounts or a SaaS backend. Collaboration happens through git.
-- API mocking servers and API documentation publishing.
 - GraphQL subscriptions, gRPC, MQTT and raw TCP/UDP as **built-ins**. They are expected to arrive as plugins.
 - Full Postman script parity. The most-used `pm.*` APIs are supported, and the rest are reported on import.
 - A native desktop shell. A Tauri wrapper is optional in Phase 5.
