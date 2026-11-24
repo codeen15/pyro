@@ -210,8 +210,9 @@ pyro plugin test redis --json
 | `--timeout d` | Give up after this long (default `30s`) |
 
 A protocol prints the response; an auth plugin prints the request after signing; a processor
-prints each test as `PASS` or `FAIL`, the variables it set and any rewritten request. Plugin log
-lines go to stderr. The exit code is 1 when the call fails or a processor test fails.
+prints each test as `PASS` or `FAIL`, the variables it set and any rewritten request. Each shows
+the call time. Plugin log lines go to stderr. Compiled code is cached in your plugins folder, so
+only the first run of a JavaScript plugin pays for compiling the JavaScript runtime. The exit code is 1 when the call fails or a processor test fails.
 
 ## pyro version
 Print the version and build information.

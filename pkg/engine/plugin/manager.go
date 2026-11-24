@@ -57,7 +57,9 @@ type loaded struct {
 // Safe for concurrent use.
 type Manager struct {
 	dir string
-	mu  sync.Mutex
+	// cacheDir overrides the compilation cache folder ("" = <dir>/cache).
+	cacheDir string
+	mu       sync.Mutex
 	// hosts holds one runtime per distinct memory limit (MB); all share
 	// the compilation cache in <dir>/cache.
 	hosts map[int]*host
@@ -72,11 +74,16 @@ type Manager struct {
 }
 
 // Open loads installed plugins from dir; modules compile on first use.
-func Open(dir string) (*Manager, error) {
+func Open(dir string) (*Manager, error) { return OpenWithCache(dir, "") }
+
+// OpenWithCache is Open with the compilation cache kept in cacheDir instead
+// of <dir>/cache (empty means the default). Throwaway managers, like the one
+// behind `pyro plugin test`, use it to reuse the real plugins folder's cache.
+func OpenWithCache(dir, cacheDir string) (*Manager, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
 	}
-	m := &Manager{dir: dir, byNm: map[string]*loaded{}, st: state{Plugins: map[string]*pluginState{}}}
+	m := &Manager{dir: dir, cacheDir: cacheDir, byNm: map[string]*loaded{}, st: state{Plugins: map[string]*pluginState{}}}
 	st, err := readState(dir)
 	if err != nil {
 		return nil, err
@@ -336,6 +343,9 @@ func (m *Manager) host(ctx context.Context, memoryMB int) (*host, error) {
 		return nil, errors.New("plugins are shut down")
 	}
 	cacheDir := filepath.Join(m.dir, "cache")
+	if m.cacheDir != "" {
+		cacheDir = m.cacheDir
+	}
 	if testCacheDir != "" {
 		cacheDir = testCacheDir
 	}

@@ -10,21 +10,23 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
 
 const echoPluginDir = "../../pkg/engine/plugin/testdata/js/echo"
 
-// TestMain points directory tests at one shared temporary manager so the
-// JavaScript runtime compiles once, not once per case.
+// TestMain gives the tests their own plugins folder, whose compilation cache
+// `pyro plugin test` shares between runs, so the JavaScript runtime compiles
+// once rather than once per case (and the real ~/.pyro is never touched).
 func TestMain(m *testing.M) {
 	dir, err := os.MkdirTemp("", "pyro-plugintest-")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	pluginTestDir = dir
+	os.Setenv("PYRO_PLUGINS_DIR", dir)
 	code := m.Run()
 	os.RemoveAll(dir)
 	os.Exit(code)
@@ -154,5 +156,31 @@ func TestPluginTestUnknownFeature(t *testing.T) {
 	_, _, err := runPluginTest(t, echoPluginDir, "--protocol", "nope")
 	if err == nil || !strings.Contains(err.Error(), "nope") {
 		t.Errorf("err = %v", err)
+	}
+}
+
+// A directory run installs into a throwaway folder that is gone afterwards,
+// while compiled code lands in the real plugins folder's cache, where the
+// next run finds it.
+func TestPluginTestCacheAndCleanup(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("TMPDIR", tmp)
+	pd := t.TempDir()
+	t.Setenv("PYRO_PLUGINS_DIR", pd)
+
+	for i := 0; i < 2; i++ {
+		if _, _, err := runPluginTest(t, echoPluginDir, "--auth", "js-sign", "--body", "x"); err != nil {
+			t.Fatal(err)
+		}
+		if left, _ := os.ReadDir(tmp); len(left) != 0 {
+			t.Errorf("run %d left the temporary folder behind: %v", i+1, left)
+		}
+		if entries, err := os.ReadDir(filepath.Join(pd, "cache")); err != nil || len(entries) == 0 {
+			t.Errorf("run %d: the plugins folder's cache is empty: %v %v", i+1, entries, err)
+		}
+	}
+	// Nothing else is written to the real plugins folder.
+	if entries, _ := os.ReadDir(pd); len(entries) != 1 || entries[0].Name() != "cache" {
+		t.Errorf("plugins folder = %v, want only cache", entries)
 	}
 }

@@ -6,7 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -18,11 +20,6 @@ import (
 	"github.com/codeen15/pyro/pkg/engine/plugin"
 	"github.com/codeen15/pyro/pkg/engine/protocol"
 )
-
-// pluginTestDir, when set (by tests), is the folder a directory argument is
-// installed into, so the compilation cache survives between invocations. By
-// default each run uses a fresh temporary folder.
-var pluginTestDir string
 
 // pluginTestCmd runs one plugin call from the terminal, so authors can try a
 // plugin without building a collection around it.
@@ -119,7 +116,7 @@ func pluginTestCmd() *cobra.Command {
 				}
 				in := plugin.ProcessInput{Phase: phase, Request: req, Vars: map[string]string{}, Options: popts}
 				if phase == "post" {
-					in.Response = &protocol.Response{Status: status, StatusText: statusText(status), Body: []byte(respBody), Size: int64(len(respBody))}
+					in.Response = &protocol.Response{Status: status, StatusText: http.StatusText(status), Body: []byte(respBody), Size: int64(len(respBody))}
 				}
 				return t.process(ctx, m, id, in)
 			}
@@ -149,15 +146,19 @@ func pluginTestCmd() *cobra.Command {
 func openForTest(arg string, cfg map[string]string) (*plugin.Manager, plugin.Info, func(), error) {
 	noop := func() {}
 	if st, err := os.Stat(arg); err == nil && st.IsDir() {
-		dir, remove := pluginTestDir, noop
-		if dir == "" {
-			tmp, err := os.MkdirTemp("", "pyro-plugin-test-")
-			if err != nil {
-				return nil, plugin.Info{}, noop, err
-			}
-			dir, remove = tmp, func() { os.RemoveAll(tmp) }
+		tmp, err := os.MkdirTemp("", "pyro-plugin-test-")
+		if err != nil {
+			return nil, plugin.Info{}, noop, err
 		}
-		m, err := plugin.Open(dir)
+		remove := func() { os.RemoveAll(tmp) }
+		// Plugins and state live in the throwaway folder, but compiled code
+		// is cached in the real plugins folder (the one `pyro serve` uses),
+		// so only the first run pays for compiling the JavaScript runtime.
+		cacheDir := ""
+		if pd, err := pluginsDir(); err == nil {
+			cacheDir = filepath.Join(pd, "cache")
+		}
+		m, err := plugin.OpenWithCache(tmp, cacheDir)
 		if err != nil {
 			remove()
 			return nil, plugin.Info{}, noop, err
@@ -269,19 +270,21 @@ func (t *testRun) protocol(ctx context.Context, m *plugin.Manager, id string, re
 }
 
 func (t *testRun) auth(ctx context.Context, m *plugin.Manager, id string, req *model.Request, params map[string]string) error {
+	start := time.Now()
 	logs, err := m.Sign(ctx, id, req, params)
+	ms := millis(time.Since(start))
 	t.logs(logs)
 	if err != nil {
 		return err
 	}
 	if t.json {
 		return t.emit(map[string]any{
-			"kind": plugin.KindAuth, "id": id,
+			"kind": plugin.KindAuth, "id": id, "timeMs": ms,
 			"request": map[string]any{"url": req.URL, "query": nonNilKV(req.Query), "headers": nonNilKV(req.Headers)},
 			"logs":    nonNilLogs(logs),
 		})
 	}
-	fmt.Fprintf(t.out, "Signed. The request is now:\n%s\n", req.URL)
+	fmt.Fprintf(t.out, "Signed (%.0f ms). The request is now:\n%s\n", ms, req.URL)
 	for _, q := range req.Query {
 		fmt.Fprintf(t.out, "  ?%s=%s\n", q.Key, q.Value)
 	}
@@ -291,6 +294,8 @@ func (t *testRun) auth(ctx context.Context, m *plugin.Manager, id string, req *m
 	return nil
 }
 
+func millis(d time.Duration) float64 { return float64(d) / float64(time.Millisecond) }
+
 func nonNilKV(kv []model.KeyValue) []model.KeyValue {
 	if kv == nil {
 		return []model.KeyValue{}
@@ -299,7 +304,9 @@ func nonNilKV(kv []model.KeyValue) []model.KeyValue {
 }
 
 func (t *testRun) process(ctx context.Context, m *plugin.Manager, id string, in plugin.ProcessInput) error {
+	start := time.Now()
 	res, err := m.Process(ctx, id, in)
+	ms := millis(time.Since(start))
 	t.logs(res.Logs)
 	if err != nil {
 		return err
@@ -312,12 +319,13 @@ func (t *testRun) process(ctx context.Context, m *plugin.Manager, id string, in 
 	}
 	if t.json {
 		if err := t.emit(map[string]any{
-			"kind": plugin.KindProcessor, "id": id, "phase": in.Phase,
+			"kind": plugin.KindProcessor, "id": id, "phase": in.Phase, "timeMs": ms,
 			"vars": nonNilMap(res.Vars), "request": res.Request, "tests": nonNilTests(res.Tests), "logs": nonNilLogs(res.Logs),
 		}); err != nil {
 			return err
 		}
 	} else {
+		fmt.Fprintf(t.out, "%s processor ran (%.0f ms)\n", in.Phase, ms)
 		for _, r := range res.Tests {
 			mark := "PASS"
 			if !r.Passed {
@@ -369,18 +377,6 @@ func sortedKeys(m map[string]string) []string {
 	}
 	slices.Sort(keys)
 	return keys
-}
-
-func statusText(code int) string {
-	switch {
-	case code >= 200 && code < 300:
-		return "OK"
-	case code >= 400 && code < 500:
-		return "Client Error"
-	case code >= 500:
-		return "Server Error"
-	}
-	return ""
 }
 
 // splitPair splits "k=v" (or "k: v" for headers) at the first separator.
