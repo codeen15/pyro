@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"net/netip"
 	"strings"
 	"sync"
 	"time"
@@ -197,14 +198,13 @@ func (r *agentRegistry) authenticate(token string) (string, bool) {
 }
 
 // serveConnect is GET /agent/v1/connect: agents that connect out to the
-// server. Addresses that keep presenting wrong tokens are refused a while.
+// server. Addresses that keep presenting wrong tokens get 429 for a while.
+// Only failures are limited: a valid token always connects, since behind a
+// reverse proxy every agent shares the proxy's address (and tokens are 256
+// bits, so guessing gains nothing from the exemption). A success doesn't
+// clear the address's failures, or guesses could hide among real agents.
 func (r *agentRegistry) serveConnect(w http.ResponseWriter, req *http.Request) {
-	ip := clientIP(req)
-	if r.limit.blocked(ip, time.Now()) {
-		w.Header().Set("Retry-After", "60")
-		http.Error(w, "too many failed agent connections from this address; try again in a minute", http.StatusTooManyRequests)
-		return
-	}
+	key := limiterKey(clientIP(req))
 	token, _ := strings.CutPrefix(req.Header.Get("Authorization"), "Bearer ")
 	a, ok, err := r.st.AgentByToken(req.Context(), token)
 	if err != nil {
@@ -213,11 +213,15 @@ func (r *agentRegistry) serveConnect(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	if !ok {
-		r.limit.fail(ip, time.Now())
+		if r.limit.blocked(key, time.Now()) {
+			w.Header().Set("Retry-After", "60")
+			http.Error(w, "too many failed agent connections from this address; try again in a minute", http.StatusTooManyRequests)
+			return
+		}
+		r.limit.fail(key, time.Now())
 		http.Error(w, "invalid or missing agent token", http.StatusUnauthorized)
 		return
 	}
-	r.limit.reset(ip)
 	r.mu.Lock()
 	r.secure[a.ID] = req.TLS != nil
 	r.mu.Unlock()
@@ -662,17 +666,43 @@ func (r *agentRegistry) Release(workers []load.Worker) {
 }
 
 // connectLimiter refuses an address for a window after too many failed
-// dial-in attempts within that window.
+// dial-in attempts within that window. Expired entries are swept every
+// sweepEvery failures, and sooner when the maps grow past their limit.
 type connectLimiter struct {
 	mu     sync.Mutex
 	max    int
 	window time.Duration
 	fails  map[string][]time.Time
 	until  map[string]time.Time
+	calls  int // failures since the last sweep
+	limit  int // entries that trigger a sweep
+}
+
+const (
+	sweepEvery   = 64
+	sweepEntries = 1024
+)
+
+// limiterKey is the limiter's key for an address: IPv6 addresses by their
+// /64 (one host usually has a whole /64), IPv4 as is.
+func limiterKey(ip string) string {
+	a, err := netip.ParseAddr(ip)
+	if err != nil {
+		return ip
+	}
+	a = a.Unmap()
+	if a.Is4() {
+		return a.String()
+	}
+	p, err := a.Prefix(64)
+	if err != nil {
+		return ip
+	}
+	return p.String()
 }
 
 func newConnectLimiter(max int, window time.Duration) *connectLimiter {
-	return &connectLimiter{max: max, window: window, fails: map[string][]time.Time{}, until: map[string]time.Time{}}
+	return &connectLimiter{max: max, window: window, fails: map[string][]time.Time{}, until: map[string]time.Time{}, limit: sweepEntries}
 }
 
 func (l *connectLimiter) blocked(ip string, now time.Time) bool {
@@ -689,7 +719,8 @@ func (l *connectLimiter) blocked(ip string, now time.Time) bool {
 func (l *connectLimiter) fail(ip string, now time.Time) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if len(l.fails) > 4096 {
+	l.calls++
+	if l.calls >= sweepEvery || len(l.fails)+len(l.until) >= l.limit {
 		l.sweep(now)
 	}
 	recent := l.recentLocked(ip, now)
@@ -726,10 +757,6 @@ func (l *connectLimiter) sweep(now time.Time) {
 			delete(l.until, ip)
 		}
 	}
-}
-
-func (l *connectLimiter) reset(ip string) {
-	l.mu.Lock()
-	delete(l.fails, ip)
-	l.mu.Unlock()
+	// Many live entries: don't sweep again until they double.
+	l.calls, l.limit = 0, max(sweepEntries, 2*(len(l.fails)+len(l.until)))
 }

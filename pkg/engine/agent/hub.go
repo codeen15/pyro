@@ -43,7 +43,12 @@ type Hub struct {
 
 	mu    sync.Mutex
 	conns map[*hubConn]struct{} // live connections, idle and claimed
-	ready chan struct{}         // signalled when a connection becomes idle
+	// seq counts Disconnect calls; dropped is the seq of each id's last
+	// one. A connection that authenticated before its id was disconnected
+	// is refused when its hello arrives.
+	seq     uint64
+	dropped map[string]uint64
+	ready   chan struct{} // signalled when a connection becomes idle
 }
 
 type hubConn struct {
@@ -84,6 +89,9 @@ func (h *Hub) authenticate(token string) (string, bool) {
 }
 
 func (h *Hub) connect(w http.ResponseWriter, r *http.Request) {
+	h.mu.Lock()
+	since := h.seq // before the token check: a later Disconnect revokes this connection
+	h.mu.Unlock()
 	got, _ := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 	id, ok := h.authenticate(got)
 	if !ok {
@@ -118,6 +126,12 @@ func (h *Hub) connect(w http.ResponseWriter, r *http.Request) {
 	go hc.pump()
 
 	h.mu.Lock()
+	if h.dropped[id] > since {
+		h.mu.Unlock()
+		hc.once.Do(func() { close(hc.stop) })
+		c.Close(websocket.StatusPolicyViolation, "agent was removed or its token changed")
+		return
+	}
 	var replaced []*hubConn
 	for old := range h.conns {
 		if old.id == id && !old.used {
@@ -377,9 +391,15 @@ func (h *Hub) Release(workers []load.Worker) {
 	}
 }
 
-// Disconnect closes every connection of the agent with this id.
+// Disconnect closes every connection of the agent with this id, including
+// one still waiting for its hello (it is refused when the hello arrives).
 func (h *Hub) Disconnect(id string) {
 	h.mu.Lock()
+	h.seq++
+	if h.dropped == nil {
+		h.dropped = map[string]uint64{}
+	}
+	h.dropped[id] = h.seq
 	var conns []*hubConn
 	for hc := range h.conns {
 		if hc.id == id {

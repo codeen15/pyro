@@ -212,6 +212,39 @@ func TestHubDisconnect(t *testing.T) {
 	}
 }
 
+// A connection that authenticated before its agent was disconnected (the
+// agent removed or its token rotated) is refused when its hello arrives.
+func TestHubDisconnectBeforeHello(t *testing.T) {
+	h := NewHub("")
+	h.Authenticate = tokenAuth
+	hs := serveHub(t, h)
+	hdr := http.Header{}
+	hdr.Set("Authorization", "Bearer tok-a")
+	hdr.Set(protocolHeader, strconv.Itoa(Protocol))
+	ctx := context.Background()
+	c, _, err := websocket.Dial(ctx, "ws"+hs.URL[4:]+"/agent/v1/connect", &websocket.DialOptions{HTTPHeader: hdr})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.CloseNow()
+	h.Disconnect("a")
+	if err := wsjson.Write(ctx, c, message{Type: "hello", Info: &Info{Name: "late"}}); err != nil {
+		t.Fatal(err)
+	}
+	rctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	var m message
+	if err := wsjson.Read(rctx, c, &m); err == nil || rctx.Err() != nil {
+		t.Fatalf("connection not closed: %v (%+v)", err, m)
+	}
+	if _, ok := h.ConnectedIDs()["a"]; ok {
+		t.Fatal("revoked connection was kept")
+	}
+	// A new connection after the disconnect is fine.
+	startAgent(t, hs.URL, "tok-a", "again")
+	eventually(t, "reconnect", func() bool { return h.ConnectedIDs()["a"].Name == "again" })
+}
+
 func TestHubSingleTokenIDs(t *testing.T) {
 	h := NewHub("tok")
 	hs := serveHub(t, h)

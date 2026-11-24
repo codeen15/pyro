@@ -10,6 +10,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/coder/websocket"
+	"github.com/coder/websocket/wsjson"
+
 	"github.com/codeen15/pyro/internal/db/dbtest"
 	"github.com/codeen15/pyro/internal/history"
 	"github.com/codeen15/pyro/internal/server"
@@ -136,7 +139,7 @@ func connectWith(t *testing.T, url, token string) int {
 }
 
 func TestRegistryConnectRateLimit(t *testing.T) {
-	ts, _, st := newTeamServer(t, Config{})
+	ts, srv, st := newTeamServer(t, Config{})
 	_, token, _ := st.AddConnectAgent(context.Background(), "office-1", "")
 	for i := range 5 {
 		if code := connectWith(t, ts.URL, "pyro_agent_wrong"); code != 401 {
@@ -146,9 +149,88 @@ func TestRegistryConnectRateLimit(t *testing.T) {
 	if code := connectWith(t, ts.URL, "pyro_agent_wrong"); code != 429 {
 		t.Fatalf("6th attempt: %d", code)
 	}
-	// The address is refused for a while, even with the right token.
-	if code := connectWith(t, ts.URL, token); code != 429 {
-		t.Fatalf("right token while blocked: %d", code)
+	// Only failures are limited: behind a proxy every agent shares one
+	// address, so a valid token still connects while it is blocked.
+	a, _ := st.Agents(context.Background())
+	dialIn(t, ts.URL, token, "m")
+	waitStatus(t, srv.agents, a[0].ID, "available", 2*time.Second)
+	if code := connectWith(t, ts.URL, "pyro_agent_wrong"); code != 429 {
+		t.Fatalf("wrong token while blocked: %d", code)
+	}
+}
+
+func TestRegistryConnectLimiterForgetsOldEntries(t *testing.T) {
+	l := newConnectLimiter(5, time.Minute)
+	now := time.Unix(1000, 0)
+	for range 5 {
+		l.fail("1.2.3.4", now)
+	}
+	l.fail("5.6.7.8", now)
+	l.sweep(now.Add(2 * time.Minute))
+	if len(l.fails) != 0 || len(l.until) != 0 {
+		t.Fatalf("expired entries kept: %v %v", l.fails, l.until)
+	}
+	// Sweeps also happen by themselves as addresses pile up.
+	for i := range 3000 {
+		l.fail(net.IPv4(10, 0, byte(i>>8), byte(i)).String(), now.Add(time.Duration(i)*time.Second))
+	}
+	if n := len(l.fails) + len(l.until); n > 1100 {
+		t.Fatalf("%d entries kept", n)
+	}
+}
+
+func TestRegistryLimiterKeysIPv6By64(t *testing.T) {
+	if limiterKey("2001:db8:1:2:aaaa::1") != limiterKey("2001:db8:1:2:bbbb::9") {
+		t.Fatal("addresses in one /64 should share a key")
+	}
+	if limiterKey("2001:db8:1:2::1") == limiterKey("2001:db8:1:3::1") || limiterKey("10.0.0.1") == limiterKey("10.0.0.2") {
+		t.Fatal("different networks share a key")
+	}
+}
+
+// rawConnect opens a dial-in connection without sending hello yet.
+func rawConnect(t *testing.T, url, token string) *websocket.Conn {
+	t.Helper()
+	hdr := http.Header{}
+	hdr.Set("Authorization", "Bearer "+token)
+	hdr.Set("Pyro-Agent-Protocol", "1")
+	c, _, err := websocket.Dial(context.Background(), "ws"+url[4:]+"/agent/v1/connect", &websocket.DialOptions{HTTPHeader: hdr})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { c.CloseNow() })
+	return c
+}
+
+func TestRegistryForgetBeforeHello(t *testing.T) {
+	ctx := context.Background()
+	for _, how := range []string{"delete", "rotate"} {
+		t.Run(how, func(t *testing.T) {
+			ts, srv, st := newTeamServer(t, Config{})
+			a, token, _ := st.AddConnectAgent(ctx, "office-1", "")
+			c := rawConnect(t, ts.URL, token)
+			if how == "delete" {
+				if err := st.DeleteAgent(ctx, a.ID); err != nil {
+					t.Fatal(err)
+				}
+			} else if _, err := st.RotateAgentToken(ctx, a.ID); err != nil {
+				t.Fatal(err)
+			}
+			srv.agents.Forget(a.ID)
+			hello := map[string]any{"type": "hello", "info": map[string]any{"name": "late", "cpus": 1}}
+			if err := wsjson.Write(ctx, c, hello); err != nil {
+				t.Fatal(err)
+			}
+			rctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			defer cancel()
+			var m map[string]any
+			if err := wsjson.Read(rctx, c, &m); err == nil || rctx.Err() != nil {
+				t.Fatalf("connection not closed: %v %v", err, m)
+			}
+			if _, ok := srv.agents.hub.ConnectedIDs()[a.ID]; ok {
+				t.Fatal("connection kept after Forget")
+			}
+		})
 	}
 }
 
