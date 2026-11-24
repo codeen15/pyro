@@ -183,6 +183,35 @@ Manage plugins ([Plugins](plugins.md)).
 | `search [query]` | Search the plugin index |
 | `new <dir> --kind protocol\|auth\|processor --id <id>` | Create a plugin from a template using the published Go SDK (`--sdk` uses a local SDK copy instead) |
 | `pack <dir>` | Package a built plugin as `.pyro-plugin` and print its sha256 |
+| `test <dir \| name>` | Run one call of a plugin and print the result (below) |
+
+### pyro plugin test
+Try a plugin without building a collection around it. A directory is installed into a temporary
+folder first and its permissions are approved for that run only; a name must be an installed,
+approved plugin. When the plugin provides one feature the kind flag is optional; otherwise pick
+one with `--protocol <id>`, `--auth <id>` or `--processor <id>`.
+
+```sh
+pyro plugin test ./my-plugin --protocol redis --url redis://localhost:6379 --body 'PING'
+pyro plugin test ./my-plugin --auth sign --url https://api.example.com/orders --body '{}' --param secret=s3cret
+pyro plugin test ./my-plugin --processor check --phase post --status 200 --response-body '{"ok":true}'
+pyro plugin test redis --json
+```
+
+| Flag | Does |
+|---|---|
+| `--url`, `--method`, `--body`, `--header k=v` | The request to send (headers repeat) |
+| `--opt k=v` | Request options for a protocol plugin (the manifest's fields) |
+| `--param k=v` | Auth parameters, or a processor's options |
+| `--config k=v` | The plugin's settings (directories only; an installed plugin uses its saved ones) |
+| `--phase pre\|post` | Processor phase (default `post`) |
+| `--status n`, `--response-body b` | The response a `post` processor sees (default 200, empty) |
+| `--json` | Print the result as JSON, with the plugin's log lines in `logs` |
+| `--timeout d` | Give up after this long (default `30s`) |
+
+A protocol prints the response; an auth plugin prints the request after signing; a processor
+prints each test as `PASS` or `FAIL`, the variables it set and any rewritten request. Plugin log
+lines go to stderr. The exit code is 1 when the call fails or a processor test fails.
 
 ## pyro version
 Print the version and build information.

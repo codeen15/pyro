@@ -67,6 +67,10 @@ pyro plugin install .
 pyro plugin pack .        # writes redis-0.1.0.pyro-plugin and prints its sha256
 ```
 
+Try a plugin without installing it or writing a collection: `pyro plugin test . --protocol redis
+--url redis://localhost:6379 --body PING` runs one call and prints the response and the plugin's
+log lines (see [Command line](cli.md#pyro-plugin-test)).
+
 The template is a working plugin to edit. A processor, for example:
 
 ```go
