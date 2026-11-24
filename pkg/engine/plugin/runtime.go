@@ -228,6 +228,12 @@ type pool struct {
 	slots chan struct{}
 	mu    sync.Mutex
 	idle  []*instance
+	// live counts instances handed out by get and not yet returned.
+	live int
+	// retired: the plugin was removed or replaced. Returned instances are
+	// closed, and the compiled module once the last one is back.
+	retired  bool
+	cmClosed bool
 }
 
 const maxIdle = 4096
@@ -286,9 +292,18 @@ func (p *pool) get(ctx context.Context) (*instance, error) {
 	if n := len(p.idle); n > 0 {
 		in := p.idle[n-1]
 		p.idle = p.idle[:n-1]
+		p.live++
 		p.mu.Unlock()
 		return in, nil
 	}
+	if p.cmClosed {
+		p.mu.Unlock()
+		p.release()
+		return nil, fmt.Errorf("plugin %s was reloaded; try again", p.name)
+	}
+	// Counting the instance now keeps the compiled module open while it
+	// is instantiated, even if the pool is retired meanwhile.
+	p.live++
 	p.mu.Unlock()
 	// Instantiation must outlive the caller's request context, or wazero
 	// would close the module when that context ends. Plugins see a real
@@ -298,13 +313,13 @@ func (p *pool) get(ctx context.Context) (*instance, error) {
 		wazero.NewModuleConfig().WithName("").WithStartFunctions("_initialize").WithStderr(os.Stderr).
 			WithSysNanotime())
 	if err != nil {
-		p.release()
+		p.done(nil)
 		return nil, fmt.Errorf("starting plugin: %w", err)
 	}
 	in := &instance{mod: mod, alloc: mod.ExportedFunction("pyro_alloc"), free: mod.ExportedFunction("pyro_free"), invoke: mod.ExportedFunction("pyro_invoke")}
 	if in.alloc == nil || in.free == nil || in.invoke == nil {
 		mod.Close(ctx)
-		p.release()
+		p.done(nil)
 		return nil, errors.New("not a Pyro plugin: missing pyro_alloc, pyro_free or pyro_invoke exports")
 	}
 	return in, nil
@@ -319,26 +334,53 @@ func (p *pool) put(in *instance) {
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if len(p.idle) < limit {
+	p.live--
+	if !p.retired && len(p.idle) < limit {
 		p.idle = append(p.idle, in)
 		return
 	}
 	in.mod.Close(context.Background())
+	p.closeModuleIfDrained()
 }
 
 // discard closes an instance that may be broken and releases its slot.
 func (p *pool) discard(in *instance) {
-	defer p.release()
-	in.mod.Close(context.Background())
+	p.done(in)
 }
 
-func (p *pool) close(ctx context.Context) {
+// done closes in (if any), stops counting it and releases its slot.
+func (p *pool) done(in *instance) {
+	defer p.release()
+	if in != nil {
+		in.mod.Close(context.Background())
+	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	p.live--
+	p.closeModuleIfDrained()
+}
+
+// retire closes the idle instances now; calls in flight finish on their
+// instances, which put closes as they come back, and the compiled module
+// is closed with the last of them. Safe to call more than once.
+func (p *pool) retire() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.retired = true
 	for _, in := range p.idle {
-		in.mod.Close(ctx)
+		in.mod.Close(context.Background())
 	}
 	p.idle = nil
+	p.closeModuleIfDrained()
+}
+
+// closeModuleIfDrained closes a retired pool's compiled module once no
+// instance is out. The caller holds p.mu.
+func (p *pool) closeModuleIfDrained() {
+	if p.retired && p.live == 0 && !p.cmClosed {
+		p.cmClosed = true
+		p.cm.Close(context.Background())
+	}
 }
 
 // call sends one JSON message and decodes the reply into out. A trap or

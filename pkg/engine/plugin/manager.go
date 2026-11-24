@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"log/slog"
 	"net"
 	"os"
 	"path/filepath"
@@ -51,6 +50,7 @@ type loaded struct {
 	dir  string
 	pool *pool
 	err  error
+	fp   fingerprint
 }
 
 // Manager owns installed plugins under one directory (~/.pyro/plugins).
@@ -63,6 +63,10 @@ type Manager struct {
 	hosts map[int]*host
 	st    state
 	byNm  map[string]*loaded
+
+	subMu   sync.Mutex
+	subs    map[int]func()
+	nextSub int
 }
 
 // Open loads installed plugins from dir; modules compile on first use.
@@ -75,47 +79,12 @@ func Open(dir string) (*Manager, error) {
 	if err != nil {
 		return nil, err
 	}
-	m.st = st
-	entries, err := os.ReadDir(dir)
+	found, err := scan(dir)
 	if err != nil {
 		return nil, err
 	}
-	migrated := map[string]int{}
-	for _, e := range entries {
-		if !e.IsDir() || strings.HasPrefix(e.Name(), ".") || e.Name() == "cache" {
-			continue
-		}
-		l := &loaded{dir: filepath.Join(dir, e.Name())}
-		data, err := os.ReadFile(filepath.Join(l.dir, ManifestFile))
-		if err == nil {
-			l.man, err = ParseManifest(data)
-		}
-		if err != nil {
-			l.err = err
-			l.man = &Manifest{Name: e.Name(), Limits: Limits{MemoryMB: DefaultMemoryMBWasm}}
-		} else if ps := m.st.Plugins[l.man.Name]; ps != nil && ps.Approved != nil && ps.ApprovedMemoryMB == 0 {
-			// Approved before memory limits were part of approval: the
-			// user approved what the manifest asks for now.
-			ps.ApprovedMemoryMB = l.man.Limits.MemoryMB
-			migrated[l.man.Name] = ps.ApprovedMemoryMB
-		}
-		m.byNm[l.man.Name] = l
-	}
-	if len(migrated) > 0 {
-		// The in-memory migration is right whether or not it can be saved,
-		// so a read-only plugins folder must not disable every plugin.
-		err := m.mutate(func(st *state) error {
-			for name, mb := range migrated {
-				if ps := st.Plugins[name]; ps != nil && ps.Approved != nil && ps.ApprovedMemoryMB == 0 {
-					ps.ApprovedMemoryMB = mb
-				}
-			}
-			return nil
-		})
-		if err != nil {
-			slog.Warn("plugins: could not save the approval migration", "dir", dir, "err", err)
-		}
-	}
+	m.st, m.byNm = st, found
+	m.saveMigration(migrateApprovals(&m.st, memIn(found)))
 	return m, nil
 }
 
@@ -242,19 +211,35 @@ func (m *Manager) install(man *Manifest, manifest, module []byte, approve bool) 
 	}
 
 	m.mu.Lock()
-	defer m.mu.Unlock()
-	if old := m.byNm[man.Name]; old != nil && old.pool != nil {
-		old.pool.close(context.Background())
+	info, err := m.replace(man, tmp, dest, approve)
+	m.mu.Unlock()
+	if info.Name != "" {
+		m.notify()
+	}
+	return info, err
+}
+
+// replace moves an unpacked plugin into place and records it. The caller
+// holds m.mu. Info is empty when nothing changed on disk.
+func (m *Manager) replace(man *Manifest, tmp, dest string, approve bool) (Info, error) {
+	old := m.byNm[man.Name]
+	if old != nil && old.pool != nil {
+		old.pool.retire() // calls in flight finish on the old code
 	}
 	if err := os.RemoveAll(dest); err != nil {
+		if old != nil {
+			m.byNm[man.Name] = old.fresh()
+		}
 		return Info{}, err
 	}
 	if err := os.Rename(tmp, dest); err != nil {
+		delete(m.byNm, man.Name) // the old files are gone
 		return Info{}, err
 	}
-	l := &loaded{man: man, dir: dest}
-	m.byNm[man.Name] = l
-	err = m.mutate(func(st *state) error {
+	l := &loaded{man: man, dir: dest, fp: fingerprintOf(dest, man)}
+	// mutate runs the legacy approval migration against the manifest the
+	// user had (old), so the new one's memory limit isn't approved by it.
+	err := m.mutate(func(st *state) error {
 		ps := st.Plugins[man.Name]
 		if ps == nil {
 			ps = &pluginState{Enabled: true}
@@ -267,6 +252,7 @@ func (m *Manager) install(man *Manifest, manifest, module []byte, approve bool) 
 		}
 		return nil
 	})
+	m.byNm[man.Name] = l
 	return m.info(l), err
 }
 
@@ -283,7 +269,7 @@ func (m *Manager) verify(man *Manifest, module []byte) error {
 		return fmt.Errorf("compiling %s: %w", man.Module, err)
 	}
 	p := newPool(h, cm, man.Name, 0)
-	defer p.close(ctx)
+	defer p.retire()
 	var r struct {
 		ABI      int `json:"abi"`
 		Provides []struct {
@@ -334,15 +320,24 @@ func (m *Manager) host(ctx context.Context, memoryMB int) (*host, error) {
 // Remove uninstalls a plugin.
 func (m *Manager) Remove(name string) error {
 	m.mu.Lock()
-	defer m.mu.Unlock()
+	err := m.remove(name)
+	m.mu.Unlock()
+	if !errors.Is(err, ErrNotFound) {
+		m.notify()
+	}
+	return err
+}
+
+func (m *Manager) remove(name string) error {
 	l := m.byNm[name]
 	if l == nil {
 		return ErrNotFound
 	}
 	if l.pool != nil {
-		l.pool.close(context.Background())
+		l.pool.retire()
 	}
 	if err := os.RemoveAll(l.dir); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		m.byNm[name] = l.fresh()
 		return err
 	}
 	delete(m.byNm, name)
@@ -350,6 +345,12 @@ func (m *Manager) Remove(name string) error {
 		delete(st.Plugins, name)
 		return nil
 	})
+}
+
+// fresh returns a copy of l without its (retired) pool, for a plugin that
+// stays installed after its pool had to be retired.
+func (l *loaded) fresh() *loaded {
+	return &loaded{man: l.man, dir: l.dir, err: l.err, fp: l.fp}
 }
 
 // Approve records the plugin's current capabilities and memory limit as approved.
@@ -371,7 +372,15 @@ func (m *Manager) SetConfig(name string, cfg map[string]string) (Info, error) {
 
 func (m *Manager) update(name string, f func(*loaded, *pluginState)) (Info, error) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
+	info, err := m.updateLocked(name, f)
+	m.mu.Unlock()
+	if err == nil {
+		m.notify()
+	}
+	return info, err
+}
+
+func (m *Manager) updateLocked(name string, f func(*loaded, *pluginState)) (Info, error) {
 	l := m.byNm[name]
 	if l == nil {
 		return Info{}, ErrNotFound
@@ -439,6 +448,11 @@ func (m *Manager) compile(ctx context.Context, l *loaded) error {
 	defer m.mu.Unlock()
 	if l.pool != nil {
 		return nil
+	}
+	if m.byNm[l.man.Name] != l {
+		// Removed or replaced since find looked it up; a pool made now
+		// would never be retired.
+		return fmt.Errorf("plugin %s was reloaded; try again", l.man.Name)
 	}
 	module, err := os.ReadFile(filepath.Join(l.dir, l.man.Module))
 	if err != nil {
@@ -660,7 +674,7 @@ func (m *Manager) Close() {
 	ctx := context.Background()
 	for _, l := range m.byNm {
 		if l.pool != nil {
-			l.pool.close(ctx)
+			l.pool.retire()
 		}
 	}
 	for _, h := range m.hosts {

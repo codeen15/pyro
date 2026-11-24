@@ -128,6 +128,9 @@ func (m *Manager) mutate(f func(st *state) error) error {
 	if err := f(&st); err != nil {
 		return err
 	}
+	// A legacy approval read back from disk (one whose migration couldn't
+	// be saved earlier) is migrated again; f's own changes come first.
+	migrateApprovals(&st, memIn(m.byNm))
 	if err := writeState(m.dir, st); err != nil {
 		return err
 	}
