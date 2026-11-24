@@ -58,10 +58,12 @@ func edit(t *testing.T, path, from, to string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(b), from) {
+	// Git on Windows may check testdata out with CRLF line endings.
+	s := strings.ReplaceAll(string(b), "\r\n", "\n")
+	if !strings.Contains(s, from) {
 		t.Fatalf("%s has no %q", path, from)
 	}
-	if err := os.WriteFile(path, []byte(strings.Replace(string(b), from, to, 1)), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(strings.Replace(s, from, to, 1)), 0o644); err != nil {
 		t.Fatal(err)
 	}
 }
