@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Ship `pyro serve --team` as a small multi-arch image in `ghcr.io/codeen15/pyro`, with a Dokploy compose file that configures everything (including an optional external PostgreSQL) from the environment.
+**Goal:** Let anyone deploy `pyro serve --team` anywhere: pull a small multi-arch image from `ghcr.io/codeen15/pyro` or build it themselves, with one compose file (pull or build), a systemd unit for VMs without Docker, and everything (including an optional external PostgreSQL) configured from the environment.
 
-**Architecture:** A three-stage Dockerfile (Node builds the UI, Go cross-compiles a static binary, distroless runs it as non-root with data on `/data`). A GitHub Actions workflow builds amd64+arm64 with buildx and pushes to GHCR. A one-service compose file for Dokploy, whose Traefik handles the domain and HTTPS.
+**Architecture:** A three-stage Dockerfile (Node builds the UI, Go cross-compiles a static binary, distroless runs it as non-root with data on `/data`). A GitHub Actions workflow builds amd64+arm64 with buildx and pushes to GHCR. A one-service compose file that can pull or build, a systemd unit for the release binary, and a guide with four recipes (pull, build, Dokploy, no Docker).
 
 **Tech Stack:** Docker/buildx, distroless static, GitHub Actions (docker/* actions), Docker Compose.
 
@@ -15,7 +15,7 @@
 - Final base: `gcr.io/distroless/static-debian12:nonroot` (uid 65532).
 - Image env: `PYRO_DATA_DIR=/data`, `PYRO_PLUGINS_DIR=/data/plugins`, `PYRO_HOST=0.0.0.0`, `PYRO_PORT=7878`; `VOLUME /data`; `EXPOSE 7878`; `ENTRYPOINT ["/pyro"]`; `CMD ["serve","--team"]`.
 - Image name `ghcr.io/codeen15/pyro`; tags: `v*` → `X.Y.Z`, `X.Y`, `latest`; `main` → `edge`; PRs build only.
-- Compose: only the `pyro` service; `PYRO_DATABASE_URL` empty means SQLite on the volume.
+- Compose: only the `pyro` service, with both `image:` and `build:`; `PYRO_DATABASE_URL` empty means SQLite on the volume; host port bound to `127.0.0.1` by default.
 - Docs updated in the same change (CLAUDE.md docs rule).
 
 ## Review Focus
@@ -23,7 +23,7 @@
 2. **Upgrading the container keeps data and plugins**: plugins must live under `/data`. Test in Task 1 (`PYRO_PLUGINS_DIR` resolves under the volume: restart with the same volume keeps `jwt.secret` byte-identical).
 3. **Running admin commands in a shell-less image**: `docker exec <c> /pyro admin …` must work against the same data dir and database. Test in Task 1 (`docker exec … /pyro admin users` or the equivalent list command exits 0).
 4. **arm64 VPS**: the arm64 image must start, not just build. Test in Task 2 (buildx `--platform linux/arm64 --load`, then `docker run --platform linux/arm64 … /pyro version` under QEMU if available; otherwise `docker image inspect` shows `arm64` and the binary's ELF header is aarch64).
-5. **Dokploy compose without a database URL**: the stack must start on SQLite. Test in Task 3 (`docker compose up` with only `PYRO_PUBLIC_URL` set → health ok).
+5. **Compose without a database URL**: the stack must start on SQLite. Test in Task 3 (`docker compose up` with only `PYRO_PUBLIC_URL` set → health ok).
 
 ---
 
@@ -72,17 +72,27 @@
 - [ ] **Step 3: Verify arm64 locally**: `docker buildx build --platform linux/arm64 -t pyro:arm64 --load .` succeeds; `docker run --rm --platform linux/arm64 pyro:arm64 version` prints the version if QEMU binfmt is installed, otherwise `docker image inspect -f '{{.Architecture}}' pyro:arm64` is `arm64` (report which).
 - [ ] **Step 4: Commit** `git commit -m "Publish the image to GHCR"`
 
-### Task 3: Dokploy compose, env example, docs
+### Task 3: Deploy kit (compose, env example, systemd) and docs
 
 **Files:**
-- Create: `deploy/dokploy/docker-compose.yml`, `deploy/dokploy/.env.example`
-- Modify: `docs/guide/team-server.md` (new section "Docker and Dokploy" after "HTTPS"), `docs/releasing.md`, `CHANGELOG.md`, `CLAUDE.md` (Layout: `Dockerfile`, `deploy/dokploy`; Commands: `make docker`, `make docker-smoke`)
+- Create: `deploy/docker-compose.yml`, `deploy/.env.example`, `deploy/pyro.service`
+- Modify: `docs/guide/team-server.md` (new section "Deploying the team server" after "HTTPS"), `docs/releasing.md`, `CHANGELOG.md`, `CLAUDE.md` (Layout: `Dockerfile`, `deploy/`; Commands: `make docker`, `make docker-smoke`)
 
 **Interfaces:**
-- Consumes: the image name/tags (Task 2), env defaults (Task 1).
+- Consumes: the image name/tags (Task 2), env defaults and `/data` layout (Task 1).
 
-- [ ] **Step 1: Write `deploy/dokploy/docker-compose.yml`**: one service `pyro`, `image: ghcr.io/codeen15/pyro:${PYRO_IMAGE_TAG:-latest}`, `restart: unless-stopped`, `expose: ["7878"]`, volume `pyro-data:/data`, `environment` passing through (with `${VAR:-}` defaults so unset is empty): `PYRO_PUBLIC_URL`, `PYRO_DATABASE_URL`, `PYRO_JWT_SECRET`, `PYRO_SIGNUP`, `PYRO_SIGNUP_DOMAINS`, `PYRO_MAX_LOADS`, `PYRO_SMTP_HOST`, `PYRO_SMTP_PORT`, `PYRO_SMTP_USERNAME`, `PYRO_SMTP_PASSWORD` (check the exact SMTP password variable name in cmd/pyro/team.go and docs/guide/team-server.md; use what Pyro reads), `PYRO_SMTP_FROM`, `PYRO_LDAP_*` (the names Pyro reads), `PYRO_PLUGIN_INDEX`. Named volume `pyro-data`. No ports, no networks (Dokploy attaches its own).
-- [ ] **Step 2: Write `deploy/dokploy/.env.example`**: every variable above with a one-line comment; `PYRO_PUBLIC_URL=https://pyro.example.com`; `PYRO_DATABASE_URL=` with a comment showing `postgres://user:pass@host:5432/pyro?sslmode=require` and "empty = SQLite on the volume"; `PYRO_JWT_SECRET=` with "at least 32 bytes; `openssl rand -hex 32`; empty = generated and kept in /data".
-- [ ] **Step 3: Verify**: `docker compose -f deploy/dokploy/docker-compose.yml config` succeeds with no env set; then with `PYRO_IMAGE_TAG` pointing at the locally built image (`docker tag pyro:dev ghcr.io/codeen15/pyro:local` and `PYRO_IMAGE_TAG=local`), `docker compose -p pyro-smoke -f deploy/dokploy/docker-compose.yml up -d`, health check from a throwaway container on the project network (`docker run --rm --network pyro-smoke_default curlimages/curl -fsS http://pyro:7878/api/v1/health` shows `"mode":"team"`), then `docker compose -p pyro-smoke down -v`.
-- [ ] **Step 4: Write the docs**: team-server.md section "Docker and Dokploy": image name and tags; minimal `docker run` (`-v pyro-data:/data -p 7878:7878 -e PYRO_PUBLIC_URL=…`); Dokploy steps (new Compose service → paste or point at `deploy/dokploy/docker-compose.yml` → Environment tab from `.env.example` → Domains: host, container port 7878, HTTPS on → Deploy → open the URL and create the first account); external PostgreSQL via `PYRO_DATABASE_URL` (reachable from the container; `sslmode`); admin commands `docker exec <container> /pyro admin …`; update by changing `PYRO_IMAGE_TAG` or redeploying `latest`; back up the `pyro-data` volume (and pg_dump when using PostgreSQL); GHCR visibility (package private by default → make public, or add registry credentials in Dokploy). `docs/releasing.md`: the docker workflow and tags. `CHANGELOG.md` Unreleased: one line. `CLAUDE.md` as listed.
-- [ ] **Step 5: Run** `make test` (docs-only Go impact; confirms nothing else broke) and commit `git commit -m "Dokploy compose and Docker docs"`
+- [ ] **Step 1: Write `deploy/docker-compose.yml`**: one service `pyro` with BOTH `image: ghcr.io/codeen15/pyro:${PYRO_IMAGE_TAG:-latest}` and `build: {context: .., args: {VERSION: "${PYRO_VERSION:-dev}"}}` (so `docker compose up -d` pulls and `docker compose up -d --build` builds from the checkout); `restart: unless-stopped`; `ports: ["${PYRO_BIND:-127.0.0.1}:${PYRO_HOST_PORT:-7878}:7878"]`; volume `pyro-data:/data`; `environment` passing through with `${VAR:-}` defaults: `PYRO_PUBLIC_URL`, `PYRO_DATABASE_URL`, `PYRO_JWT_SECRET`, `PYRO_SIGNUP`, `PYRO_SIGNUP_DOMAINS`, `PYRO_MAX_LOADS`, `PYRO_SMTP_HOST`, `PYRO_SMTP_PORT`, `PYRO_SMTP_USERNAME`, `PYRO_SMTP_PASSWORD`, `PYRO_SMTP_FROM`, `PYRO_LDAP_URL`, `PYRO_LDAP_BIND_DN`, `PYRO_LDAP_BIND_PASSWORD`, `PYRO_LDAP_BASE_DN`, `PYRO_LDAP_USER_FILTER`, `PYRO_LDAP_ADMIN_GROUP`, `PYRO_PLUGIN_INDEX`. Named volume `pyro-data`. A header comment: pull vs build commands, and that platforms like Dokploy route by container port 7878 (the host port mapping can be removed there).
+- [ ] **Step 2: Write `deploy/.env.example`**: every variable above (plus `PYRO_IMAGE_TAG`, `PYRO_BIND`, `PYRO_HOST_PORT`) with a one-line comment; `PYRO_PUBLIC_URL=https://pyro.example.com`; `PYRO_DATABASE_URL=` with a comment showing `postgres://user:pass@host:5432/pyro?sslmode=require` and "empty = SQLite on the volume"; `PYRO_JWT_SECRET=` with "at least 32 bytes; `openssl rand -hex 32`; empty = generated and kept in /data"; `PYRO_BIND=127.0.0.1` with "0.0.0.0 to expose directly (then use HTTPS: see the guide)".
+- [ ] **Step 3: Write `deploy/pyro.service`** (systemd): `User=pyro`, `Group=pyro`, `ExecStart=/usr/local/bin/pyro serve --team`, `EnvironmentFile=-/etc/pyro/pyro.env`, `Environment=PYRO_DATA_DIR=/var/lib/pyro PYRO_PLUGINS_DIR=/var/lib/pyro/plugins PYRO_HOST=127.0.0.1 PYRO_PORT=7878`, `StateDirectory=pyro`, `Restart=on-failure`, `NoNewPrivileges=yes`, `ProtectSystem=strict`, `ProtectHome=yes`, `PrivateTmp=yes`, `ReadWritePaths=/var/lib/pyro`, `[Install] WantedBy=multi-user.target`; header comment with the install commands (useradd, copy binary from the release archive, copy unit, create `/etc/pyro/pyro.env` from `.env.example`, `systemctl enable --now pyro`). Check the release archive layout in `docs/releasing.md` / `scripts/dist` so the copy command names the right file.
+- [ ] **Step 4: Verify**:
+  - `docker compose -f deploy/docker-compose.yml config` succeeds with no env set.
+  - Pull path (simulated with the local image): `docker tag pyro:dev ghcr.io/codeen15/pyro:local`; `PYRO_IMAGE_TAG=local PYRO_HOST_PORT=<free> docker compose -p pyro-smoke -f deploy/docker-compose.yml up -d --no-build`; `curl -fsS http://127.0.0.1:<free>/api/v1/health` shows `"mode":"team"` (Review Focus #5: no database URL → SQLite); `docker compose -p pyro-smoke -f deploy/docker-compose.yml down -v`.
+  - Build path: `PYRO_IMAGE_TAG=built docker compose -p pyro-smoke -f deploy/docker-compose.yml build` succeeds (no need to run it).
+  - systemd unit: `systemd-analyze verify deploy/pyro.service` if available (warnings about the missing binary/user are acceptable; report output); otherwise state it was not verifiable.
+- [ ] **Step 5: Write the docs**: team-server.md section "Deploying the team server" with four recipes, each a few lines:
+  1. **Pull the image**: image name and tags (`latest`, `X.Y.Z`, `X.Y`, `edge`); minimal `docker run -d --name pyro -v pyro-data:/data -p 127.0.0.1:7878:7878 -e PYRO_PUBLIC_URL=https://… ghcr.io/codeen15/pyro:latest`; or `cp deploy/.env.example deploy/.env`, edit, `docker compose -f deploy/docker-compose.yml up -d`.
+  2. **Build it yourself**: `make docker` (or `docker build -t pyro .`), or `docker compose -f deploy/docker-compose.yml up -d --build`.
+  3. **Dokploy** (and similar platforms): create a Compose service from the repo (`deploy/docker-compose.yml`) or the image; Environment tab from `.env.example`; Domains: host, container port 7878, HTTPS on; Deploy; registry credentials if the GHCR package is private.
+  4. **A VM without Docker**: download the release archive, install the binary, `deploy/pyro.service`, `/etc/pyro/pyro.env`.
+  Then shared subsections: first account; HTTPS (reverse proxy with `PYRO_PUBLIC_URL=https://…`, e.g. Caddy one-liner `reverse_proxy 127.0.0.1:7878`, nginx/Traefik; or `PYRO_TLS_CERT`/`PYRO_TLS_KEY` with `PYRO_BIND=0.0.0.0`); external PostgreSQL via `PYRO_DATABASE_URL` (reachable from the container; `sslmode`); admin commands (`docker exec pyro /pyro admin …` / `sudo -u pyro pyro admin …` with the same env); updating (new tag / `docker compose pull && up -d` / replace binary + restart); backups (the `pyro-data` volume or `/var/lib/pyro`, plus `pg_dump`); GHCR visibility (private by default: make public or `docker login ghcr.io`). `docs/releasing.md`: the docker workflow and image tags. `CHANGELOG.md` Unreleased: one line. `CLAUDE.md` as listed.
+- [ ] **Step 6: Run** `make test` and commit `git commit -m "Deploy kit (compose, systemd) and deployment docs"`
