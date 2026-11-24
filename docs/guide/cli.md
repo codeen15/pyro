@@ -181,7 +181,7 @@ Manage plugins ([Plugins](plugins.md)).
 | `enable <name>`, `disable <name>` | Turn a plugin on or off |
 | `remove <name>` | Uninstall |
 | `search [query]` | Search the plugin index |
-| `new <dir> --kind protocol\|auth\|processor --id <id>` | Create a plugin from a template using the published Go SDK (`--sdk` uses a local SDK copy instead) |
+| `new <dir> [--lang go\|js] --kind protocol\|auth\|processor --id <id>` | Create a plugin from a template. Go (the default) uses the published Go SDK (`--sdk` uses a local SDK copy instead). `--lang js` writes `plugin.js` (a working example of the kind), `pyro-plugin.yaml` with `runtime: js`, a `pyro.d.ts` that gives editors the `pyro` API, and a README; nothing to build. Either way, `pyro plugin dev <dir>` is the next step |
 | `pack <dir>` | Package a built plugin as `.pyro-plugin` and print its sha256 |
 | `test <dir \| name>` | Run one call of a plugin and print the result (below) |
 | `dev <dir>` | Rebuild and reinstall a plugin whenever its files change (below) |

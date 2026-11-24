@@ -1,0 +1,15 @@
+# {{.ID}} (Pyro plugin)
+
+Build:
+
+    GOOS=wasip1 GOARCH=wasm go build -buildmode=c-shared -o {{.ID}}.wasm .
+
+Install and approve:
+
+    pyro plugin install .
+
+Package for sharing (prints the sha256 for an index entry):
+
+    pyro plugin pack .
+
+See docs/plugins.md in the Pyro repository for the SDK and ABI.

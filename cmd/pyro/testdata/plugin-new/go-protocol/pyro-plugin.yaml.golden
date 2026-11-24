@@ -1,0 +1,17 @@
+name: foo
+version: 0.1.0
+abi: 1
+title: foo
+description: Describe what this plugin does.
+module: foo.wasm
+provides:
+  - kind: protocol
+    id: foo
+    title: foo
+    urlPlaceholder: foo://localhost:1234
+    fields:
+      - { key: timeoutMs, label: Timeout (ms), type: number, default: "5000" }
+capabilities:
+  # host:port patterns this plugin may connect to (matched literally, so list
+  # both names you use); users approve these when installing.
+  network: ["localhost:*", "127.0.0.1:*"]

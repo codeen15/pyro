@@ -1,0 +1,14 @@
+name: foo
+version: 0.1.0
+abi: 1
+title: foo
+description: Describe what this plugin does.
+module: foo.wasm
+provides:
+  - kind: processor
+    id: foo
+    title: foo
+    phases: [pre, post]
+    fields:
+      - { key: var, label: Variable, type: string, default: requestId }
+capabilities: {}

@@ -1,0 +1,13 @@
+name: foo
+version: 0.1.0
+abi: 1
+title: foo
+description: Describe what this plugin does.
+module: foo.wasm
+provides:
+  - kind: auth
+    id: foo
+    title: foo
+    fields:
+      - { key: secret, label: Secret, type: secret }
+capabilities: {}

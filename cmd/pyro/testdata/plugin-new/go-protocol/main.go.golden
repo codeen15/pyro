@@ -1,0 +1,35 @@
+// Command foo is a Pyro protocol plugin: requests of kind plugin:foo.
+package main
+
+import (
+	"fmt"
+	"strings"
+	"time"
+
+	pyro "github.com/codeen15/pyro/plugins/sdk/go"
+)
+
+func init() {
+	pyro.RegisterProtocol("foo", pyro.ProtocolFunc(execute))
+}
+
+func main() {}
+
+func execute(ctx *pyro.Context, req *pyro.Request) (*pyro.Response, error) {
+	addr := strings.TrimPrefix(req.URL, "foo://")
+	conn, err := pyro.Dial(addr, false, 5*time.Second)
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+	if _, err := conn.Write([]byte(req.Body)); err != nil {
+		return nil, err
+	}
+	buf := make([]byte, 64<<10)
+	n, err := conn.Read(buf)
+	if err != nil {
+		return nil, fmt.Errorf("reading reply: %w", err)
+	}
+	pyro.Logf(pyro.LevelDebug, "read %d bytes from %s", n, addr)
+	return &pyro.Response{StatusText: "OK", Body: buf[:n], RemoteAddr: addr}, nil
+}

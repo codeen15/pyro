@@ -1,0 +1,32 @@
+// Command foo is a Pyro processor plugin: pre/post processor plugin:foo.
+package main
+
+import (
+	"fmt"
+	"time"
+
+	pyro "github.com/codeen15/pyro/plugins/sdk/go"
+)
+
+func init() {
+	pyro.RegisterProcessor("foo", pyro.ProcessorFunc(process))
+}
+
+func main() {}
+
+func process(ctx *pyro.Context, p *pyro.Process) error {
+	name := ctx.Params["var"]
+	if name == "" {
+		name = "requestId"
+	}
+	if p.Phase == "pre" {
+		// Before the request: set a variable and add a header.
+		id := fmt.Sprintf("req-%d", time.Now().UnixNano())
+		p.SetVar(name, id)
+		p.Request.SetHeader("X-Request-Id", id)
+		return nil
+	}
+	// After the response: report a check.
+	p.Test("status is below 500", p.Response.Status < 500, fmt.Sprintf("got %d", p.Response.Status))
+	return nil
+}

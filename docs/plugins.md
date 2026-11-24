@@ -194,7 +194,7 @@ SDK API: `RegisterProtocol`, `RegisterAuth`, `Request` (`Option`, `Header`, `Set
 `SetReadTimeout`; `ErrTimeout`, `io.EOF`), `Logf`. Panics in plugin code become error replies.
 `HandleOp(op, f)` adds an extra host operation for language runtimes (built-in ops cannot be replaced).
 
-`pyro plugin new <dir> --kind protocol|auth|processor --id <id> [--sdk <path>]` scaffolds a plugin.
+`pyro plugin new <dir> [--lang go|js] --kind protocol|auth|processor --id <id> [--sdk <path>]` scaffolds a plugin (`--lang js` writes a JavaScript plugin: `plugin.js`, `pyro.d.ts`, a `runtime: js` manifest; `--sdk` is Go only). The printed next step is `pyro plugin dev <dir>`.
 The template requires the published SDK module `github.com/codeen15/pyro/plugins/sdk/go`
 (v0.1.0, tagged `plugins/sdk/go/v0.1.0`); run `go mod tidy` before the first build. `--sdk`
 points at a local copy instead (a `replace` directive), for working on the SDK itself. A Go plugin module is about 2–5 MB; instances start in 2–4 ms and are pooled

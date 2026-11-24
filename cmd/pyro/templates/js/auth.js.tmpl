@@ -1,0 +1,11 @@
+// {{.ID}} is a Pyro auth plugin: auth type plugin:{{.ID}}.
+// It signs the request body with HMAC-SHA256, keyed by the Secret field.
+// Types for the pyro global are in pyro.d.ts.
+
+pyro.registerAuth("{{.ID}}", (ctx, req) => {
+  const secret = ctx.params.secret
+  if (!secret) throw new Error("secret is empty")
+
+  const sig = pyro.crypto.hmacSHA256(secret, req.body)
+  req.setHeader("X-Signature", pyro.encoding.hex.encode(sig))
+})

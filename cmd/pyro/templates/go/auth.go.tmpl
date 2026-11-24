@@ -1,0 +1,23 @@
+// Command {{.ID}} is a Pyro auth plugin: auth type plugin:{{.ID}}.
+package main
+
+import (
+	"errors"
+
+	pyro "github.com/codeen15/pyro/plugins/sdk/go"
+)
+
+func init() {
+	pyro.RegisterAuth("{{.ID}}", pyro.AuthFunc(sign))
+}
+
+func main() {}
+
+func sign(ctx *pyro.Context, req *pyro.Request) error {
+	secret := ctx.Params["secret"]
+	if secret == "" {
+		return errors.New("secret is empty")
+	}
+	req.SetHeader("Authorization", "Custom "+secret)
+	return nil
+}

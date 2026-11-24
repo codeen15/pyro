@@ -1,0 +1,13 @@
+// {{.ID}} is a Pyro processor plugin: post-processor plugin:{{.ID}}.
+// It checks the response status and saves it in a variable.
+// Types for the pyro global are in pyro.d.ts.
+
+pyro.registerProcessor("{{.ID}}", (ctx, p) => {
+  if (!p.response) return // pre phase: there is no response yet
+
+  const name = ctx.params.var || "lastStatus"
+  const status = p.response.status
+
+  p.test("status is below 500", status < 500, "got " + status)
+  p.setVar(name, String(status))
+})

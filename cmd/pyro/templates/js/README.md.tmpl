@@ -1,0 +1,22 @@
+# {{.ID}} (Pyro plugin)
+
+A JavaScript plugin: `plugin.js` is the whole plugin and there is nothing to build.
+`pyro.d.ts` describes the `pyro` global so your editor can complete it.
+
+Install it, and reinstall on every save (a running `pyro serve` picks changes up):
+
+    pyro plugin dev .
+
+Try one call without installing:
+{{if eq .Kind "protocol"}}
+    pyro plugin test . --url {{.ID}}://localhost:1234 --body hello
+{{else if eq .Kind "auth"}}
+    pyro plugin test . --url https://api.example.com/orders --body '{}' --param secret=s3cret
+{{else}}
+    pyro plugin test . --phase post --status 200
+{{end}}
+Package for sharing (prints the sha256 for an index entry):
+
+    pyro plugin pack .
+
+See docs/plugins.md in the Pyro repository for the API.

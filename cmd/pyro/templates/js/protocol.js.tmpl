@@ -1,0 +1,19 @@
+// {{.ID}} is a Pyro protocol plugin: requests of kind plugin:{{.ID}}.
+// Types for the pyro global are in pyro.d.ts.
+
+pyro.registerProtocol("{{.ID}}", (ctx, req) => {
+  // {{.ID}}://localhost:1234 -> localhost:1234
+  const addr = req.url.replace(/^[a-z][a-z0-9+.-]*:\/\//i, "")
+  const timeoutMs = Number(req.option("timeoutMs", "5000"))
+
+  const conn = pyro.dial(addr, { timeoutMs })
+  try {
+    conn.write(req.body)
+    const reply = conn.read({ timeoutMs })
+    if (reply === null) throw new Error("the server closed the connection without replying")
+    pyro.log.debug("read " + reply.length + " bytes from " + addr)
+    return { statusText: "OK", body: reply, remoteAddr: addr }
+  } finally {
+    conn.close()
+  }
+})

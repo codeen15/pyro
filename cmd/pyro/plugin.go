@@ -5,6 +5,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"embed"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -387,17 +388,48 @@ func packCmd() *cobra.Command {
 // plugins/sdk/go/<version>; bump it with each SDK release).
 const sdkVersion = "v0.1.0"
 
+// pluginTemplates holds the files `pyro plugin new` writes, per language:
+// templates/<lang>/<file>.tmpl is a text/template; other files are copied as is.
+//
+//go:embed templates
+var pluginTemplates embed.FS
+
+// newFiles lists what a new plugin contains: output name -> template file.
+func newFiles(lang, kind string) map[string]string {
+	if lang == "js" {
+		return map[string]string{
+			"pyro-plugin.yaml": "pyro-plugin.yaml.tmpl",
+			"plugin.js":        kind + ".js.tmpl",
+			"pyro.d.ts":        "pyro.d.ts",
+			"README.md":        "README.md.tmpl",
+		}
+	}
+	return map[string]string{
+		"go.mod":           "go.mod.tmpl",
+		"pyro-plugin.yaml": "pyro-plugin.yaml.tmpl",
+		"main.go":          kind + ".go.tmpl",
+		"README.md":        "README.md.tmpl",
+	}
+}
+
 func newPluginCmd() *cobra.Command {
-	var kind, id, sdk string
+	var kind, id, sdk, lang string
 	cmd := &cobra.Command{
 		Use:   "new <dir>",
-		Short: "Create a new Go plugin from a template",
+		Short: "Create a new plugin from a template (Go or JavaScript)",
 		Example: "  pyro plugin new ./redis-plugin --kind protocol --id redis\n" +
+			"  pyro plugin new ./redis-js --lang js --kind protocol --id redis\n" +
 			"  pyro plugin new ./sigv4 --kind auth --id sigv4 --sdk ../pyro/plugins/sdk/go\n" +
 			"  pyro plugin new ./jwt-check --kind processor --id jwt-check",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			dir := args[0]
+			if lang != "go" && lang != "js" {
+				return errors.New("--lang must be go or js")
+			}
+			if lang == "js" && sdk != "" {
+				return errors.New("--sdk only applies to --lang go")
+			}
 			if kind != plugin.KindProtocol && kind != plugin.KindAuth && kind != plugin.KindProcessor {
 				return errors.New("--kind must be protocol, auth or processor")
 			}
@@ -424,183 +456,34 @@ func newPluginCmd() *cobra.Command {
 				version = "v0.0.0" // the replace directive points at the local copy
 			}
 			data := map[string]string{"ID": id, "Kind": kind, "SDK": sdk, "SDKVersion": version}
-			files := map[string]string{"go.mod": tmplGoMod, "pyro-plugin.yaml": tmplManifest, "README.md": tmplReadme}
-			switch kind {
-			case plugin.KindProtocol:
-				files["main.go"] = tmplProtocol
-			case plugin.KindProcessor:
-				files["main.go"] = tmplProcessor
-			default:
-				files["main.go"] = tmplAuth
-			}
-			for name, src := range files {
-				var b bytes.Buffer
-				if err := template.Must(template.New(name).Parse(src)).Execute(&b, data); err != nil {
+			for name, file := range newFiles(lang, kind) {
+				src, err := pluginTemplates.ReadFile("templates/" + lang + "/" + file)
+				if err != nil {
 					return err
 				}
-				if err := os.WriteFile(filepath.Join(dir, name), b.Bytes(), 0o644); err != nil {
+				if strings.HasSuffix(file, ".tmpl") {
+					var b bytes.Buffer
+					if err := template.Must(template.New(name).Parse(string(src))).Execute(&b, data); err != nil {
+						return err
+					}
+					src = b.Bytes()
+				}
+				if err := os.WriteFile(filepath.Join(dir, name), src, 0o644); err != nil {
 					return err
 				}
 			}
-			fmt.Printf("Created %s plugin %q in %s\nBuild:   cd %s && go mod tidy && GOOS=wasip1 GOARCH=wasm go build -buildmode=c-shared -o %s.wasm .\nInstall: pyro plugin install %s\n",
-				kind, id, dir, dir, id, dir)
+			out := cmd.OutOrStdout()
+			fmt.Fprintf(out, "Created %s plugin %q in %s\n", kind, id, dir)
+			if lang == "go" {
+				fmt.Fprintf(out, "Fetch dependencies once: cd %s && go mod tidy\n", dir)
+			}
+			fmt.Fprintf(out, "Then build, install and rebuild on every save: pyro plugin dev %s\n", dir)
 			return nil
 		},
 	}
+	cmd.Flags().StringVar(&lang, "lang", "go", "go or js (JavaScript: no build step, runs on the embedded runtime)")
 	cmd.Flags().StringVar(&kind, "kind", plugin.KindProtocol, "protocol, auth or processor")
 	cmd.Flags().StringVar(&id, "id", "", "the type id (plugin:<id>); default: directory name")
-	cmd.Flags().StringVar(&sdk, "sdk", "", "use a local copy of the Go SDK instead of the published "+sdkVersion+" (adds a replace directive)")
+	cmd.Flags().StringVar(&sdk, "sdk", "", "Go: use a local copy of the Go SDK instead of the published "+sdkVersion+" (adds a replace directive)")
 	return cmd
 }
-
-const tmplGoMod = `module example.com/pyro-plugin-{{.ID}}
-
-go 1.24
-
-require github.com/codeen15/pyro/plugins/sdk/go {{.SDKVersion}}
-{{if .SDK}}
-replace github.com/codeen15/pyro/plugins/sdk/go => {{.SDK}}
-{{end}}`
-
-const tmplManifest = `name: {{.ID}}
-version: 0.1.0
-abi: 1
-title: {{.ID}}
-description: Describe what this plugin does.
-module: {{.ID}}.wasm
-provides:
-  - kind: {{.Kind}}
-    id: {{.ID}}
-    title: {{.ID}}
-{{- if eq .Kind "protocol"}}
-    urlPlaceholder: {{.ID}}://localhost:1234
-    fields:
-      - { key: timeoutMs, label: Timeout (ms), type: number, default: "5000" }
-capabilities:
-  # host:port patterns this plugin may connect to (matched literally, so list
-  # both names you use); users approve these when installing.
-  network: ["localhost:*", "127.0.0.1:*"]
-{{- else if eq .Kind "processor"}}
-    phases: [pre, post]
-    fields:
-      - { key: var, label: Variable, type: string, default: requestId }
-capabilities: {}
-{{- else}}
-    fields:
-      - { key: secret, label: Secret, type: secret }
-capabilities: {}
-{{- end}}
-`
-
-const tmplProtocol = `// Command {{.ID}} is a Pyro protocol plugin: requests of kind plugin:{{.ID}}.
-package main
-
-import (
-	"fmt"
-	"strings"
-	"time"
-
-	pyro "github.com/codeen15/pyro/plugins/sdk/go"
-)
-
-func init() {
-	pyro.RegisterProtocol("{{.ID}}", pyro.ProtocolFunc(execute))
-}
-
-func main() {}
-
-func execute(ctx *pyro.Context, req *pyro.Request) (*pyro.Response, error) {
-	addr := strings.TrimPrefix(req.URL, "{{.ID}}://")
-	conn, err := pyro.Dial(addr, false, 5*time.Second)
-	if err != nil {
-		return nil, err
-	}
-	defer conn.Close()
-	if _, err := conn.Write([]byte(req.Body)); err != nil {
-		return nil, err
-	}
-	buf := make([]byte, 64<<10)
-	n, err := conn.Read(buf)
-	if err != nil {
-		return nil, fmt.Errorf("reading reply: %w", err)
-	}
-	pyro.Logf(pyro.LevelDebug, "read %d bytes from %s", n, addr)
-	return &pyro.Response{StatusText: "OK", Body: buf[:n], RemoteAddr: addr}, nil
-}
-`
-
-const tmplAuth = `// Command {{.ID}} is a Pyro auth plugin: auth type plugin:{{.ID}}.
-package main
-
-import (
-	"errors"
-
-	pyro "github.com/codeen15/pyro/plugins/sdk/go"
-)
-
-func init() {
-	pyro.RegisterAuth("{{.ID}}", pyro.AuthFunc(sign))
-}
-
-func main() {}
-
-func sign(ctx *pyro.Context, req *pyro.Request) error {
-	secret := ctx.Params["secret"]
-	if secret == "" {
-		return errors.New("secret is empty")
-	}
-	req.SetHeader("Authorization", "Custom "+secret)
-	return nil
-}
-`
-
-const tmplProcessor = `// Command {{.ID}} is a Pyro processor plugin: pre/post processor plugin:{{.ID}}.
-package main
-
-import (
-	"fmt"
-	"time"
-
-	pyro "github.com/codeen15/pyro/plugins/sdk/go"
-)
-
-func init() {
-	pyro.RegisterProcessor("{{.ID}}", pyro.ProcessorFunc(process))
-}
-
-func main() {}
-
-func process(ctx *pyro.Context, p *pyro.Process) error {
-	name := ctx.Params["var"]
-	if name == "" {
-		name = "requestId"
-	}
-	if p.Phase == "pre" {
-		// Before the request: set a variable and add a header.
-		id := fmt.Sprintf("req-%d", time.Now().UnixNano())
-		p.SetVar(name, id)
-		p.Request.SetHeader("X-Request-Id", id)
-		return nil
-	}
-	// After the response: report a check.
-	p.Test("status is below 500", p.Response.Status < 500, fmt.Sprintf("got %d", p.Response.Status))
-	return nil
-}
-`
-
-const tmplReadme = `# {{.ID}} (Pyro plugin)
-
-Build:
-
-    GOOS=wasip1 GOARCH=wasm go build -buildmode=c-shared -o {{.ID}}.wasm .
-
-Install and approve:
-
-    pyro plugin install .
-
-Package for sharing (prints the sha256 for an index entry):
-
-    pyro plugin pack .
-
-See docs/plugins.md in the Pyro repository for the SDK and ABI.
-`
