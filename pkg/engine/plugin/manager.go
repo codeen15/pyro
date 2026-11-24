@@ -4,11 +4,11 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"io/fs"
+	"log/slog"
 	"net"
 	"os"
 	"path/filepath"
@@ -33,30 +33,6 @@ var (
 
 // DefaultTimeout bounds one plugin call.
 const DefaultTimeout = 60 * time.Second
-
-// state is persisted in <dir>/state.json.
-type state struct {
-	Plugins map[string]*pluginState `json:"plugins"`
-}
-
-type pluginState struct {
-	Enabled bool `json:"enabled"`
-	// Approved is the capability set the user approved; a plugin whose
-	// manifest asks for anything different needs approval again.
-	Approved *Capabilities `json:"approved,omitempty"`
-	// ApprovedMemoryMB is the memory limit the user approved; 0 (state
-	// written before limits were approved) means the old default, 128.
-	ApprovedMemoryMB int               `json:"approvedMemoryMB,omitempty"`
-	Config           map[string]string `json:"config,omitempty"`
-}
-
-// approvedMem returns the memory limit ps covers.
-func (ps *pluginState) approvedMem() int {
-	if ps.ApprovedMemoryMB == 0 {
-		return DefaultMemoryMBWasm
-	}
-	return ps.ApprovedMemoryMB
-}
 
 // Info describes an installed plugin.
 type Info struct {
@@ -95,19 +71,16 @@ func Open(dir string) (*Manager, error) {
 		return nil, err
 	}
 	m := &Manager{dir: dir, byNm: map[string]*loaded{}, st: state{Plugins: map[string]*pluginState{}}}
-	if data, err := os.ReadFile(filepath.Join(dir, "state.json")); err == nil {
-		if err := json.Unmarshal(data, &m.st); err != nil {
-			return nil, fmt.Errorf("plugin state: %w", err)
-		}
-		if m.st.Plugins == nil {
-			m.st.Plugins = map[string]*pluginState{}
-		}
+	st, err := readState(dir)
+	if err != nil {
+		return nil, err
 	}
+	m.st = st
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, err
 	}
-	migrated := false
+	migrated := map[string]int{}
 	for _, e := range entries {
 		if !e.IsDir() || strings.HasPrefix(e.Name(), ".") || e.Name() == "cache" {
 			continue
@@ -124,28 +97,29 @@ func Open(dir string) (*Manager, error) {
 			// Approved before memory limits were part of approval: the
 			// user approved what the manifest asks for now.
 			ps.ApprovedMemoryMB = l.man.Limits.MemoryMB
-			migrated = true
+			migrated[l.man.Name] = ps.ApprovedMemoryMB
 		}
 		m.byNm[l.man.Name] = l
 	}
-	if migrated {
-		if err := m.saveState(); err != nil {
-			return nil, err
+	if len(migrated) > 0 {
+		// The in-memory migration is right whether or not it can be saved,
+		// so a read-only plugins folder must not disable every plugin.
+		err := m.mutate(func(st *state) error {
+			for name, mb := range migrated {
+				if ps := st.Plugins[name]; ps != nil && ps.Approved != nil && ps.ApprovedMemoryMB == 0 {
+					ps.ApprovedMemoryMB = mb
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			slog.Warn("plugins: could not save the approval migration", "dir", dir, "err", err)
 		}
 	}
 	return m, nil
 }
 
 func (m *Manager) Dir() string { return m.dir }
-
-func (m *Manager) saveState() error {
-	data, _ := json.MarshalIndent(m.st, "", "  ")
-	tmp := filepath.Join(m.dir, ".state.json.tmp")
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
-		return err
-	}
-	return os.Rename(tmp, filepath.Join(m.dir, "state.json"))
-}
 
 func (m *Manager) info(l *loaded) Info {
 	ps := m.st.Plugins[l.man.Name]
@@ -278,19 +252,22 @@ func (m *Manager) install(man *Manifest, manifest, module []byte, approve bool) 
 	if err := os.Rename(tmp, dest); err != nil {
 		return Info{}, err
 	}
-	ps := m.st.Plugins[man.Name]
-	if ps == nil {
-		ps = &pluginState{Enabled: true}
-		m.st.Plugins[man.Name] = ps
-	}
-	if approve {
-		caps := man.Capabilities
-		ps.Approved = &caps
-		ps.ApprovedMemoryMB = man.Limits.MemoryMB
-	}
 	l := &loaded{man: man, dir: dest}
 	m.byNm[man.Name] = l
-	return m.info(l), m.saveState()
+	err = m.mutate(func(st *state) error {
+		ps := st.Plugins[man.Name]
+		if ps == nil {
+			ps = &pluginState{Enabled: true}
+			st.Plugins[man.Name] = ps
+		}
+		if approve {
+			caps := man.Capabilities
+			ps.Approved = &caps
+			ps.ApprovedMemoryMB = man.Limits.MemoryMB
+		}
+		return nil
+	})
+	return m.info(l), err
 }
 
 // verify instantiates the module once and checks describe() against the manifest.
@@ -369,8 +346,10 @@ func (m *Manager) Remove(name string) error {
 		return err
 	}
 	delete(m.byNm, name)
-	delete(m.st.Plugins, name)
-	return m.saveState()
+	return m.mutate(func(st *state) error {
+		delete(st.Plugins, name)
+		return nil
+	})
 }
 
 // Approve records the plugin's current capabilities and memory limit as approved.
@@ -397,13 +376,19 @@ func (m *Manager) update(name string, f func(*loaded, *pluginState)) (Info, erro
 	if l == nil {
 		return Info{}, ErrNotFound
 	}
-	ps := m.st.Plugins[name]
-	if ps == nil {
-		ps = &pluginState{Enabled: true}
-		m.st.Plugins[name] = ps
+	err := m.mutate(func(st *state) error {
+		ps := st.Plugins[name]
+		if ps == nil {
+			ps = &pluginState{Enabled: true}
+			st.Plugins[name] = ps
+		}
+		f(l, ps)
+		return nil
+	})
+	if err != nil {
+		return Info{}, err
 	}
-	f(l, ps)
-	return m.info(l), m.saveState()
+	return m.info(l), nil
 }
 
 // find returns the ready plugin providing kind/id, compiling it on first use.
