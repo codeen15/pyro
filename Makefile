@@ -40,6 +40,7 @@ plugins: build
 		(cd plugins/examples/$$p && GOOS=wasip1 GOARCH=wasm go build -buildmode=c-shared -ldflags="-s -w" -o $$p.wasm .) && \
 		./bin/pyro plugin pack plugins/examples/$$p -o plugins/dist/$$p-0.1.0.pyro-plugin; \
 	done
+	./bin/pyro plugin pack plugins/examples/redis-js -o plugins/dist/redis-js-0.1.0.pyro-plugin
 
 # The JavaScript plugin runtime, embedded in the engine. The build is
 # reproducible (CI checks the committed file is up to date): it uses the Go

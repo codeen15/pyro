@@ -93,6 +93,8 @@ install fails and shows the JavaScript error with its line and column. JavaScrip
 run under the same permissions and limits as Go ones, but are slower and run at most 32
 calls at once by default; prefer Go for heavy load tests. The first JavaScript plugin
 makes Pyro compile its JavaScript engine once (several seconds, in the background).
+`plugins/examples/redis-js` in the Pyro repository is a complete example: a Redis protocol
+plugin in one `plugin.js`.
 
 The manifest (`pyro-plugin.yaml`), the SDK API, the ABI, JavaScript plugins and the security
 model are described in [plugins.md](../plugins.md).

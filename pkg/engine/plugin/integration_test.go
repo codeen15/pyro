@@ -7,10 +7,15 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -195,5 +200,173 @@ func TestPluginsUnavailable(t *testing.T) {
 	res := e.Send(context.Background(), engine.SendInput{Request: &model.Request{Kind: "plugin:tcp", URL: "tcp://x:1"}})
 	if !strings.Contains(res.Error, "need plugins") {
 		t.Fatalf("error = %q", res.Error)
+	}
+}
+
+// fakeRedis speaks just enough RESP: PING, SET, GET, INCR, SELECT, LRANGE
+// (always x, y) and an error for anything else. Each SELECT's argument is
+// sent on selected.
+func fakeRedis(t *testing.T, selected chan<- string) string {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ln.Close() })
+	var mu sync.Mutex
+	store := map[string]string{}
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				defer c.Close()
+				r := bufio.NewReader(c)
+				for {
+					head, err := r.ReadString('\n')
+					if err != nil || !strings.HasPrefix(head, "*") {
+						return
+					}
+					n, _ := strconv.Atoi(strings.TrimSpace(head[1:]))
+					args := make([]string, 0, n)
+					for i := 0; i < n; i++ {
+						lenLine, err := r.ReadString('\n')
+						if err != nil {
+							return
+						}
+						size, _ := strconv.Atoi(strings.TrimSpace(lenLine[1:]))
+						buf := make([]byte, size+2)
+						if _, err := io.ReadFull(r, buf); err != nil {
+							return
+						}
+						args = append(args, string(buf[:size]))
+					}
+					switch strings.ToUpper(args[0]) {
+					case "PING":
+						fmt.Fprint(c, "+PONG\r\n")
+					case "SELECT":
+						selected <- args[1]
+						fmt.Fprint(c, "+OK\r\n")
+					case "SET":
+						mu.Lock()
+						store[args[1]] = args[2]
+						mu.Unlock()
+						fmt.Fprint(c, "+OK\r\n")
+					case "GET":
+						mu.Lock()
+						v, ok := store[args[1]]
+						mu.Unlock()
+						if ok {
+							// Split the reply over two writes: the plugin must keep reading.
+							fmt.Fprintf(c, "$%d\r\n", len(v))
+							time.Sleep(20 * time.Millisecond)
+							fmt.Fprintf(c, "%s\r\n", v)
+						} else {
+							fmt.Fprint(c, "$-1\r\n")
+						}
+					case "INCR":
+						fmt.Fprint(c, ":42\r\n")
+					case "LRANGE":
+						fmt.Fprint(c, "*2\r\n$1\r\nx\r\n$1\r\ny\r\n")
+					default:
+						fmt.Fprintf(c, "-ERR unknown command '%s'\r\n", args[0])
+					}
+				}
+			}()
+		}
+	}()
+	return ln.Addr().String()
+}
+
+// copyRedisJS copies plugins/examples/redis-js into a temp dir, narrowing its
+// network capability to loopback (the example ships "*:6379").
+func copyRedisJS(t *testing.T) string {
+	t.Helper()
+	src := filepath.Join("..", "..", "..", "plugins", "examples", "redis-js")
+	dir := t.TempDir()
+	manifest, err := os.ReadFile(filepath.Join(src, plugin.ManifestFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	patched := strings.Replace(string(manifest), `"*:6379"`, `"127.0.0.1:*"`, 1)
+	if patched == string(manifest) {
+		t.Fatal(`manifest has no "*:6379" network entry to patch`)
+	}
+	script, err := os.ReadFile(filepath.Join(src, "plugin.js"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, plugin.ManifestFile), []byte(patched), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "plugin.js"), script, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+func TestRedisJSExample(t *testing.T) {
+	selected := make(chan string, 4)
+	addr := fakeRedis(t, selected)
+	m, err := plugin.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(m.Close)
+	if _, err := m.InstallDir(copyRedisJS(t), true); err != nil {
+		t.Fatal(err)
+	}
+	e := engine.New(httpdriver.New(httpdriver.Options{}))
+	e.Plugins = m
+
+	send := func(cmd string, opts map[string]string) *engine.Result {
+		t.Helper()
+		res := e.Send(context.Background(), engine.SendInput{
+			Request: &model.Request{Kind: "plugin:redis", Name: "r", URL: "redis://" + addr,
+				Body: &model.Body{Type: model.BodyText, Content: cmd}, Options: opts},
+			Vars: engine.NewVars(nil, nil),
+		})
+		if res.Error != "" {
+			t.Fatalf("%s: %s", cmd, res.Error)
+		}
+		return res
+	}
+	for _, c := range []struct{ cmd, body string }{
+		{"PING", "PONG"},
+		{"SET a 1", "OK"},
+		{"GET a", "1"},
+		{`SET greeting "hello big world"`, "OK"},
+		{"GET greeting", "hello big world"},
+		{"GET missing", ""},
+		{"INCR n", "42"},
+		{"LRANGE l 0 -1", `["x","y"]`},
+	} {
+		res := send(c.cmd, nil)
+		if res.Response.Status != 0 || string(res.Response.Body) != c.body {
+			t.Errorf("%s: status=%d body=%q, want %q", c.cmd, res.Response.Status, res.Response.Body, c.body)
+		}
+	}
+	if res := send("GET missing", nil); res.Response.StatusText != "nil" {
+		t.Errorf("null bulk statusText = %q, want nil", res.Response.StatusText)
+	}
+
+	res := send("FLUSHALL", nil)
+	if res.Response.Status != 1 || res.Response.StatusText != "ERR" || string(res.Response.Body) != "ERR unknown command 'FLUSHALL'" {
+		t.Errorf("error reply: status=%d text=%q body=%q", res.Response.Status, res.Response.StatusText, res.Response.Body)
+	}
+
+	// db sends SELECT first, once per request; 0 and empty don't.
+	if res := send("PING", map[string]string{"db": "3"}); string(res.Response.Body) != "PONG" {
+		t.Errorf("PING after SELECT: body=%q", res.Response.Body)
+	}
+	if got := <-selected; got != "3" {
+		t.Errorf("SELECT %q, want 3", got)
+	}
+	send("PING", map[string]string{"db": "0"})
+	select {
+	case got := <-selected:
+		t.Errorf("db 0 sent SELECT %s", got)
+	default:
 	}
 }

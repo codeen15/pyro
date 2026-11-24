@@ -5,12 +5,12 @@ Pyro plugins are WebAssembly modules (WASI, reactor mode) run by
 and architecture, and can only reach the network addresses they declare and you approve.
 
 Code: host in `pkg/engine/plugin`, Go SDK in `plugins/sdk/go`, examples in
-`plugins/examples/{tcp,hmac}`.
+`plugins/examples/{tcp,hmac,redis-js}`.
 
 ## What plugins can add
 | Kind | Status | Purpose | Example |
 |---|---|---|---|
-| `protocol` | ✅ | A request type `plugin:<id>` (request/response) | Raw TCP (`plugins/examples/tcp`) |
+| `protocol` | ✅ | A request type `plugin:<id>` (request/response) | Raw TCP (`plugins/examples/tcp`); Redis in JavaScript (`plugins/examples/redis-js`) |
 | `auth` | ✅ | An auth type `plugin:<id>` that signs requests | HMAC-SHA256 (`plugins/examples/hmac`) |
 | `processor` | ✅ | A pre/post processor `plugin:<id>` that sets variables, rewrites the request (pre) or reports checks (post) | HMAC sign/verify (`hmac-var` in `plugins/examples/hmac`) |
 | streaming protocols | planned | Sessions like WebSocket (connect/send/receive) | MQTT |

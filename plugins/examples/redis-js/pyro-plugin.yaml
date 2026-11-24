@@ -1,0 +1,21 @@
+name: redis-js
+version: 0.1.0
+abi: 1
+runtime: js
+module: plugin.js
+title: Redis (JavaScript)
+description: Run a Redis command (SET k v, GET k, LRANGE l 0 -1, ...) over RESP. A JavaScript example of a protocol plugin. Works in requests, collection runs and load tests.
+author: Pyro
+license: Apache-2.0
+provides:
+  - kind: protocol
+    id: redis
+    title: Redis
+    urlPlaceholder: redis://localhost:6379
+    fields:
+      - { key: db, label: Database, type: number, default: "0", help: "Sends SELECT <db> before the command when it is not 0." }
+      - { key: timeoutMs, label: Timeout (ms), type: number, default: "5000", help: "Connect and read timeout." }
+capabilities:
+  # Any host on the default Redis port. Narrow this to your own server
+  # (for example "redis.internal:6379") before you share the plugin.
+  network: ["*:6379"]
