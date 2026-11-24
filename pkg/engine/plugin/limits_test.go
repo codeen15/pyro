@@ -51,6 +51,23 @@ func TestManifestRuntimeAndLimits(t *testing.T) {
 	}
 }
 
+func TestLookup(t *testing.T) {
+	m := manager(t)
+	if _, ok := m.Lookup("protocol", "tcp"); ok {
+		t.Fatal("Lookup found a plugin before any was installed")
+	}
+	if _, err := m.InstallDir(built["tcp"], true); err != nil {
+		t.Fatal(err)
+	}
+	info, ok := m.Lookup("protocol", "tcp")
+	if !ok || info.Name != "tcp" || !info.Ready {
+		t.Fatalf("Lookup(protocol, tcp) = %+v, %v", info, ok)
+	}
+	if _, ok := m.Lookup("auth", "tcp"); ok {
+		t.Fatal("Lookup matched the wrong kind")
+	}
+}
+
 func TestApprovalCoversMemoryLimit(t *testing.T) {
 	m := manager(t)
 	if info, err := m.InstallDir(built["tcp"], true); err != nil || !info.Approved {

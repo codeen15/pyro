@@ -184,6 +184,8 @@ The **dashboard** updates every second:
   failed requests. **Table view** shows the same numbers per second.
 - **Tables:** per-request results and the most common errors.
 - **A CPU warning** when the load generator itself is the bottleneck.
+- **A plugin warning** when a plugin the test uses runs fewer calls at once than the test has
+  VUs (JavaScript plugins run at most 32 at once), so its calls queue.
 
 **Stop** ends the test gracefully (in-flight requests finish within the graceful stop).
 **Abort now** cancels immediately.

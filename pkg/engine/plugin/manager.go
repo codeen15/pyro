@@ -727,6 +727,20 @@ func (m *Manager) Provider(kind, id string) (Provide, bool) {
 	return Provide{}, false
 }
 
+// Lookup returns the info of the plugin providing kind/id, ready or not.
+func (m *Manager) Lookup(kind, id string) (Info, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, l := range m.byNm {
+		for _, p := range l.man.Provides {
+			if p.Kind == kind && p.ID == id {
+				return m.info(l), true
+			}
+		}
+	}
+	return Info{}, false
+}
+
 // Close releases every instance and the runtimes. A runtime still
 // compiling the JS runtime is closed once that compile finishes.
 func (m *Manager) Close() {

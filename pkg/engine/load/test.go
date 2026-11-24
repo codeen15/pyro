@@ -141,14 +141,16 @@ type Test struct {
 	errors   *errorCounter
 	progs    sync.Map // expression -> *vm.Program
 	feeders  map[string]*feeder
-	workers  []*workerState
-	reported chan struct{} // a worker sent a report
-	scripts  map[*Step]*goja.Program
-	allowed  map[string]bool // hosts pyro.http may call
-	cpu      *cpuSampler
-	oauth    *auth.OAuth2 // shared by every VU, so a token is fetched once
-	pace     *pacer       // the requests-per-second cap, if any
-	sat      saturation
+	// pluginWarns warn about capped plugins; computed once in Prepare.
+	pluginWarns []string
+	workers     []*workerState
+	reported    chan struct{} // a worker sent a report
+	scripts     map[*Step]*goja.Program
+	allowed     map[string]bool // hosts pyro.http may call
+	cpu         *cpuSampler
+	oauth       *auth.OAuth2 // shared by every VU, so a token is fetched once
+	pace        *pacer       // the requests-per-second cap, if any
+	sat         saturation
 
 	vuSeq     atomic.Int64
 	allocated atomic.Int64 // VUs created
@@ -156,8 +158,8 @@ type Test struct {
 	// scenarios end.
 	connsMu sync.Mutex
 	conns   []*engine.Conns
-	active    atomic.Int64 // VUs running (VU executors) or busy (arrival-rate)
-	busy      atomic.Int64
+	active  atomic.Int64 // VUs running (VU executors) or busy (arrival-rate)
+	busy    atomic.Int64
 
 	soft     context.Context // done: stop starting iterations
 	softStop context.CancelFunc
@@ -212,6 +214,7 @@ func Prepare(p *Plan, opts Options) (*Test, error) {
 			return nil, err
 		}
 	}
+	t.pluginWarns = t.pluginWarnings()
 	t.feeders = map[string]*feeder{}
 	rows := map[string][]map[string]string{}
 	for _, name := range p.ScenarioNames() {
@@ -667,7 +670,7 @@ func (e *errorCounter) top(n int) []ErrorCount {
 
 // warnings collects problems with the run itself.
 func (t *Test) warnings() []string {
-	var out []string
+	out := append([]string(nil), t.pluginWarns...)
 	if w := t.sat.warning("This machine", t.opts.TickInterval); w != "" && t.opts.OnReport == nil {
 		out = append(out, w)
 	}

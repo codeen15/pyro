@@ -183,6 +183,13 @@ include time Pyro spent waiting for CPU, so use fewer VUs per machine, lighter s
 more agents. The dashboard shows a CPU tile while a local test runs and a CPU column in the
 Agents table. CPU isn't measured on platforms other than Unix-likes and Windows.
 
+**Plugin instance caps.** A plugin runs at most `limits.maxInstances` calls at once (JavaScript
+plugins default to 32; WASM plugins are unbounded unless the manifest sets a cap), and extra
+calls queue. When a local test's peak VUs exceed the cap of a plugin it uses (as a protocol,
+auth or processor type), the result carries one warning naming the plugin and the cap; for a
+JavaScript plugin it suggests a Go plugin for heavier load. Distributed agents check their own
+plugins.
+
 Results: the live dashboard (event WebSocket, one tick per second), saved runs in SQLite
 (summary plus every tick), `pyro load --json` / `--html`.
 

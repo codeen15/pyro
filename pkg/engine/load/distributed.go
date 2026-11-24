@@ -355,7 +355,8 @@ func (t *Test) jobFiles() (map[string][]byte, error) {
 	return files, nil
 }
 
-// jobPlugins lists the plugin request and auth types the plan uses.
+// jobPlugins lists the plugin request, auth and processor types the plan
+// uses, as sorted kind:id strings.
 func (t *Test) jobPlugins() []string {
 	seen := map[string]bool{}
 	note := func(kind, s string) {
@@ -363,15 +364,29 @@ func (t *Test) jobPlugins() []string {
 			seen[kind+":"+id] = true
 		}
 	}
+	procs := func(ps []model.Processor) {
+		for _, p := range ps {
+			if !p.Disabled {
+				note("processor", p.Type)
+			}
+		}
+	}
 	for _, tg := range t.targets {
 		note("protocol", string(tg.Request.Kind))
 		if tg.Request.Auth != nil {
 			note("auth", tg.Request.Auth.Type)
 		}
+		procs(tg.Request.Pre)
+		procs(tg.Request.Post)
 		for _, c := range tg.Chain {
-			if c != nil && c.Auth != nil {
+			if c == nil {
+				continue
+			}
+			if c.Auth != nil {
 				note("auth", c.Auth.Type)
 			}
+			procs(c.Pre)
+			procs(c.Post)
 		}
 	}
 	out := make([]string, 0, len(seen))
