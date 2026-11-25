@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Docker image: the Docs page crashed into a blank screen (and stayed blank, since the app
+  reopens the last page) because the image's UI was built without the user guide. The image
+  now includes it, the smoke test checks for it, and a build without the guide shows a
+  message on the Docs page instead of crashing.
+
 ## v0.2.1 (2026-11-25)
 
 - Team server: someone with no projects left (after deleting their last one, or being removed

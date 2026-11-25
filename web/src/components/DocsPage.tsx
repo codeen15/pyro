@@ -47,6 +47,22 @@ const md = new Marked({
 });
 
 export function DocsPage({ target }: { target: string }) {
+  // A build without docs/guide has no pages; say so rather than crash.
+  if (pages.length === 0) {
+    return (
+      <div className="page docs-page">
+        <article className="card docs-body">
+          <p>
+            The user guide isn't included in this build. Read it on <a href={REPO + "guide/README.md"} target="_blank" rel="noopener">GitHub</a>.
+          </p>
+        </article>
+      </div>
+    );
+  }
+  return <Guide target={target} />;
+}
+
+function Guide({ target }: { target: string }) {
   const select = useApp((s) => s.select);
   const [pageId, anchor] = target.split("#");
   const page = pages.find((p) => p.id === (pageId || "README")) ?? pages[0];

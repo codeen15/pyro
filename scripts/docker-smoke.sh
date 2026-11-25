@@ -48,6 +48,28 @@ version=$(sed -n 's/.*"version":"\([^"]*\)".*/\1/p' <<<"$body")
 [[ -n $version && $version != dev ]] || fail "version not stamped: $body"
 ok "team server answers ($version)"
 
+# The user guide (docs/guide/*.md) is bundled into the UI at build time; without
+# it the Docs page has no pages. Fetch the page's scripts and the chunks they
+# load, and look for a guide heading.
+base="http://127.0.0.1:$port"
+seen=" "
+queue=$(curl -fsS "$base/" | grep -o 'assets/[A-Za-z0-9._-]*\.js' | sort -u || true)
+guide=no
+while [[ -n $queue ]]; do
+	next=
+	for js in $queue; do
+		[[ $seen == *" $js "* ]] && continue
+		seen+="$js "
+		body=$(curl -fsS "$base/$js") || fail "could not fetch $js"
+		grep -q 'Deploying the team server' <<<"$body" && guide=yes
+		next+=" $(grep -o 'assets/[A-Za-z0-9._-]*\.js' <<<"$body" | sort -u | tr '\n' ' ' || true)"
+	done
+	queue=$(tr ' ' '\n' <<<"$next" | sort -u | grep . || true)
+	[[ $guide == yes ]] && break
+done
+[[ $guide == yes ]] || fail "the UI has no user guide (docs/guide missing from the UI build)"
+ok "user guide bundled into the UI"
+
 docker exec "$name" /pyro version >/dev/null || fail "/pyro version failed"
 ok "/pyro version"
 

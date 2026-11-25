@@ -13,6 +13,8 @@ WORKDIR /src/web
 COPY web/package.json web/package-lock.json ./
 RUN npm ci
 COPY web/ ./
+# The Docs page bundles the user guide from ../docs/guide.
+COPY docs/guide/ /src/docs/guide/
 RUN npm run build
 
 # The binary, cross-compiled on the build machine (no emulation for arm64).
