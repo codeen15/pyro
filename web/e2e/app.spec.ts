@@ -511,12 +511,13 @@ test("JSON tree, variable cards in params, current values from a request, long n
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   const card = page.locator(".var-card");
   await expect(card).toBeVisible();
-  // Wait for the card to finish opening (it zooms in) before aiming at it.
-  await expect.poll(async () => (await card.boundingBox())?.width ?? 0).toBeGreaterThan(100);
+  // Aim at the card only once it has finished opening. While it zooms in, antd
+  // steps it through laid-out (full size) and start (scaled to nothing) frames,
+  // so a box measured then can sit in the gap above where the card ends up, and
+  // the card closes 250 ms after the pointer leaves the variable for the gap.
+  await expect(page.locator(".var-card-pop")).not.toHaveClass(/ant-zoom-big-(appear|enter)/);
   const cb = (await card.boundingBox())!;
-  // Cross the gap below the variable in one move: the card closes 250 ms after
-  // the pointer leaves the variable, and on a slow runner each step of a
-  // stepped move can take long enough to run that out. Then move inside it.
+  // Cross the gap below the variable in one move, then move inside the card.
   await page.mouse.move(box.x + box.width / 2, cb.y + 8);
   await page.mouse.move(cb.x + cb.width / 2, cb.y + cb.height / 2, { steps: 6 });
   await page.waitForTimeout(500);
