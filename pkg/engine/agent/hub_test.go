@@ -197,7 +197,15 @@ scenarios:
 
 func TestHubDisconnect(t *testing.T) {
 	h := NewHub("")
-	h.Authenticate = tokenAuth
+	// As the team server does on remove: revoke the token, then disconnect.
+	// Otherwise the agent may reconnect as "a" at once, which is allowed.
+	var revoked atomic.Bool
+	h.Authenticate = func(token string) (string, bool) {
+		if token == "tok-a" && revoked.Load() {
+			return "", false
+		}
+		return tokenAuth(token)
+	}
 	var changes atomic.Int64
 	h.OnChange = func() { changes.Add(1) }
 	hs := serveHub(t, h)
@@ -205,6 +213,7 @@ func TestHubDisconnect(t *testing.T) {
 	startAgent(t, hs.URL, "tok-b", "beta")
 	eventually(t, "two agents", func() bool { return len(h.ConnectedIDs()) == 2 })
 	before := changes.Load()
+	revoked.Store(true)
 	h.Disconnect("a")
 	ids := h.ConnectedIDs()
 	if _, ok := ids["a"]; ok || len(ids) != 1 || changes.Load() == before {
@@ -266,7 +275,9 @@ func TestHubSingleTokenIDs(t *testing.T) {
 		t.Fatal("not idle after release")
 	}
 	h.Disconnect(id)
-	if len(h.ConnectedIDs()) != 0 {
+	// The agent may reconnect at once, but from a new port, so under a new id:
+	// only the dropped id has to be gone.
+	if _, ok := h.ConnectedIDs()[id]; ok {
 		t.Fatal("still connected after disconnect")
 	}
 }
