@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { resolve } from "node:path";
+import type { Page } from "@playwright/test";
 import { test, expect } from "./fixtures";
 
 // Admin → Agents on the team server (:7892, see server.mjs). It runs after
@@ -8,6 +9,17 @@ import { test, expect } from "./fixtures";
 const TEAM = "http://127.0.0.1:7892";
 const PASSWORD = "correct horse battery";
 const bin = resolve(process.env.PYRO_BIN ?? "../bin/pyro");
+
+// A retry (CI retries once) starts where the failed attempt stopped: remove the
+// agents it left behind, so names don't clash and lists don't count them.
+async function removeLeftovers(page: Page, ...names: string[]) {
+  const headers = { "X-Pyro-CSRF": "1" };
+  const res = await page.request.get(`${TEAM}/api/v1/admin/agents`, { headers });
+  expect(res.status()).toBe(200);
+  for (const a of (await res.json()) as { id: string; name: string }[]) {
+    if (names.includes(a.name)) expect((await page.request.delete(`${TEAM}/api/v1/admin/agents/${a.id}`, { headers })).status()).toBe(204);
+  }
+}
 
 test("admin adds a connecting agent, sees it connect, and removing it disconnects it", async ({ page, request }) => {
   await expect
@@ -21,6 +33,7 @@ test("admin adds a connecting agent, sees it connect, and removing it disconnect
     const up = await page.request.post(`${TEAM}/api/v1/auth/signup`, { headers, data: { email: "owner@example.com", name: "Olivia Owner", password: PASSWORD } });
     expect(up.status()).toBeLessThan(300);
   }
+  await removeLeftovers(page, "e2e-agent");
   await page.goto(TEAM);
   await page.getByRole("button", { name: "Account menu for Olivia Owner" }).click();
   await page.getByRole("menuitem", { name: "Administration" }).click();
@@ -79,7 +92,7 @@ test("admin adds a connecting agent, sees it connect, and removing it disconnect
     await dialog.getByRole("button", { name: "Done" }).click();
     await expect(page.getByRole("row", { name: /e2e-agent/ })).toContainText("available", { timeout: 10_000 });
     await expect(page.getByRole("row", { name: /e2e-agent/ })).toContainText("Connects in");
-    expect(log).toContain("connected to");
+    await expect.poll(() => log, { timeout: 10_000 }).toContain("connected to");
 
     // Run a load test on it from a project: the picker lists it ticked and available.
     await page.goto(TEAM);
@@ -143,6 +156,7 @@ test("admin adds a direct agent, tests and edits it, and removes it", async ({ p
     .toBe(200);
   const login = await page.request.post(`${TEAM}/api/v1/auth/login`, { headers: { "X-Pyro-CSRF": "1" }, data: { email: "owner@example.com", password: PASSWORD } });
   expect(login.status()).toBe(200);
+  await removeLeftovers(page, "e2e-direct");
 
   let child: ChildProcess | undefined;
   try {
