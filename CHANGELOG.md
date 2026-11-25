@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.2.1 (2026-11-25)
 
 - Team server: someone with no projects left (after deleting their last one, or being removed
   from every workspace) now gets **You don't have any projects** with **Create project** and
