@@ -120,6 +120,13 @@ func serveCmd() *cobra.Command {
 			"accounts, workspaces and projects that a team signs in to.",
 		Example: "  pyro serve --open\n  pyro serve --team --host 0.0.0.0 --public-url https://pyro.example.com",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			switch mode := os.Getenv("PYRO_MODE"); mode {
+			case "", "server":
+			case "agent":
+				return runAgentMode(cmd)
+			default:
+				return fmt.Errorf("PYRO_MODE=%q: use server (the default) or agent", mode)
+			}
 			if agentToken == "" {
 				agentToken = os.Getenv("PYRO_AGENT_TOKEN")
 			}

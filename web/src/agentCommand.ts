@@ -21,3 +21,12 @@ export function dockerCommand(tag: string, base: string, token: string): string 
 export function plainCommand(base: string, token: string): string {
   return `pyro agent --connect ${shellQuote(base)} --token ${shellQuote(token)}`;
 }
+
+/**
+ * The same agent as environment variables, for platforms (Dokploy, Coolify…)
+ * that run the image with its default command and take settings as `KEY=value`
+ * lines. Values aren't quoted: env editors take them as written.
+ */
+export function envSettings(base: string, token: string): string {
+  return `PYRO_MODE=agent\nPYRO_AGENT_CONNECT=${base}\nPYRO_AGENT_TOKEN=${token}`;
+}

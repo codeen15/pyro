@@ -3,7 +3,7 @@ import { Alert, App as AntApp, Button, Dropdown, Input, Modal, Switch, Table, Ta
 import { useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, Copy, Plus, TriangleAlert } from "../icons";
 import { team, type AdminAgent, type AgentConnectInfo } from "../api";
-import { dockerCommand, imageTag, plainCommand } from "../agentCommand";
+import { dockerCommand, envSettings, imageTag, plainCommand } from "../agentCommand";
 import { StatusDot, statusText } from "./AgentStatus";
 import { CopyField, useCopy } from "./CopyField";
 
@@ -362,7 +362,9 @@ function ConnectCommands({ info, base, setBase, connected }: { info: AgentConnec
   // Until the address is edited the server's own command is shown as it came.
   const address = base.trim();
   const docker = edited ? dockerCommand(imageTag(info.command), address, info.token) : info.command;
-  const plain = plainCommand(edited ? address : info.warning ? "<server-url>" : info.base, info.token);
+  const plainBase = edited ? address : info.warning ? "<server-url>" : info.base;
+  const plain = plainCommand(plainBase, info.token);
+  const env = envSettings(plainBase, info.token);
   const shaky = address !== "" && !/^https?:\/\/[^\s']+$/.test(address);
   const plainHTTP = /^http:\/\//i.test(address);
 
@@ -412,6 +414,20 @@ function ConnectCommands({ info, base, setBase, connected }: { info: AgentConnec
             Copy
           </Button>
         </div>
+      </div>
+      <div className="modal-field">
+        <span>On a platform (Dokploy, Coolify…)</span>
+        <div className="agent-command-row">
+          <pre className="agent-command mono" aria-label="Environment settings" tabIndex={0}>
+            {env}
+          </pre>
+          <Button icon={<Copy size={14} />} aria-label="Copy the environment settings" onClick={() => copy(env)}>
+            Copy
+          </Button>
+        </div>
+        <span className="muted small">
+          Run the image <span className="mono">ghcr.io/codeen15/pyro:{imageTag(info.command)}</span> with these environment variables and no command. It needs no domain or port.
+        </span>
       </div>
       <p className="agent-wait" role="status">
         {connected ? (

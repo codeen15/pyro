@@ -410,8 +410,8 @@ else.
 #### Add an agent that connects in
 
 1. In **Administration → Agents**, click **Add agent → Connects in…** and enter a name.
-2. Pyro shows the agent token **once**, with two commands to run on the load machine: one with
-   Docker and one with the plain `pyro` program:
+2. Pyro shows the agent token **once**, with three ways to start the agent on the load
+   machine: a Docker command, a plain `pyro` command, and environment settings for platforms:
 
    ```sh
    docker run -d --name pyro-agent --restart unless-stopped \
@@ -420,10 +420,30 @@ else.
    pyro agent --connect 'https://pyro.example.com' --token '<token>'
    ```
 
+   ```env
+   PYRO_MODE=agent
+   PYRO_AGENT_CONNECT=https://pyro.example.com
+   PYRO_AGENT_TOKEN=<token>
+   ```
+
    The image tag matches your server's version. Copy a command now: only a hash of the token
    is kept, so it can't be shown again (use **Rotate** for a new one).
 3. Run it. The dialog changes from **Waiting for the agent to connect…** to **Connected**,
    and the agent appears as available. It reconnects by itself if the connection drops.
+
+**On Dokploy (or Coolify and similar platforms)**, run the agent as an **Application** with
+no command, using the environment settings:
+
+1. Create an **Application** with the provider **Docker** and the image
+   `ghcr.io/codeen15/pyro:<tag>` (the same tag as the server).
+2. In **Environment**, paste the three `PYRO_*` lines from the dialog.
+3. Leave the command empty, and add no domain or port: the agent only dials out.
+4. **Deploy.** The log shows `connecting to https://pyro.example.com`.
+
+`PYRO_MODE=agent` makes the image's default command (`serve --team`) start a load agent,
+so the platform doesn't have to override the command (the image has no shell). The agent
+keeps installed plugins in `/data/plugins`; add a **Volume Mount** at `/data` if you install
+plugins on it.
 
 The agent connects to the team server's own address and port (`/agent/v1/connect`), so
 nothing else needs opening or routing:

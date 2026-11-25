@@ -35,13 +35,19 @@ func agentCmd() *cobra.Command {
 			"of a load test, runs it and streams metrics back. One test at a time.\n\n" +
 			"Controllers must present the agent token. Without --token (or PYRO_AGENT_TOKEN)\n" +
 			"a random token is generated and printed. Plugins used by the test must be\n" +
-			"installed and approved on the agent too.",
+			"installed and approved on the agent too.\n\n" +
+			"In a container, the environment can configure it instead of flags:\n" +
+			"PYRO_AGENT_TOKEN, PYRO_AGENT_CONNECT, and PYRO_MODE=agent to run it from the\n" +
+			"image's default command.",
 		Example: "  pyro agent --token s3cret\n  pyro agent --port 7979 --tls-cert cert.pem --tls-key key.pem\n" +
 			"  pyro agent --connect https://controller.example.com:7980 --token s3cret   # behind NAT: dial out",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if token == "" {
 				token = os.Getenv("PYRO_AGENT_TOKEN")
+			}
+			if connect == "" {
+				connect = os.Getenv("PYRO_AGENT_CONNECT")
 			}
 			generated := token == ""
 			if generated {
@@ -56,7 +62,11 @@ func agentCmd() *cobra.Command {
 			srv := &agent.Server{Token: token, Name: name, Version: version.Version, MaxVUs: maxVUs, Logf: func(f string, a ...any) {
 				fmt.Printf("%s  %s\n", time.Now().Format("15:04:05"), fmt.Sprintf(f, a...))
 			}}
-			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+			parent := cmd.Context()
+			if parent == nil {
+				parent = context.Background()
+			}
+			ctx, stop := signal.NotifyContext(parent, os.Interrupt, syscall.SIGTERM)
 			defer stop()
 			if srv.Plugins = openPlugins(); srv.Plugins != nil {
 				defer srv.Plugins.Close()
@@ -64,7 +74,7 @@ func agentCmd() *cobra.Command {
 			}
 			if connect != "" {
 				if generated {
-					return errors.New("--connect needs the controller's agent token: pass --token or set PYRO_AGENT_TOKEN")
+					return errors.New("connecting out (--connect or PYRO_AGENT_CONNECT) needs the agent token: pass --token or set PYRO_AGENT_TOKEN")
 				}
 				fmt.Printf("Pyro agent %s (%s)\n  connecting to %s\n\n", version.Version, name, connect)
 				return srv.Connect(ctx, connect, insecure)
@@ -113,9 +123,20 @@ func agentCmd() *cobra.Command {
 	f.IntVar(&maxVUs, "max-vus", load.DefaultMaxVUs, "refuse segments that need more VUs than this")
 	f.StringVar(&certFile, "tls-cert", "", "serve TLS with this certificate (controllers use https://host:port)")
 	f.StringVar(&keyFile, "tls-key", "", "TLS private key")
-	f.StringVar(&connect, "connect", "", "dial out to a controller's agent listener (host:port or URL) instead of listening")
+	f.StringVar(&connect, "connect", "", "dial out to a controller's agent listener (host:port or URL) instead of listening (default: $PYRO_AGENT_CONNECT)")
 	f.BoolVar(&insecure, "insecure", false, "with --connect: skip TLS certificate verification")
 	return cmd
+}
+
+// runAgentMode runs `pyro agent` for `pyro serve` when PYRO_MODE=agent, so
+// the image's default command can start an agent configured only by the
+// environment (for platforms whose command field can't run the binary).
+func runAgentMode(cmd *cobra.Command) error {
+	a := agentCmd()
+	a.SetContext(cmd.Context())
+	a.SetOut(cmd.OutOrStdout())
+	a.SetErr(cmd.ErrOrStderr())
+	return a.RunE(a, nil)
 }
 
 // connectAgents checks every agent (token, protocol, availability) in

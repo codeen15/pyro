@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Smoke-tests a Pyro image: the team server starts as non-root on a fresh volume,
-# keeps its data across restarts, and admin commands work in the shell-less image.
+# keeps its data across restarts, admin commands work in the shell-less image, and
+# PYRO_MODE=agent turns the default command into a load agent.
 #
 #   scripts/docker-smoke.sh <image>
 set -euo pipefail
@@ -11,7 +12,7 @@ vol=pyro-smoke-$$
 port=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')
 
 cleanup() {
-	docker rm -f "$name" >/dev/null 2>&1 || true
+	docker rm -f "$name" "$name-agent" >/dev/null 2>&1 || true
 	docker volume rm -f "$vol" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
@@ -72,3 +73,16 @@ ok "/pyro admin works against the server's data"
 size=$(docker image inspect -f '{{.Size}}' "$image")
 ((size < 80 * 1024 * 1024)) || fail "image is $((size / 1024 / 1024)) MB, over 80 MB"
 ok "image is $((size / 1024 / 1024)) MB"
+
+# Platforms that only set environment variables run the default command
+# (serve --team); PYRO_MODE=agent makes it a load agent instead.
+agent_port=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')
+docker run -d --name "$name-agent" -e PYRO_MODE=agent -e PYRO_AGENT_TOKEN=smoke \
+	-p "127.0.0.1:$agent_port:7979" "$image" >/dev/null || fail "could not start the agent"
+info=
+for _ in $(seq 60); do
+	info=$(curl -fsS -H 'Authorization: Bearer smoke' "http://127.0.0.1:$agent_port/agent/v1/info" 2>/dev/null) && break
+	sleep 0.5
+done
+[[ $info == *'"protocol"'* ]] || { docker logs "$name-agent" >&2 || true; fail "PYRO_MODE=agent: no agent on 7979: $info"; }
+ok "PYRO_MODE=agent runs a load agent"

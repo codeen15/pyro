@@ -24,6 +24,8 @@ services:
       - pyro-agent-data:/data # plugins installed on this agent
     environment:
       PYRO_AGENT_TOKEN: ${PYRO_AGENT_TOKEN:?set PYRO_AGENT_TOKEN (openssl rand -hex 32)}
+      # Set to the team server's address to connect in instead of listening.
+      PYRO_AGENT_CONNECT: ${PYRO_AGENT_CONNECT:-}
 
 volumes:
   pyro-agent-data:

@@ -149,7 +149,7 @@ pyro agent --connect https://controller.example.com:7980 --token s3cret
 |---|---|
 | `--token` | Token controllers must present (default `$PYRO_AGENT_TOKEN`, else random and printed) |
 | `-p, --port`, `--host` | Where to listen (default `0.0.0.0:7979`) |
-| `--connect` | Dial out to a controller instead of listening: `host:port` or a URL. A team server takes its own address (`https://pyro.example.com`) and the token from Administration → Agents |
+| `--connect` | Dial out to a controller instead of listening: `host:port` or a URL (default `$PYRO_AGENT_CONNECT`). A team server takes its own address (`https://pyro.example.com`) and the token from Administration → Agents |
 | `--tls-cert`, `--tls-key` | Serve TLS |
 | `--insecure` | With `--connect`: skip TLS verification |
 | `--name` | Name shown in results (default: host name) |
@@ -246,6 +246,8 @@ Print the version and build information.
 | Variable | Used for |
 |---|---|
 | `PYRO_AGENT_TOKEN` | The agent token (controller and agents) |
+| `PYRO_AGENT_CONNECT` | `pyro agent`: the controller to dial out to, as `--connect` |
+| `PYRO_MODE` | `agent` makes `pyro serve` run `pyro agent` instead (configured by the variables above), so a container's default command can start an agent; `server` or empty is the default |
 | `PYRO_SMTP_PASSWORD` | Team server: password for the `smtp` settings |
 | `PYRO_TOKEN` | `pyro run` / `pyro load --report-to`: a personal access token for the team server |
 | `PYRO_DATABASE_URL`, `PYRO_DATA_DIR`, `PYRO_HOST`, `PYRO_PORT`, `PYRO_PUBLIC_URL`, … | Team server settings; see [Team server](team-server.md#settings-from-env-and-the-environment) |

@@ -277,7 +277,9 @@ The agent listener is separate from the UI, which stays on loopback. Connected a
 for a test, reconnect after each one, and retry with backoff if the controller is away.
 Both kinds of agents can share a test.
 
-`PYRO_AGENT_TOKEN` can replace `--token`/`--agent-token`. Agents with `--tls-cert/--tls-key`
+`PYRO_AGENT_TOKEN` can replace `--token`/`--agent-token`, and `PYRO_AGENT_CONNECT` the
+agent's `--connect`. With `PYRO_MODE=agent`, `pyro serve` runs `pyro agent` instead, so the
+container image's default command starts an agent from environment variables alone. Agents with `--tls-cert/--tls-key`
 are addressed as `https://host:port` (`--agent-insecure` skips verification).
 
 How it works ([ADR 0006](adr/0006-agents-over-websocket.md)):

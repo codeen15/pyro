@@ -55,15 +55,22 @@ test("admin adds a connecting agent, sees it connect, and removing it disconnect
   await expect(dialog.getByText(/^Not encrypted/)).toHaveCount(0);
   await address.fill("http://10.0.0.1:7878");
   await expect(dialog.getByLabel("Plain command", { exact: true })).toHaveText(`pyro agent --connect 'http://10.0.0.1:7878' --token '${token}'`);
+  await expect(dialog.getByLabel("Environment settings", { exact: true })).toHaveText(
+    `PYRO_MODE=agent\nPYRO_AGENT_CONNECT=http://10.0.0.1:7878\nPYRO_AGENT_TOKEN=${token}`,
+  );
   await address.fill("http://h/it's");
   await expect(docker).toContainText(`--connect 'http://h/it'\\''s' --token`);
   await address.fill(TEAM);
 
-  // Start the agent the way the command would.
+  // Start the agent the way a platform would: the image's default command
+  // (serve --team) with the environment settings from the dialog.
   let child: ChildProcess | undefined;
   let log = "";
   try {
-    child = spawn(bin, ["agent", "--connect", TEAM, "--token", token], { stdio: ["ignore", "pipe", "pipe"] });
+    child = spawn(bin, ["serve", "--team"], {
+      stdio: ["ignore", "pipe", "pipe"],
+      env: { ...process.env, PYRO_MODE: "agent", PYRO_AGENT_CONNECT: TEAM, PYRO_AGENT_TOKEN: token },
+    });
     child.stdout?.on("data", (d) => (log += d));
     child.stderr?.on("data", (d) => (log += d));
 

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Run a load agent from environment variables alone: `PYRO_MODE=agent` makes the image's
+  default command (`serve --team`) start `pyro agent`, and `PYRO_AGENT_CONNECT` sets
+  `--connect`. Platforms such as Dokploy can run an agent as an Application with no command
+  override (the image has no shell). The **Connects in…** dialog shows these settings ready to
+  paste, next to the `docker run` and `pyro agent` commands.
+
 - Manage load agents from the team server's UI: **Administration → Agents** lists every agent
   with its status, version, CPUs and max VUs, and administrators add, test, edit, rotate and
   remove them without flags or a restart. An agent is either direct (the server dials its
