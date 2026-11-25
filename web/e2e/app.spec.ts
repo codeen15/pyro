@@ -514,7 +514,10 @@ test("JSON tree, variable cards in params, current values from a request, long n
   // Wait for the card to finish opening (it zooms in) before aiming at it.
   await expect.poll(async () => (await card.boundingBox())?.width ?? 0).toBeGreaterThan(100);
   const cb = (await card.boundingBox())!;
-  await page.mouse.move(box.x + box.width / 2, cb.y + 8, { steps: 6 });
+  // Cross the gap below the variable in one move: the card closes 250 ms after
+  // the pointer leaves the variable, and on a slow runner each step of a
+  // stepped move can take long enough to run that out. Then move inside it.
+  await page.mouse.move(box.x + box.width / 2, cb.y + 8);
   await page.mouse.move(cb.x + cb.width / 2, cb.y + cb.height / 2, { steps: 6 });
   await page.waitForTimeout(500);
   await expect(card).toBeVisible();
