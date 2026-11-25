@@ -388,7 +388,7 @@ func packCmd() *cobra.Command {
 
 // sdkVersion is the published Go SDK the plugin template requires (tag
 // plugins/sdk/go/<version>; bump it with each SDK release).
-const sdkVersion = "v0.1.0"
+const sdkVersion = "v0.2.0"
 
 // pluginTemplates holds the files `pyro plugin new` writes, per language:
 // templates/<lang>/<file>.tmpl is a text/template; other files are copied as is.

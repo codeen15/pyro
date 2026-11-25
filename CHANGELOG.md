@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.2.0 (2026-11-25)
 
 - Run a load agent from environment variables alone: `PYRO_MODE=agent` makes the image's
   default command (`serve --team`) start `pyro agent`, and `PYRO_AGENT_CONNECT` sets
