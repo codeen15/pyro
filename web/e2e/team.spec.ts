@@ -92,6 +92,32 @@ test("team server: another user can't see someone else's workspaces", async ({ b
   await ctx.close();
 });
 
+test("team server: someone with no projects left can create one or sign out", async ({ browser, request }) => {
+  await waitForTeam(request);
+  const ctx = await browser.newContext();
+  const page = await ctx.newPage();
+  await page.goto(TEAM);
+  await page.getByRole("tab", { name: "Create account" }).click();
+  await page.getByLabel("Email").fill("carol@example.com");
+  await page.getByLabel("Password").fill(PASSWORD);
+  await page.getByRole("button", { name: "Create account" }).click();
+  await expect(page.getByRole("button", { name: /^Project: My project/ })).toBeVisible();
+
+  // Delete the only project (as Workspaces and projects → Delete project does).
+  const pid = new URL(page.url()).pathname.split("/")[2];
+  expect((await page.request.delete(`${TEAM}/api/v1/projects/${pid}`, { headers: { "X-Pyro-CSRF": "1" } })).status()).toBe(204);
+  await page.goto(TEAM);
+
+  // Not a dead end: a new project can be created from here.
+  await expect(page.getByRole("heading", { name: "You don't have any projects" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
+  await page.getByLabel("Project name").fill("Fresh start");
+  await page.getByRole("button", { name: "Create project" }).click();
+  await expect(page.getByRole("button", { name: /^Project: Fresh start/ })).toBeVisible();
+  await expect(page).toHaveURL(/\/p\/[0-9a-f]+$/);
+  await ctx.close();
+});
+
 test("team server: invite a viewer, promote them, copy a collection and resolve a save conflict", async ({ browser, page, request }) => {
   await waitForTeam(request);
   await page.goto(TEAM);

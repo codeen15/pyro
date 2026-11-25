@@ -27,7 +27,10 @@ created on a server is an administrator.
 The **project switcher** next to the logo shows the open project as *workspace / project*.
 Click it to jump to another project. **Workspaces and projects** (in the switcher or the
 account menu) lists all your workspaces. From there you can create workspaces and projects,
-and rename or delete them.
+and rename or delete them. If you delete your last project, or you're removed from every
+workspace, Pyro opens on **You don't have any projects** instead: name a project and click
+**Create project** (in a workspace you can add projects to, or a new workspace of your own),
+or **Sign out**.
 
 Each person keeps their own **current values** for variables, their own request history, and
 their own open WebSocket and Socket.IO sessions. Cookies and OAuth 2.0 tokens fetched in a

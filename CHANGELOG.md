@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Team server: someone with no projects left (after deleting their last one, or being removed
+  from every workspace) now gets **You don't have any projects** with **Create project** and
+  **Sign out**, instead of a page with no way forward.
+
 ## v0.2.0 (2026-11-25)
 
 - Run a load agent from environment variables alone: `PYRO_MODE=agent` makes the image's

@@ -13,6 +13,7 @@ import { lastProject, projectFromURL, useTeam } from "./team";
 import { AuthPage } from "./components/AuthPage";
 import { InvitePage } from "./components/InvitePage";
 import { ResetPage } from "./components/ResetPage";
+import { NoProjectsPage } from "./components/NoProjectsPage";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } },
@@ -25,7 +26,12 @@ function chooseProject(me: Me): string | null {
   return all[0] ?? null;
 }
 
-type Boot = { state: "loading" } | { state: "signin"; config: AuthConfig } | { state: "ready" } | { state: "error"; message: string };
+type Boot =
+  | { state: "loading" }
+  | { state: "signin"; config: AuthConfig }
+  | { state: "ready" }
+  | { state: "noProjects"; me: Me }
+  | { state: "error"; message: string };
 
 // A team server needs a signed-in user and an open project before the app
 // renders; local Pyro renders straight away.
@@ -44,7 +50,7 @@ function TeamRoot({ config }: { config: AuthConfig }) {
         const me = await team.me();
         const id = chooseProject(me);
         if (!id) {
-          setBoot({ state: "error", message: "You don't have any projects. Ask a workspace owner to add you to one." });
+          setBoot({ state: "noProjects", me });
           return;
         }
         // Keep /p/<id>/reports/<report> so the app can open that report.
@@ -71,6 +77,8 @@ function TeamRoot({ config }: { config: AuthConfig }) {
     case "signin":
       // A full load after sign-in starts every query (and the event socket) clean.
       return <AuthPage config={boot.config} onSignedIn={() => window.location.reload()} />;
+    case "noProjects":
+      return <NoProjectsPage me={boot.me} />;
     case "error":
       return <Result status="warning" title="Can't open Pyro" subTitle={boot.message} />;
     default:
