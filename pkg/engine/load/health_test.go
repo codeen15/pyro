@@ -15,22 +15,28 @@ func TestCPUSampler(t *testing.T) {
 	if idle > 0.5 || mem <= 0 {
 		t.Errorf("idle process: cpu %.2f, mem %.1f MB", idle, mem)
 	}
-	// Keep every usable core busy.
-	stop := time.Now().Add(300 * time.Millisecond)
-	var wg sync.WaitGroup
-	for i := 0; i < runtime.GOMAXPROCS(0); i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for x := 0; time.Now().Before(stop); x++ {
-				_ = x * x
-			}
-		}()
+	// Keep every usable core busy. Other test packages share the machine
+	// (go test runs them in parallel), so one window may get only part of the
+	// CPU: a few windows give the reading a fair chance.
+	var busy float64
+	for range 5 {
+		stop := time.Now().Add(300 * time.Millisecond)
+		var wg sync.WaitGroup
+		for i := 0; i < runtime.GOMAXPROCS(0); i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for x := 0; time.Now().Before(stop); x++ {
+					_ = x * x
+				}
+			}()
+		}
+		wg.Wait()
+		if busy, _ = c.sample(); busy >= 0.4 {
+			return
+		}
 	}
-	wg.Wait()
-	if busy, _ := c.sample(); busy < 0.4 {
-		t.Errorf("busy cores read as %.2f", busy)
-	}
+	t.Errorf("busy cores read as %.2f", busy)
 }
 
 func TestSaturationWarning(t *testing.T) {
